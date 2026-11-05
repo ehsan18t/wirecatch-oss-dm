@@ -141,21 +141,33 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-131 | fix(media): keep the bar steady on a retry row     | `fix/retry-row-bar`              | 256                          | P3       | small  | none         | merged |
 | PR-132 | fix(desktop): stop page reads at a late quit       | `fix/page-read-at-quit`          | 255                          | P3       | small  | none         | merged |
 | PR-133 | fix(streams): hide tokens in key error paths       | `fix/key-error-path`             | 198                          | P3       | small  | none         | merged |
+| PR-134 | fix(desktop): draw the every-video tick            | `fix/every-video-tick`           | 148                          | P2       | small  | none         | open   |
+| PR-135 | fix(core): ask when a server changes the file type | `fix/ask-on-type-change`         | 257                          | P2       | medium | none         | open   |
+| PR-136 | fix(media): keep the bar steady past an estimate   | `fix/bar-past-estimate`          | 258                          | P3       | small  | none         | open   |
+| PR-137 | fix(desktop): keep finished group counts current   | `fix/finished-group-counts`      | 259                          | P3       | small  | none         | open   |
+| PR-138 | fix(desktop): keep startup notices out of the way  | `fix/startup-notice-place`       | 260, 261                     | P3       | small  | none         | open   |
+| PR-139 | fix(core): clean up a move a removal cut short     | `fix/removal-move-copy`          | 262                          | P3       | small  | none         | open   |
+| PR-140 | test: hold servers instead of throttling to join   | `test/hold-to-join`              | 263                          | P3       | small  | none         | open   |
+| PR-141 | refactor(desktop): use the one proxy display name  | `refactor/one-proxy-name`        | 264                          | P3       | small  | none         | open   |
+| PR-142 | fix(streams): read all of ffmpeg's failure text    | `fix/ffmpeg-failure-text`        | 265                          | P3       | small  | none         | open   |
+| PR-143 | fix(core): keep one subtitle copy after a crash    | `fix/subtitle-after-crash`       | 266                          | P3       | small  | none         | open   |
+| PR-144 | chore: read the product name in every crate        | `chore/product-name-everywhere`  | 161                          | P3       | medium | none         | open   |
+| PR-145 | fix(desktop): fix hover in the Settings navigation | `fix/settings-nav-hover`         | 162                          | P3       | small  | none         | open   |
+| PR-146 | chore: flag shell public items with no caller      | `chore/shell-unused-check`       | 267                          | P3       | small  | none         | open   |
+| PR-147 | test: limit each test's time on Windows            | `test/windows-test-limit`        | 268                          | P3       | small  | none         | open   |
 
 ## Lanes
 
 These are the open pull requests. A PR in one lane touches separate code from a PR in another, so the two can run side by side. Inside a lane, go one at a time, in order. Dependencies still apply across lanes.
 
-- **Core downloads** (`crates/core` outside media runs, proxies, queues and updates): PR-121, PR-11, PR-97, PR-123, PR-129.
-- **Video and audio** (`crates/streams`, `crates/media`, media runs in `crates/core`): PR-122, PR-64, PR-76, PR-77, PR-78, PR-94, PR-95, PR-105, PR-109, PR-110, PR-111, PR-131, PR-133.
-- **Saved list** (`crates/store`): PR-22, PR-25, PR-26, PR-50.
-- **Main window** (`crates/desktop/src/main_window`, the Add dialog, the tray): PR-15, PR-30, PR-31, PR-53, PR-66, PR-79, PR-81, PR-82, PR-83, PR-85, PR-88, PR-89, PR-90, PR-102, PR-106, PR-114, PR-116, PR-117, PR-130.
-- **Download windows** (`crates/desktop/src/download_windows`, the windows and notices in `crates/shell`): PR-41, PR-51, PR-52, PR-68.
-- **Start, quit, updates** (`crates/shell`, the app's start and update code in `crates/desktop`): PR-10, PR-132.
-- **Repo and packaging** (`scripts`, `config`, `.github`, packaging, `crates/logging`): PR-75, PR-125, PR-128.
-- **Local endpoint** (`crates/ipc`, `crates/bridge`): PR-124.
+- **Core downloads** (`crates/core` outside media runs, proxies, queues and updates): PR-139, PR-143.
+- **Video and audio** (`crates/streams`, `crates/media`, media runs in `crates/core`): PR-136, PR-142.
+- **Saved list** (`crates/store`): PR-25.
+- **Main window** (`crates/desktop/src/main_window`, the Add dialog, the tray): PR-114, PR-134, PR-138, PR-141, PR-145.
+- **Download windows** (`crates/desktop/src/download_windows`, the windows and notices in `crates/shell`): PR-137.
+- **Repo and packaging** (`scripts`, `config`, `.github`, packaging, `crates/logging`): PR-140, PR-144, PR-146, PR-147.
 
-These cross lanes, so run each with nothing else touching the crates it names: PR-28, PR-29, PR-40, PR-46, PR-49, PR-62, PR-65, PR-67, PR-91, PR-98, PR-99, PR-100, PR-101, PR-104, PR-107, PR-118, PR-126, PR-127.
+These cross lanes, so run each with nothing else touching the crates it names: PR-29, PR-62, PR-67, PR-98, PR-101, PR-135.
 
 Known overlaps, where a PR reaches into another lane, so do not run these pairs at once: PR-97 and PR-121 add to the saved row in `crates/records` and `crates/store`, so keep them apart from the Saved list lane. PR-25 touches `notices_bar.rs` and `library.rs`, and PR-51 and PR-68 touch `list.rs`, `text.rs` or `row_menu.rs`, all in the Main window lane. PR-30 changes how `crates/desktop/src/library.rs` tells the window of changes, so finish it before other PRs that observe the list, such as PR-66 and PR-102.
 
@@ -1761,3 +1773,171 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-streams`, `cargo clippy -p wirecatch-streams`
 - **Status:** merged
+
+### PR-134 fix(desktop): draw the every-video tick
+
+- **Branch:** `fix/every-video-tick`
+- **Items:** 148 (P2). Highest: P2.
+- **Effort:** small
+- **Why:** What PR-65 left of item 148. Draws the tick D50.6 promises in the media window.
+- **Depends on:** none
+- **Touches:** crates/desktop
+- **Proof:** none
+- **Checks:** `cargo test -p wirecatch-desktop`, `cargo clippy -p wirecatch-desktop`
+- **Status:** open
+
+### PR-135 fix(core): ask when a server changes the file type
+
+- **Branch:** `fix/ask-on-type-change`
+- **Items:** 257 (P2). Highest: P2.
+- **Effort:** medium
+- **Why:** Own item, a security fault.
+- **Depends on:** none
+- **Touches:** crates/core, crates/desktop
+- **Proof:** none
+- **Checks:** `cargo test -p wirecatch-core`, `cargo clippy -p wirecatch-core`, `cargo test -p wirecatch-desktop`, `cargo clippy -p wirecatch-desktop`
+- **Status:** open
+
+### PR-136 fix(media): keep the bar steady past an estimate
+
+- **Branch:** `fix/bar-past-estimate`
+- **Items:** 258 (P3). Highest: P3.
+- **Effort:** small
+- **Why:** Own item.
+- **Depends on:** none
+- **Touches:** crates/media
+- **Proof:** none
+- **Checks:** `cargo test -p wirecatch-media`, `cargo clippy -p wirecatch-media`
+- **Status:** open
+
+### PR-137 fix(desktop): keep finished group counts current
+
+- **Branch:** `fix/finished-group-counts`
+- **Items:** 259 (P3). Highest: P3.
+- **Effort:** small
+- **Why:** Own item.
+- **Depends on:** none
+- **Touches:** crates/shell
+- **Proof:** none
+- **Checks:** `cargo test -p wirecatch-shell`, `cargo clippy -p wirecatch-shell`
+- **Status:** open
+
+### PR-138 fix(desktop): keep startup notices out of the way
+
+- **Branch:** `fix/startup-notice-place`
+- **Items:** 260, 261 (P3). Highest: P3.
+- **Effort:** small
+- **Why:** Own items. A visible change, so one design approval first.
+- **Depends on:** none
+- **Touches:** crates/desktop, crates/core
+- **Proof:** none
+- **Checks:** `cargo test -p wirecatch-desktop`, `cargo clippy -p wirecatch-desktop`
+- **Status:** open
+
+### PR-139 fix(core): clean up a move a removal cut short
+
+- **Branch:** `fix/removal-move-copy`
+- **Items:** 262 (P3). Highest: P3.
+- **Effort:** small
+- **Why:** Own item.
+- **Depends on:** none
+- **Touches:** crates/core
+- **Proof:** none
+- **Checks:** `cargo test -p wirecatch-core`, `cargo clippy -p wirecatch-core`
+- **Status:** open
+
+### PR-140 test: hold servers instead of throttling to join
+
+- **Branch:** `test/hold-to-join`
+- **Items:** 263 (P3). Highest: P3.
+- **Effort:** small
+- **Why:** Own item.
+- **Depends on:** none
+- **Touches:** crates/engine, crates/core
+- **Proof:** none
+- **Checks:** `cargo test -p wirecatch-engine`, `cargo clippy -p wirecatch-engine`, `cargo test -p wirecatch-core`, `cargo clippy -p wirecatch-core`
+- **Status:** open
+
+### PR-141 refactor(desktop): use the one proxy display name
+
+- **Branch:** `refactor/one-proxy-name`
+- **Items:** 264 (P3). Highest: P3.
+- **Effort:** small
+- **Why:** Own item.
+- **Depends on:** none
+- **Touches:** crates/desktop
+- **Proof:** none
+- **Checks:** `cargo test -p wirecatch-desktop`, `cargo clippy -p wirecatch-desktop`
+- **Status:** open
+
+### PR-142 fix(streams): read all of ffmpeg's failure text
+
+- **Branch:** `fix/ffmpeg-failure-text`
+- **Items:** 265 (P3). Highest: P3.
+- **Effort:** small
+- **Why:** Own item.
+- **Depends on:** none
+- **Touches:** crates/streams
+- **Proof:** none
+- **Checks:** `cargo test -p wirecatch-streams`, `cargo clippy -p wirecatch-streams`
+- **Status:** open
+
+### PR-143 fix(core): keep one subtitle copy after a crash
+
+- **Branch:** `fix/subtitle-after-crash`
+- **Items:** 266 (P3). Highest: P3.
+- **Effort:** small
+- **Why:** Own item.
+- **Depends on:** none
+- **Touches:** crates/core
+- **Proof:** none
+- **Checks:** `cargo test -p wirecatch-core`, `cargo clippy -p wirecatch-core`
+- **Status:** open
+
+### PR-144 chore: read the product name in every crate
+
+- **Branch:** `chore/product-name-everywhere`
+- **Items:** 161 (P3). Highest: P3.
+- **Effort:** medium
+- **Why:** What PR-91 left of item 161, with its check.
+- **Depends on:** none
+- **Touches:** crates/core, crates/media, crates/bridge, crates/messages, crates/ipc, crates/streams, scripts/gate
+- **Proof:** none
+- **Checks:** `node scripts/gate.mjs rust`
+- **Status:** open
+
+### PR-145 fix(desktop): fix hover in the Settings navigation
+
+- **Branch:** `fix/settings-nav-hover`
+- **Items:** 162 (P3). Highest: P3.
+- **Effort:** small
+- **Why:** What PR-82 left of item 162. Needs a change in gpui-component.
+- **Depends on:** none
+- **Touches:** crates/desktop
+- **Proof:** none
+- **Checks:** `cargo test -p wirecatch-desktop`, `cargo clippy -p wirecatch-desktop`
+- **Status:** open
+
+### PR-146 chore: flag shell public items with no caller
+
+- **Branch:** `chore/shell-unused-check`
+- **Items:** 267 (P3). Highest: P3.
+- **Effort:** small
+- **Why:** Own item.
+- **Depends on:** none
+- **Touches:** scripts/gate
+- **Proof:** none
+- **Checks:** `node scripts/gate.mjs repo`
+- **Status:** open
+
+### PR-147 test: limit each test's time on Windows
+
+- **Branch:** `test/windows-test-limit`
+- **Items:** 268 (P3). Highest: P3.
+- **Effort:** small
+- **Why:** Own item.
+- **Depends on:** none
+- **Touches:** scripts/gate, .github
+- **Proof:** none
+- **Checks:** `node scripts/gate.mjs repo`
+- **Status:** open
