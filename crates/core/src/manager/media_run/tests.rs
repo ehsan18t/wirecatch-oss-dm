@@ -11,7 +11,9 @@ use wirecatch_media::{MediaJob, MediaProgress, Pick};
 use wirecatch_sites::local_network::ChosenBy;
 
 use super::network::{format_rule, network_rule};
-use super::page::{address_gone, fetch_parts, formats_ytdlp_takes, part_name, part_options};
+use super::page::{
+    PartError, address_gone, fetch_parts, formats_ytdlp_takes, part_name, part_options, parts_end,
+};
 use super::placement::{self, Placed, final_path, place, remember_placing};
 use super::workdir;
 use super::*;
@@ -811,21 +813,25 @@ async fn a_part_that_stalls_before_its_first_byte_is_not_promised_a_kept_part() 
     assert!(!told.contains("is kept"), "{told}");
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_finished_part_is_kept_when_the_other_cannot_continue() {
-    let finishing = wirecatch_test_support::http::TestServer::start(
-        wirecatch_test_support::test_data(1024),
-        wirecatch_test_support::http::Config::default(),
-    )
-    .await;
-    let stalling = stalling_server(false).await;
-    let told = failure_of_parts(&[
-        format_at("137", &finishing.url("v.mp4")),
-        format_at("140", &stalling.url("a.m4a")),
-    ])
-    .await;
-    assert!(told.contains("stopped sending data"), "{told}");
-    assert!(told.contains("is kept"), "{told}");
+/// The part that fails first is worded by what the other, which ended after it, leaves behind.
+#[test]
+fn a_failure_promises_the_part_that_finished_after_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let job = job_at(dir.path(), &dir.path().join("Clip.mp4"), LINK, Taken::Ask);
+    let progress = MediaProgress::default();
+    progress.add_done(1024);
+    let stalled = EngineError::Stalled {
+        after: Duration::from_secs(1),
+    };
+    let results = vec![
+        Err(PartError::Transfer(stalled)),
+        Ok(Some(dir.path().join("video.mp4"))),
+    ];
+    let Err(PageError::Failed(told)) = parts_end(&job, results, &progress) else {
+        panic!("not a failure");
+    };
+    assert!(told.message.contains("stopped sending data"), "{told:?}");
+    assert!(told.message.contains("is kept"), "{told:?}");
 }
 
 /// A work folder holding a finished `Clip.mp4` beside its planned path.
