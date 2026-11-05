@@ -416,30 +416,19 @@ mod tests {
             let values: Vec<String> = values.iter().map(u32::to_string).collect();
             format!("[{}]", values.join(", "))
         };
-        vec![
-            per_format(
-                "AUDIO_KBPS_CHOICES",
-                &[
-                    " The audio bit rates, in kbps, a person can pick when saving as each format;",
-                    " formats without a choice are left out (`OutputFormat::kbps_choices`).",
-                ],
-                "Readonly<Partial<Record<OutputFormat, readonly number[]>>>",
-                |format| {
-                    Some(format.kbps_choices())
-                        .filter(|c| !c.is_empty())
-                        .map(list)
-                },
-            ),
-            per_format(
-                "AUDIO_DEFAULT_KBPS",
-                &[
-                    " The audio bit rate, in kbps, used when the audio of a download saved as each",
-                    " format must be re-encoded (`OutputFormat::default_kbps`).",
-                ],
-                "Readonly<Partial<Record<OutputFormat, number>>>",
-                |format| format.default_kbps().map(|kbps| kbps.to_string()),
-            ),
-        ]
+        vec![per_format(
+            "AUDIO_KBPS_CHOICES",
+            &[
+                " The audio bit rates, in kbps, a person can pick when saving as each format;",
+                " formats without a choice are left out (`OutputFormat::kbps_choices`).",
+            ],
+            "Readonly<Partial<Record<OutputFormat, readonly number[]>>>",
+            |format| {
+                Some(format.kbps_choices())
+                    .filter(|c| !c.is_empty())
+                    .map(list)
+            },
+        )]
     }
 
     /// Where `ts-rs` writes the types: `TS_RS_EXPORT_DIR`, which `.cargo/config.toml` points into `target/` for plain test runs and `pnpm protocol:generate` points at a staging folder, or its own default.

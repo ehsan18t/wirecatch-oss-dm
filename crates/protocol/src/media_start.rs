@@ -420,8 +420,11 @@ mod tests {
             (OutputFormat::Original, true)
         );
         assert!(!s.start(&options, &[], false).selection.chapters);
+        s.video.subtitle_files = true;
+        assert!(s.start(&options, &[], true).selection.subtitle_files);
         s.quality = VideoQuality::AudioOnly;
         let audio = s.start(&options, &[], false).selection;
+        assert!(!audio.subtitle_files, "audio has saved choices of its own");
         assert_eq!(
             (audio.output, audio.audio_kbps),
             (OutputFormat::Mp3, Some(192))

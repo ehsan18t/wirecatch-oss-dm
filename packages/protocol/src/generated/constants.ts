@@ -510,16 +510,6 @@ export const AUDIO_KBPS_CHOICES: Readonly<Partial<Record<OutputFormat, readonly 
 };
 
 /**
- * The audio bit rate, in kbps, used when the audio of a download saved as each
- * format must be re-encoded (`OutputFormat::default_kbps`).
- */
-export const AUDIO_DEFAULT_KBPS: Readonly<Partial<Record<OutputFormat, number>>> = {
-  mp3: 192,
-  m4a: 192,
-  opus: 128,
-};
-
-/**
  * The subtitle languages a person can pick from, by ISO 639-1 code, named in English
  * (`languages::LANGUAGES`).
  */
