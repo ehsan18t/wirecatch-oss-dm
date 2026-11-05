@@ -22,7 +22,7 @@ use super::file_exists::give_up_the_name;
 use super::handovers::{Handover, Target};
 use super::placement::{Candidate, QueueRequest};
 use super::run::mark_cancelled;
-use super::state::{AfterCancel, Entry, Hold, NextRun, State, Stop};
+use super::state::{AfterCancel, Entry, Hold, NextRun, Partial, State, Stop};
 use crate::error::{CoreError, Result};
 use crate::headers;
 use crate::naming;
@@ -323,9 +323,10 @@ impl Manager {
                 } else {
                     // An unfinished download has no file of its own at its final
                     // path yet; whatever is there belongs to someone else.
-                    partials.push(entry.partial());
                     // A move may have changed the path since the removal began.
                     let deletion = entry.pending_deletion();
+                    partials.extend(Partial::both_places(&deletion));
+                    leaving.extend(deletion.moving_to.iter().map(|to| (to.clone(), *id)));
                     state.pending_deletions.insert(*id, deletion);
                 }
                 removed.push(*id);

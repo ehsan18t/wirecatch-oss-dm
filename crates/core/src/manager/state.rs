@@ -2,7 +2,7 @@
 //! never held across an `.await`.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use tracing::warn;
@@ -174,16 +174,31 @@ pub(super) struct Partial {
 impl Partial {
     /// What `deletion` names.
     pub fn of(deletion: &PendingDeletion) -> Self {
-        let folders = if deletion.media {
+        Self::at(&deletion.path, deletion.media)
+    }
+
+    /// What `deletion` names at its path, and at the one a move took or left files at.
+    pub fn both_places(deletion: &PendingDeletion) -> impl Iterator<Item = Self> + use<'_> {
+        std::iter::once(Self::of(deletion)).chain(
+            deletion
+                .moving_to
+                .iter()
+                .map(|to| Self::at(to, deletion.media)),
+        )
+    }
+
+    /// What a download at `path` keeps beside it.
+    pub fn at(path: &Path, media: bool) -> Self {
+        let folders = if media {
             vec![
-                wirecatch_media::work_dir(&deletion.path),
-                wirecatch_media::stream_dir(&deletion.path),
+                wirecatch_media::work_dir(path),
+                wirecatch_media::stream_dir(path),
             ]
         } else {
             Vec::new()
         };
         Self {
-            files: crate::naming::partial_files_and_temp(&deletion.path),
+            files: crate::naming::partial_files_and_temp(path),
             folders,
         }
     }
@@ -797,7 +812,17 @@ impl Entry {
         PendingDeletion {
             path: self.path().to_path_buf(),
             media: self.media_job.is_some(),
-            moving_to: self.files.moving.as_ref().map(|m| m.path.clone()),
+            moving_to: self
+                .files
+                .moving
+                .as_ref()
+                .map(|m| m.path.clone())
+                .or_else(|| self.stranded.clone()),
+            moving_files: self
+                .files
+                .moving
+                .as_ref()
+                .map_or_else(Vec::new, |m| m.files.clone()),
             finished: self.row.status == DownloadStatus::Completed,
         }
     }

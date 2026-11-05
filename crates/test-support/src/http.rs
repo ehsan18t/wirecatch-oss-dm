@@ -21,6 +21,8 @@ use bytes::Bytes;
 use tokio::sync::watch;
 use url::Url;
 
+use crate::PATIENCE;
+
 /// How much of the body goes out at once when the speed is not limited.
 const UNTHROTTLED_CHUNK: usize = 64 * 1024;
 /// The smallest piece of body a throttled connection sends at once.
@@ -285,6 +287,22 @@ impl TestServer {
     /// Lets bodies send `bytes` more in all, then holds them until [`release_bodies`](Self::release_bodies). For a test that acts once a client has that much, and before it can finish.
     pub fn hold_bodies_after(&self, bytes: u64) {
         self.inner.body_gate.hold_after(bytes);
+    }
+
+    /// Waits until no body is being served. The server notices a client that left only some time after, and until then its body takes from what [`hold_bodies_after`](Self::hold_bodies_after) lets out, so a test that opens the gate after a client dropped an answer waits here first.
+    ///
+    /// # Panics
+    ///
+    /// When a body is still being served after [`PATIENCE`].
+    pub async fn wait_until_no_bodies(&self) {
+        let deadline = tokio::time::Instant::now() + PATIENCE;
+        while self.inner.stats.current.load(Ordering::SeqCst) > 0 {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "a body was still being served after {PATIENCE:?}"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
     }
 
     /// Lets held bodies, and every later one, go out.
@@ -768,8 +786,40 @@ mod tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpStream;
 
-    use super::{Config, TestServer, path_key};
-    use crate::PATIENCE;
+    use super::{Config, PATIENCE, TestServer, path_key};
+
+    /// A body its client does not read takes all the gate lets out, leaving nothing for a client that does; the wait outlasts it.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_body_nobody_reads_takes_what_the_gate_lets_out() {
+        let server = TestServer::start(vec![7; 256 * 1024], Config::default()).await;
+        server.hold_bodies();
+        let url = server.url("file");
+        let mut stream = TcpStream::connect((url.host_str().unwrap(), url.port().unwrap()))
+            .await
+            .unwrap();
+        stream
+            .write_all(
+                b"GET /file HTTP/1.1
+Host: test
+
+",
+            )
+            .await
+            .unwrap();
+        server.wait_for_request("file", PATIENCE).await;
+        let mut head = [0; 1];
+        stream.read_exact(&mut head).await.unwrap();
+
+        server.hold_bodies_after(1024);
+        let deadline = tokio::time::Instant::now() + PATIENCE;
+        while *server.inner.body_gate.0.borrow() != Some(0) {
+            assert!(tokio::time::Instant::now() < deadline, "nothing took it");
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+
+        drop(stream);
+        server.wait_until_no_bodies().await;
+    }
 
     /// Asks `server` for a file and reads until it ends the answer, whole or broken off.
     async fn ask(server: &TestServer) {

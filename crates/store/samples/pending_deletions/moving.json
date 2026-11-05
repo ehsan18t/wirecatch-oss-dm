@@ -1,4 +1,4 @@
 [
   { "path": "/home/me/Downloads/big.iso", "media": false, "moving_to": "/mnt/other/big.iso", "finished": false },
-  { "path": "/home/me/Downloads/done.iso", "media": false, "moving_to": "/mnt/other/done.iso", "finished": true }
+  { "path": "/home/me/Downloads/done.iso", "media": false, "moving_to": "/mnt/other/done.iso", "moving_files": [{ "from": "/home/me/Downloads/done.iso", "to": "/mnt/other/done.iso" }], "finished": true }
 ]
