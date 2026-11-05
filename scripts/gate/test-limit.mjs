@@ -10,7 +10,13 @@ const DRAIN_MS = 5000;
 // Not anchored: a child a test started shares this pipe and can leave half a line before them.
 const NOTICE = /\btest (.+) has been running for over \d+ seconds/;
 const RESULT = /\btest (.+) \.\.\. /;
-const BINARY_END = /\btest result: /;
+/** What libtest adds to a name in a result line, and not in its notice. */
+const TEST_MODE = / - (?:should panic|compile fail|compile)$/;
+/** A binary's first and last lines: one that aborts prints no last line. */
+const BINARY_EDGE = /\btest result: |\brunning \d+ tests?\b/;
+
+/** The signals that end this process: the test binaries, in their own group, would run on. */
+const ENDING_SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 
 /** Follows libtest's lines and calls `onHang` when a test it gave notice of runs out its limit. */
 function testWatch(limitMs, onHang) {
@@ -32,8 +38,8 @@ function testWatch(limitMs, onHang) {
           onHang([...timers.keys()]);
         }, limitMs),
       );
-    } else if (result) forget(result[1]);
-    else if (BINARY_END.test(text)) clear();
+    } else if (result) forget(result[1].replace(TEST_MODE, ''));
+    else if (BINARY_EDGE.test(text)) clear();
   };
   return { line, clear };
 }
@@ -43,22 +49,25 @@ function stopTree(child) {
   if (process.platform === 'win32') {
     spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
   } else {
-    process.kill(-child.pid, 'SIGKILL');
+    try {
+      process.kill(-child.pid, 'SIGKILL');
+    } catch (error) {
+      // The group is gone once its last process has ended.
+      if (error.code !== 'ESRCH') throw error;
+    }
   }
 }
 
-/** Own process group on Unix, so the whole tree can be stopped: Ctrl+C then no longer reaches it by itself. */
+/** Own process group on Unix, so the whole tree can be stopped: Ctrl+C and a closed terminal then no longer reach it by themselves. */
 function passOnInterrupt(child) {
   if (process.platform === 'win32') return () => undefined;
   const interrupted = () => {
     stopTree(child);
     process.exit(1);
   };
-  process.on('SIGINT', interrupted);
-  process.on('SIGTERM', interrupted);
+  for (const signal of ENDING_SIGNALS) process.on(signal, interrupted);
   return () => {
-    process.off('SIGINT', interrupted);
-    process.off('SIGTERM', interrupted);
+    for (const signal of ENDING_SIGNALS) process.off(signal, interrupted);
   };
 }
 

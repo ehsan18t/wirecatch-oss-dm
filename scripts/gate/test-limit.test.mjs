@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { test } from 'node:test';
 import { GateError } from './process.mjs';
 import { runWithTestLimit } from './test-limit.mjs';
@@ -6,6 +7,10 @@ import { runWithTestLimit } from './test-limit.mjs';
 const SHORT_MS = 1;
 const FOREVER = 'setInterval(() => {}, 1000);';
 const NOTICE = 'test a::hangs has been running for over 60 seconds\n';
+/** Far past `SHORT_MS`, so a limit left running fires before the fake ends. */
+const OUTLASTS_LIMIT = 'setTimeout(() => process.exit(0), 500);';
+/** `PATIENCE` in test-support: a killed process can linger as a zombie until it is reaped. */
+const PATIENCE_MS = 2 * 60 * 1000;
 
 /** A stand-in for `cargo test`: Node running `script`, which prints what libtest would. */
 const fake = (script, options) =>
@@ -43,6 +48,14 @@ function isRunning(pid) {
   }
 }
 
+async function waitUntilGone(pid) {
+  const deadline = Date.now() + PATIENCE_MS;
+  while (isRunning(pid)) {
+    assert.ok(Date.now() < deadline, 'the program under the command is still running');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
 test('a test that runs out its limit fails the run by name', async () => {
   await assert.rejects(fake(say(NOTICE) + FOREVER), (error) => {
     assert.ok(error instanceof GateError);
@@ -58,6 +71,63 @@ test('a test with a result in time passes', async () => {
 test('the end of a test binary forgets its tests, also one whose result line was garbled', async () => {
   await fake(`${say(`${NOTICE}test result: ok. 1 passed\n`)}process.exit(0);`);
 });
+
+test('a new test binary forgets the tests of one that aborted', async () => {
+  await fake(say(`${NOTICE}running 1 test\n`) + OUTLASTS_LIMIT);
+});
+
+for (const mode of ['should panic', 'compile fail', 'compile']) {
+  test(`a result that adds "${mode}" to the name counts`, async () => {
+    await fake(say(`${NOTICE}test a::hangs - ${mode} ... ok\n`) + OUTLASTS_LIMIT);
+  });
+}
+
+test('a limit that runs out after the program ended still names the test', async () => {
+  const script = `${startChild({ stdio: 'inherit', detached: true })}${say(NOTICE)}process.exit(0);`;
+  let pid = 0;
+  await assert.rejects(
+    fake(script, {
+      limitMs: 50,
+      drainMs: 500,
+      output: {
+        write: (chunk) => {
+          pid ||= Number(/pid (\d+)/.exec(chunk)?.[1] ?? 0);
+        },
+      },
+    }),
+    /a::hangs/,
+  );
+  process.kill(pid);
+});
+
+test(
+  'closing the terminal stops the program under the command',
+  { skip: process.platform === 'win32' && 'Windows has no SIGHUP to send' },
+  async () => {
+    const module = new URL('./test-limit.mjs', import.meta.url).href;
+    const under = `console.log('pid ' + process.pid);${FOREVER}`;
+    const gate = spawn(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        `import { runWithTestLimit } from ${JSON.stringify(module)};
+         await runWithTestLimit(process.execPath, ['-e', ${JSON.stringify(under)}]);`,
+      ],
+      { stdio: ['ignore', 'pipe', 'inherit'] },
+    );
+    const pid = await new Promise((resolve) => {
+      let printed = '';
+      gate.stdout.on('data', (chunk) => {
+        printed += chunk;
+        const found = /pid (\d+)/.exec(printed);
+        if (found) resolve(Number(found[1]));
+      });
+    });
+    gate.kill('SIGHUP');
+    await waitUntilGone(pid);
+  },
+);
 
 test('a test name with spaces, as a doctest has, is named whole', async () => {
   const notice =
@@ -75,7 +145,7 @@ test('a failing run reports its status', async () => {
 test('a hang stops the program under the command too', async () => {
   const script = startChild({ stdio: 'inherit' }) + say(NOTICE) + FOREVER;
   const pid = await printedPid((output) => assert.rejects(fake(script, { output }), GateError));
-  assert.ok(!isRunning(pid), 'the program under the command is still running');
+  await waitUntilGone(pid);
 });
 
 test('a child left behind holding the output does not hold up the end of the run', async () => {
