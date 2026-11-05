@@ -160,6 +160,11 @@ impl ResumeState {
         self.ranged && ranged && total.is_some() && self.describes(total, current)
     }
 
+    /// Whether this state says all of a file the server still describes as `total` and `current` is on disk, which needs no ranges. Only with a known size: the finish sets the part file to the size it is given.
+    pub fn holds_all_of(&self, total: Option<u64>, current: &Validators) -> bool {
+        self.remaining.is_empty() && total.is_some() && self.describes(total, current)
+    }
+
     /// Whether `total` and `current` are what this state was saved with.
     pub fn describes(&self, total: Option<u64>, current: &Validators) -> bool {
         let same = |saved: &Option<String>, now: &Option<String>| match (saved, now) {
