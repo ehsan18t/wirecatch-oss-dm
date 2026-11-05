@@ -45,6 +45,8 @@ export type { ExtensionSettingsPatch } from './generated/ExtensionSettingsPatch'
 export type { FileExistsAnswer } from './generated/FileExistsAnswer';
 export type { FileExistsChoice } from './generated/FileExistsChoice';
 export type { FileExistsQuestion } from './generated/FileExistsQuestion';
+export type { FileTypeChoice } from './generated/FileTypeChoice';
+export type { FileTypeQuestion } from './generated/FileTypeQuestion';
 export type { FinishNoticeTime } from './generated/FinishNoticeTime';
 export type { FinishedGroup } from './generated/FinishedGroup';
 export type { FinishedList } from './generated/FinishedList';

@@ -1130,6 +1130,7 @@ impl Manager {
                         Category::Video
                     }),
                     hint_name: None,
+                    confirmed_name: None,
                 },
                 placed: Placed::answered(pending.placed.clone(), selection.queue),
                 start: !selection.later,
