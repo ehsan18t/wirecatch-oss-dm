@@ -189,6 +189,10 @@ const MIGRATIONS: &[&str] = &[
     r"
     ALTER TABLE downloads ADD COLUMN files TEXT NOT NULL DEFAULT '{}';
 ",
+    // Whether a schedule without a stop time is in a run (`QueueStatus`, D155).
+    r"
+    ALTER TABLE queues ADD COLUMN running_until_empty INTEGER NOT NULL DEFAULT 0;
+",
 ];
 
 const SETTINGS_KEY: &str = "app";
@@ -1286,7 +1290,7 @@ fn load_proxy_servers(
 /// In sidebar order, without queues that cannot be read, whose settings are kept.
 fn load_queues(conn: &Connection, kept: &mut Kept) -> Result<Vec<Queue>> {
     let mut stmt = conn.prepare(
-        "SELECT id, is_default, paused, running_outside_schedule, settings
+        "SELECT id, is_default, paused, running_outside_schedule, settings, running_until_empty
          FROM queues ORDER BY position",
     )?;
     let mut queues = Vec::new();
@@ -1469,8 +1473,8 @@ fn forgotten_origin() -> Origin {
 fn save_queues(tx: &Transaction<'_>, queues: &[Queue]) -> rusqlite::Result<()> {
     tx.execute("DELETE FROM queues", [])?;
     let mut stmt = tx.prepare_cached(
-        "INSERT INTO queues (id, position, is_default, paused, running_outside_schedule, settings)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        "INSERT INTO queues (id, position, is_default, paused, running_outside_schedule, settings, running_until_empty)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
     )?;
     for (position, q) in (0i64..).zip(queues) {
         stmt.execute(params![
@@ -1480,6 +1484,7 @@ fn save_queues(tx: &Transaction<'_>, queues: &[Queue]) -> rusqlite::Result<()> {
             q.status.paused,
             q.status.running_outside_schedule,
             to_json(&q.settings),
+            q.status.running_until_empty,
         ])?;
     }
     Ok(())
@@ -1506,6 +1511,7 @@ fn read_queue(row: &Row<'_>) -> rusqlite::Result<Option<Queue>> {
         status: QueueStatus {
             paused: row.get(2)?,
             running_outside_schedule: row.get(3)?,
+            running_until_empty: row.get(5)?,
         },
     }))
 }
@@ -2256,6 +2262,7 @@ mod tests {
             status: QueueStatus {
                 paused: true,
                 running_outside_schedule: false,
+                running_until_empty: true,
             },
         };
         let settings = sample_settings();
@@ -2916,6 +2923,7 @@ mod tests {
                     QueueStatus {
                         paused: true,
                         running_outside_schedule: true,
+                        running_until_empty: false,
                     }
                 ),
                 queue(5, false, QueueSettings::new("Broken"), running),

@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { capture, cargo, cargoMetadata, GateError, options, ROOT, run } from './process.mjs';
+import { runWithTestLimit } from './test-limit.mjs';
 
 /** Features every workspace-wide cargo command needs. `test-overrides` exists for the bridge's end-to-end tests only and is never enabled in a build. */
 export const TEST_FEATURES = ['--features', 'wirecatch-bridge/test-overrides'];
@@ -117,7 +118,9 @@ function workspaceBridge() {
 }
 
 function test() {
-  run('cargo', testArguments(options), { env: { [bridgeVariable()]: workspaceBridge() } });
+  return runWithTestLimit('cargo', testArguments(options), {
+    env: { [bridgeVariable()]: workspaceBridge() },
+  });
 }
 
 /** The published engine still builds with the oldest Rust its manifest promises. */
@@ -175,7 +178,8 @@ export const RUST_CHECKS = {
     ),
   test,
   // The engine with its off-by-default http3 feature, which no other check compiles into a test.
-  'test-http3': () => cargo('test', '-p', ENGINE_CRATE, '--locked', '--features', 'http3'),
+  'test-http3': () =>
+    runWithTestLimit('cargo', ['test', '-p', ENGINE_CRATE, '--locked', '--features', 'http3']),
   // With every feature, as docs.rs builds them (`package.metadata.docs.rs` in the engine's Cargo.toml).
   'engine-docs': () =>
     run('cargo', ['doc', '-p', ENGINE_CRATE, '--no-deps', '--locked', '--all-features'], {

@@ -8,8 +8,9 @@ use wirecatch_protocol::app::{DownloadStatus, TimeOfDay, WaitReason};
 use wirecatch_protocol::{DownloadId, QueueId};
 
 use super::Manager;
-use super::state::{Entry, State, Stop};
+use super::state::{Entry, Hold, State, Stop};
 use wirecatch_queues::plan::{self, Activity, DownloadView, QueueView};
+use wirecatch_queues::schedule;
 
 /// Why a queue may not start downloads right now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,11 +76,7 @@ impl Manager {
     fn evaluate_gates(&self, state: &mut State) -> Vec<GateView> {
         let now = self.inner.clock.local_now();
         let since = std::mem::replace(&mut state.last_checked, now);
-        let busy: HashSet<QueueId> = state
-            .unfinished()
-            .filter_map(view_of)
-            .map(|d| d.queue)
-            .collect();
+        let busy = queues_with_work(state);
         let mut flags_changed = false;
         let gates = state
             .queues
@@ -89,10 +86,14 @@ impl Manager {
                 let settings = &slot.queue.settings;
                 let status = &mut slot.queue.status;
                 let has_work = busy.contains(&id);
-                // Always evaluated, so a start time crossed meanwhile is not missed.
-                let in_schedule =
-                    slot.gate
-                        .is_open(settings.schedule.as_ref(), since, now, has_work);
+                // Always followed, so a start time crossed meanwhile is not missed.
+                let was_running = status.running_until_empty;
+                let in_schedule = settings.schedule.as_ref().is_none_or(|schedule| {
+                    let run = &mut status.running_until_empty;
+                    schedule::follow_run(schedule, since, now, has_work, run);
+                    schedule::allows(schedule, *run, now)
+                });
+                flags_changed |= was_running != status.running_until_empty;
                 if status.running_outside_schedule && (!has_work || status.paused) {
                     status.running_outside_schedule = false;
                     flags_changed = true;
@@ -204,6 +205,32 @@ fn wait_reason(
         },
         None => in_line,
     }
+}
+
+/// The queues whose run has something left: a download that runs or waits, or one that goes on once its files have moved, its question is answered or its page is read.
+fn queues_with_work(state: &State) -> HashSet<QueueId> {
+    let queue_of = |id: &DownloadId| state.downloads.get(id).map(|entry| entry.row.queue);
+    let planned = state.unfinished().filter_map(view_of).map(|d| d.queue);
+    let moving = state
+        .unfinished()
+        .filter(|entry| matches!(entry.hold, Hold::Moving(_)))
+        .map(|entry| entry.row.queue);
+    let asked = state
+        .file_exists
+        .values()
+        .filter_map(|asked| queue_of(&asked.question.download));
+    let pages = state
+        .media
+        .values()
+        .filter(|pending| !pending.replaces.is_empty())
+        .map(|pending| pending.placed.queue);
+    let arriving = state.arriving.iter().copied();
+    planned
+        .chain(moving)
+        .chain(asked)
+        .chain(pages)
+        .chain(arriving)
+        .collect()
 }
 
 /// Queued and not running, moving or being removed.

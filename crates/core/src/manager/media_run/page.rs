@@ -245,17 +245,33 @@ pub(super) async fn fetch_parts(
         .zip(rules)
         .map(|((f, role), rule)| fetch_part(job, f, role, rule, work, progress, cancel));
     let results = futures_util::future::join_all(parts).await;
+    parts_end(job, results, progress)
+}
+
+/// One attempt's end from how its parts ended. Run once all have ended: what a failure promises to keep depends on the part that ended last.
+pub(super) fn parts_end(
+    job: &Job,
+    results: Vec<Result<Option<PathBuf>, PartError>>,
+    progress: &MediaProgress,
+) -> Result<Option<Vec<PathBuf>>, PageError> {
     // Stopped wins over any error, and an error a fresh address would not fix
     // wins over a refused address.
     let mut files = Vec::new();
     let mut failed = None;
     let mut refused = None;
+    let folder = job.output.parent().unwrap_or(Path::new(""));
     for result in results {
         match result {
             Ok(Some(file)) => files.push(file),
             Ok(None) => return Ok(None),
-            Err(PageError::Failed(error)) => failed = failed.or(Some(error)),
-            Err(PageError::Refused { status }) => refused = refused.or(Some(status)),
+            Err(PartError::Transfer(e)) => {
+                let told = wirecatch_messages::describe(&e, folder, worked_so_far(progress));
+                failed = failed.or(Some(told));
+            }
+            Err(PartError::Page(PageError::Failed(error))) => failed = failed.or(Some(error)),
+            Err(PartError::Page(PageError::Refused { status })) => {
+                refused = refused.or(Some(status));
+            }
         }
     }
     if let Some(error) = failed {
@@ -277,6 +293,26 @@ fn worked_so_far(progress: &MediaProgress) -> wirecatch_messages::Worked {
     }
 }
 
+/// Why one format did not finish.
+#[derive(Debug)]
+pub(super) enum PartError {
+    Page(PageError),
+    /// A failure of the transfer, put in words once every part has ended.
+    Transfer(EngineError),
+}
+
+impl From<PageError> for PartError {
+    fn from(error: PageError) -> Self {
+        PartError::Page(error)
+    }
+}
+
+impl From<UserError> for PartError {
+    fn from(error: UserError) -> Self {
+        PartError::Page(error.into())
+    }
+}
+
 /// Downloads one format into the work folder: `Ok(None)` when stopped. A part
 /// finished in an earlier run or attempt (its `.done` marker names its file) is
 /// not downloaded again.
@@ -288,7 +324,7 @@ pub(super) async fn fetch_part(
     work: &Path,
     progress: &MediaProgress,
     cancel: &CancellationToken,
-) -> Result<Option<PathBuf>, PageError> {
+) -> Result<Option<PathBuf>, PartError> {
     let marker = work.join(workdir::marker(role));
     if let Ok(name) = tokio::fs::read_to_string(&marker).await {
         let file = work.join(name.trim());
@@ -322,7 +358,7 @@ pub(super) async fn fetch_part(
             Ok(wirecatch_streams::Outcome::Completed { path, .. }) => path,
             Ok(_) | Err(wirecatch_streams::Error::Cancelled) => return Ok(None),
             Err(wirecatch_streams::Error::Request(e)) if address_gone(&e) => {
-                return Err(refused(&e));
+                return Err(refused(&e).into());
             }
             Err(e) => {
                 return Err(describe::stream(&e, work, job.tools.as_ref(), job.chosen_by).into());
@@ -345,7 +381,7 @@ pub(super) async fn fetch_part(
         {
             Ok(Outcome::Completed { .. }) => {
                 if holds_no_media(job, &path).await? {
-                    return Err(PageError::Refused { status: None });
+                    return Err(PageError::Refused { status: None }.into());
                 }
                 progress.finish_file(&file);
                 path
@@ -354,12 +390,8 @@ pub(super) async fn fetch_part(
             Err(EngineError::PrivateNetwork { .. }) => {
                 return Err(wirecatch_messages::private_network(job.chosen_by).into());
             }
-            Err(e) if address_gone(&e) => return Err(refused(&e)),
-            Err(e) => {
-                let folder = job.output.parent().unwrap_or(Path::new(""));
-                let told = wirecatch_messages::describe(&e, folder, worked_so_far(progress));
-                return Err(told.into());
-            }
+            Err(e) if address_gone(&e) => return Err(refused(&e).into()),
+            Err(e) => return Err(PartError::Transfer(e)),
         }
     };
     let name = crate::naming::file_name_of(&file);

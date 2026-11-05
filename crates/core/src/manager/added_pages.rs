@@ -19,6 +19,7 @@ use super::downloads::parse_web_url;
 use super::media::{Held, MediaPending, MediaSource};
 use super::placement::{Candidate, Placed, QueueRequest};
 use super::state::Entry;
+use super::state::State;
 use crate::error::Result;
 use crate::naming;
 
@@ -102,10 +103,10 @@ impl Manager {
     /// out of the list, and reads that page for its video instead; with no video on
     /// it, it downloads as the page it is ([`add_page_as_file`](Self::add_page_as_file)).
     /// Its saved row stays until the video is decided, as the question lives only in memory: after a quit the download runs again and asks again.
-    pub(super) fn read_answered_page(&self, id: DownloadId, page: AnsweredPage) {
-        let Ok(mut state) = self.lock_open() else {
+    pub(super) fn read_answered_page(&self, state: &mut State, id: DownloadId, page: AnsweredPage) {
+        if state.closed {
             return;
-        };
+        }
         let Some(entry) = state.remove_entry(id) else {
             return;
         };
@@ -132,7 +133,7 @@ impl Manager {
             replaces: vec![id],
             request: page.placed.request(),
         };
-        self.hold_media(&mut state, source, page.placed, held);
+        self.hold_media(state, source, page.placed, held);
     }
 
     /// Downloads a page on which no video was found as the page it is, without

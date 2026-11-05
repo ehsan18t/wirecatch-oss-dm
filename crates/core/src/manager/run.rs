@@ -339,11 +339,11 @@ impl Manager {
             self.on_found(state, id, &found);
         }
         self.save(state, id);
-        self.reconcile(state);
-        drop(guard);
+        // First: the plan must see the read, or the run of a queue with nothing else left ends here (D155.3).
         if let Some(page) = answered_page {
-            self.read_answered_page(id, page);
+            self.read_answered_page(state, id, page);
         }
+        self.reconcile(state);
     }
 
     /// A run that did not finish was stopped by `stop`: what cancelling or starting over leaves to do.

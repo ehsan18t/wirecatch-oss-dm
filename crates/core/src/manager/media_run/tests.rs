@@ -11,8 +11,10 @@ use wirecatch_media::{MediaJob, MediaProgress, Pick};
 use wirecatch_sites::local_network::ChosenBy;
 
 use super::network::{format_rule, network_rule};
-use super::page::{address_gone, fetch_parts, formats_ytdlp_takes, part_name, part_options};
-use super::placement::{self, Placed, final_path, place, remember_placing};
+use super::page::{
+    PartError, address_gone, fetch_parts, formats_ytdlp_takes, part_name, part_options, parts_end,
+};
+use super::placement::{self, Placed, final_path, place_noting, remember_placing};
 use super::workdir;
 use super::*;
 use crate::headers::Origin;
@@ -37,6 +39,10 @@ fn job() -> Job {
         file_work: FileWork::new(),
         taken: Taken::KeepBoth,
     }
+}
+
+fn place(file: &Path, planned: &Path, reserve: &Reserve, taken: Taken) -> std::io::Result<Placed> {
+    place_noting(file, planned, reserve, taken, &|_, _| Ok(()))
 }
 
 #[test]
@@ -811,21 +817,25 @@ async fn a_part_that_stalls_before_its_first_byte_is_not_promised_a_kept_part() 
     assert!(!told.contains("is kept"), "{told}");
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_finished_part_is_kept_when_the_other_cannot_continue() {
-    let finishing = wirecatch_test_support::http::TestServer::start(
-        wirecatch_test_support::test_data(1024),
-        wirecatch_test_support::http::Config::default(),
-    )
-    .await;
-    let stalling = stalling_server(false).await;
-    let told = failure_of_parts(&[
-        format_at("137", &finishing.url("v.mp4")),
-        format_at("140", &stalling.url("a.m4a")),
-    ])
-    .await;
-    assert!(told.contains("stopped sending data"), "{told}");
-    assert!(told.contains("is kept"), "{told}");
+/// The part that fails first is worded by what the other, which ended after it, leaves behind.
+#[test]
+fn a_failure_promises_the_part_that_finished_after_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let job = job_at(dir.path(), &dir.path().join("Clip.mp4"), LINK, Taken::Ask);
+    let progress = MediaProgress::default();
+    progress.add_done(1024);
+    let stalled = EngineError::Stalled {
+        after: Duration::from_secs(1),
+    };
+    let results = vec![
+        Err(PartError::Transfer(stalled)),
+        Ok(Some(dir.path().join("video.mp4"))),
+    ];
+    let Err(PageError::Failed(told)) = parts_end(&job, results, &progress) else {
+        panic!("not a failure");
+    };
+    assert!(told.message.contains("stopped sending data"), "{told:?}");
+    assert!(told.message.contains("is kept"), "{told:?}");
 }
 
 /// A work folder holding a finished `Clip.mp4` beside its planned path.
@@ -904,6 +914,69 @@ async fn a_crash_after_moving_completes_at_the_noted_name() {
     assert!(!work.exists());
 }
 
+/// `Clip.mp4` placed with its note, and `subtitle-0.srt` in the work folder ready to follow it as English.
+fn subtitle_waiting(dir: &Path) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
+    let (output, work, file) = finished_in_work(dir);
+    let subtitle = work.join(workdir::converted_subtitle(0));
+    std::fs::write(&subtitle, b"words").unwrap();
+    let sidecars = [(subtitle.clone(), "en".to_owned())];
+    remember_placing(&work, LINK, &file, &sidecars).unwrap();
+    placement::note_move(&work, placement::Moving::ToFreeName, &output).unwrap();
+    std::fs::rename(&file, &output).unwrap();
+    let beside = dir.join("Clip.en.srt");
+    (output, work, subtitle, beside)
+}
+
+/// The subtitles listed on the row a next run completes.
+async fn placed_subtitles(dir: &Path, output: &Path) -> Vec<PathBuf> {
+    let end = next_run(job_at(dir, output, LINK, Taken::KeepBoth)).await;
+    let Ok(MediaDone::Completed { sidecars, .. }) = end else {
+        panic!("{end:?}");
+    };
+    sidecars
+}
+
+/// Dying after a subtitle's link to its name and before its discard leaves it in both places, and keeping both would give `Clip.en (1).srt`.
+#[tokio::test]
+async fn a_crash_after_linking_a_subtitle_does_not_make_a_second_copy() {
+    let dir = tempfile::tempdir().unwrap();
+    let (output, work, subtitle, beside) = subtitle_waiting(dir.path());
+    let name = crate::naming::file_name_of(&subtitle);
+    placement::note_subtitle_move(&work, &name, placement::Moving::ToFreeName, &beside).unwrap();
+    std::fs::hard_link(&subtitle, &beside).unwrap();
+
+    assert_eq!(placed_subtitles(dir.path(), &output).await, [beside]);
+    assert!(!work.exists());
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
+}
+
+/// Dying once the subtitle left the work folder: the note says where it went, so the row still lists it.
+#[tokio::test]
+async fn a_crash_after_moving_a_subtitle_lists_it_at_the_noted_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let (output, work, subtitle, beside) = subtitle_waiting(dir.path());
+    let name = crate::naming::file_name_of(&subtitle);
+    placement::note_subtitle_move(&work, &name, placement::Moving::ToFreeName, &beside).unwrap();
+    std::fs::rename(&subtitle, &beside).unwrap();
+
+    assert_eq!(placed_subtitles(dir.path(), &output).await, [beside]);
+}
+
+/// A note left by a move that failed says nothing of a file that later took that name: that file stays, and the subtitle takes a free name.
+#[tokio::test]
+async fn a_subtitles_note_never_claims_another_file_at_that_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let (output, work, subtitle, beside) = subtitle_waiting(dir.path());
+    let name = crate::naming::file_name_of(&subtitle);
+    placement::note_subtitle_move(&work, &name, placement::Moving::ToFreeName, &beside).unwrap();
+    std::fs::write(&beside, b"someone else's").unwrap();
+
+    let placed = placed_subtitles(dir.path(), &output).await;
+    assert_eq!(placed, [dir.path().join("Clip.en (1).srt")]);
+    assert_eq!(std::fs::read(&placed[0]).unwrap(), b"words");
+    assert_eq!(std::fs::read(&beside).unwrap(), b"someone else's");
+}
+
 /// Dying just before replacing: the old file is still at the name, so the replace still happens.
 #[tokio::test]
 async fn a_crash_before_replacing_still_replaces() {
@@ -968,7 +1041,7 @@ fn every_move_is_noted_before_it_happens() {
             Ok(())
         };
         let free: Reserve = Arc::new(|_: &Path, _| true);
-        placement::place_noting(&file, &output, &free, taken, &note).unwrap();
+        place_noting(&file, &output, &free, taken, &note).unwrap();
         assert_eq!(notes.get(), 1, "{taken:?}");
     }
 }
@@ -988,7 +1061,7 @@ fn a_move_that_could_not_be_noted_gives_its_name_back() {
         true
     });
     let note = |_: placement::Moving, _: &Path| Err(std::io::Error::other("no room"));
-    assert!(placement::place_noting(&file, &output, &reserve, Taken::KeepBoth, &note).is_err());
+    assert!(place_noting(&file, &output, &reserve, Taken::KeepBoth, &note).is_err());
     assert_eq!(given_back.load(std::sync::atomic::Ordering::Relaxed), 1);
     assert!(file.is_file());
 }

@@ -248,7 +248,7 @@ impl Manager {
             if let Ok(entry) = state.entry_mut(*id) {
                 entry.hold.begin_remove();
                 begun.push(*id);
-                if entry.row.status != DownloadStatus::Completed {
+                if entry.row.status != DownloadStatus::Completed || entry.files.moving.is_some() {
                     let deletion = entry.pending_deletion();
                     state.pending_deletions.insert(*id, deletion);
                 }

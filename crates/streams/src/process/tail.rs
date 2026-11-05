@@ -9,8 +9,6 @@ use std::fmt;
 use wirecatch_engine::units::KIB_USIZE;
 use wirecatch_logging::redact;
 
-use super::NO_REASON;
-
 /// The most of standard error a run keeps, in bytes: the last lines that fit. A line longer than
 /// this is cut to it.
 pub const STDERR_TAIL_BYTES: usize = 8 * KIB_USIZE;
@@ -66,27 +64,9 @@ impl StderrTail {
             .or_else(|| self.lines.back())
             .map(|l| l.trim())
     }
-
-    /// The last `count` lines that say something, joined with ` / ` and cut to
-    /// [`MAX_REASON_CHARS`], for a person; [`NO_REASON`] when there are none.
-    #[must_use]
-    pub fn summary(&self, count: usize) -> String {
-        let said: Vec<&str> = self
-            .lines
-            .iter()
-            .map(|l| l.trim())
-            .filter(|l| !l.is_empty())
-            .collect();
-        let last = said[said.len().saturating_sub(count)..].join(" / ");
-        if last.is_empty() {
-            NO_REASON.into()
-        } else {
-            for_a_person(&last)
-        }
-    }
 }
 
-/// Every line kept, joined with ` / ` on one line, for the log.
+/// Every line kept, joined with ` / ` on one line, for the log and a wording table.
 impl fmt::Display for StderrTail {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for (i, line) in self.lines.iter().enumerate() {
@@ -186,13 +166,5 @@ mod tests {
         assert!(reason.chars().count() <= MAX_REASON_CHARS, "{reason}");
         assert!(reason.ends_with('…'));
         assert_eq!(for_a_person("short"), "short");
-
-        let mut tail = StderrTail::default();
-        assert_eq!(tail.summary(3), NO_REASON);
-        for n in 0..5 {
-            tail.push(&format!("line {n}"));
-        }
-        tail.push("");
-        assert_eq!(tail.summary(2), "line 3 / line 4");
     }
 }

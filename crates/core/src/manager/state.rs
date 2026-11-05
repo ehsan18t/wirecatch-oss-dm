@@ -22,7 +22,6 @@ use wirecatch_protocol::extension::NewDownload;
 use wirecatch_protocol::proxy::{ProxyServer, ProxyUse};
 use wirecatch_protocol::wire::QueueSummary;
 use wirecatch_protocol::{DownloadId, ProxyServerId, QuestionId, QueueId};
-use wirecatch_queues::schedule::Gate;
 use wirecatch_records::answers::Answers;
 pub(super) use wirecatch_records::answers::{Expectation, NextRun, OnExisting};
 use wirecatch_records::files::{DownloadFiles, PendingDeletion};
@@ -61,6 +60,8 @@ pub(super) struct State {
     pub computer_proxy: ComputerProxy,
     /// Every unfinished download, and any finished since [`State::prune_finished`] last ran: the scheduler visits these, not the whole history (CORE-10). A finished download never becomes unfinished again, so only adding one puts it here.
     pub unfinished: BTreeSet<DownloadId>,
+    /// The queue of each download being added in place of one that gave way to its page: out of `media`, and not yet in the list (D155.3).
+    pub arriving: Vec<QueueId>,
     pub pending: Questions<Pending>,
     /// Media captures being looked at, waiting for the media add-on, or waiting
     /// for the user's choice of quality. Their ids come from the same counter as
@@ -152,7 +153,6 @@ pub(super) struct QueueSlot {
     pub queue: Queue,
     /// Shared by every download of the queue; a new limit applies to running downloads at once.
     pub limiter: Arc<RateLimiter>,
-    pub gate: Gate,
 }
 
 impl QueueSlot {
@@ -160,7 +160,6 @@ impl QueueSlot {
         Self {
             limiter: Arc::new(RateLimiter::new(queue.settings.speed_limit.own())),
             queue,
-            gate: Gate::default(),
         }
     }
 }
@@ -790,6 +789,8 @@ impl Entry {
         PendingDeletion {
             path: self.path().to_path_buf(),
             media: self.media_job.is_some(),
+            moving_to: self.files.moving.as_ref().map(|m| m.path.clone()),
+            finished: self.row.status == DownloadStatus::Completed,
         }
     }
 

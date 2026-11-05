@@ -1175,6 +1175,8 @@ async fn a_start_finishes_deleting_what_a_kill_left() {
     store.save_pending_deletions(vec![wirecatch_records::files::PendingDeletion {
         path: path.clone(),
         media: false,
+        moving_to: None,
+        finished: false,
     }]);
     store.close(PATIENCE).await;
 
@@ -1189,6 +1191,136 @@ async fn a_start_finishes_deleting_what_a_kill_left() {
     let (store, snapshot) = wirecatch_store::Store::open(&data, Box::new(|_| {})).unwrap();
     assert_eq!(snapshot.pending_deletions, []);
     store.close(PATIENCE).await;
+}
+
+/// Makes moves wait until the returned sender is dropped; the `Notify` says one has reached the disk.
+fn hold_moves(manager: &Manager) -> (Arc<Notify>, std::sync::mpsc::Sender<()>) {
+    let entered = Arc::new(Notify::new());
+    let (release, held) = std::sync::mpsc::channel::<()>();
+    let held = std::sync::Mutex::new(held);
+    let told = entered.clone();
+    manager.use_fake_mover(Arc::new(move |from, to| {
+        told.notify_one();
+        assert!(
+            held.lock().unwrap().recv().is_err(),
+            "ends when the sender is dropped"
+        );
+        std::fs::rename(from, to)
+    }));
+    (entered, release)
+}
+
+/// The deletions on record in the database under `dir`, once what is queued is written.
+fn deletions_on_disk(manager: &Manager, dir: &Path) -> String {
+    assert!(manager.inner.store.wait_for_writes(PATIENCE));
+    rusqlite::Connection::open(dir.join("data").join(crate::DATABASE_FILE))
+        .unwrap()
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'pending_deletions'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or_default()
+}
+
+/// The row and its record of the move are gone by then, so only the deletion can tell a start where a kill left a copy.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_removal_during_a_finished_files_move_records_its_target() {
+    let (manager, dir) =
+        manager_with(obedient, Duration::from_secs(5), DEFAULT_CAPTURE_TIMEOUT).await;
+    let mut request = add_request("https://example.com/big.iso");
+    request.start = false;
+    let id = manager.add_download(request).await.unwrap();
+    let old_path = PathBuf::from(&manager.lock().downloads[&id].row.path);
+    std::fs::create_dir_all(old_path.parent().unwrap()).unwrap();
+    std::fs::write(&old_path, b"finished").unwrap();
+    {
+        let mut state = manager.lock();
+        let entry = state.downloads.get_mut(&id).unwrap();
+        super::run::mark_completed(entry, 8, wirecatch_protocol::UnixMillis(1));
+        manager.save(&mut state, id);
+    }
+    let (entered, release) = hold_moves(&manager);
+    let chosen = dir.path().join("chosen");
+    let moving = {
+        let (manager, chosen) = (manager.clone(), chosen.to_string_lossy().into_owned());
+        tokio::spawn(async move { manager.set_download_folder(id, &chosen).await })
+    };
+    tokio::time::timeout(PATIENCE, entered.notified())
+        .await
+        .expect("the move never began");
+
+    let removal = {
+        let manager = manager.clone();
+        tokio::spawn(async move { manager.remove(&[id], RemoveFiles::Keep).await })
+    };
+    wait_until("the removal to begin", || {
+        manager.list_downloads().is_empty()
+    })
+    .await;
+    let on_record = deletions_on_disk(&manager, dir.path());
+    assert!(on_record.contains("chosen"), "not on record: {on_record}");
+
+    drop(release);
+    moving.await.unwrap().unwrap();
+    removal.await.unwrap().unwrap();
+    assert_eq!(deletions_on_disk(&manager, dir.path()), "[]");
+    assert!(chosen.join("big.iso").exists(), "a kept file was deleted");
+}
+
+/// A removal can begin before the move has a record: the move adds it before its first file goes.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_move_that_starts_after_a_removal_began_records_its_target() {
+    let let_go = Arc::new(Notify::new());
+    let held = let_go.clone();
+    let engine = move |_run: FakeRun| -> EngineFuture {
+        let held = held.clone();
+        Box::pin(async move {
+            held.notified().await;
+            Err(EngineError::Cancelled)
+        })
+    };
+    let (manager, dir) = manager_with(engine, 2 * PATIENCE, DEFAULT_CAPTURE_TIMEOUT).await;
+    let id = manager
+        .add_download(add_request("https://example.com/big.iso"))
+        .await
+        .unwrap();
+    let old_path = PathBuf::from(&manager.lock().downloads[&id].row.path);
+    std::fs::create_dir_all(old_path.parent().unwrap()).unwrap();
+    let [part, _] = naming::partial_files(&old_path);
+    std::fs::write(&part, b"partial").unwrap();
+    let (entered, release) = hold_moves(&manager);
+    let chosen = dir.path().join("chosen");
+    let moving = {
+        let (manager, chosen) = (manager.clone(), chosen.to_string_lossy().into_owned());
+        tokio::spawn(async move { manager.set_download_folder(id, &chosen).await })
+    };
+    wait_until("the move to begin", || {
+        !manager.lock().downloads[&id].hold.is_free()
+    })
+    .await;
+    let removal = {
+        let manager = manager.clone();
+        tokio::spawn(async move { manager.remove(&[id], RemoveFiles::Keep).await })
+    };
+    wait_until("the removal to begin", || {
+        manager.list_downloads().is_empty()
+    })
+    .await;
+
+    let_go.notify_one();
+    tokio::time::timeout(PATIENCE, entered.notified())
+        .await
+        .expect("the move never began");
+    let on_record = deletions_on_disk(&manager, dir.path());
+    assert!(on_record.contains("chosen"), "not on record: {on_record}");
+
+    drop(release);
+    moving.await.unwrap().unwrap();
+    removal.await.unwrap().unwrap();
+    assert_eq!(deletions_on_disk(&manager, dir.path()), "[]");
+    let [moved_part, _] = naming::partial_files(&chosen.join("big.iso"));
+    assert!(!moved_part.exists(), "the part file stayed");
 }
 
 /// The record stays on disk until the files are gone.
@@ -1237,18 +1369,7 @@ async fn path_after_a_quit_during_a_move(
     home: &Path,
     chosen: &Path,
 ) -> PathBuf {
-    let entered = Arc::new(Notify::new());
-    let (release, held) = std::sync::mpsc::channel::<()>();
-    let held = std::sync::Mutex::new(held);
-    let told = entered.clone();
-    manager.use_fake_mover(Arc::new(move |from, to| {
-        told.notify_one();
-        assert!(
-            held.lock().unwrap().recv().is_err(),
-            "ends when the sender is dropped"
-        );
-        std::fs::rename(from, to)
-    }));
+    let (entered, release) = hold_moves(&manager);
     let moving = {
         let (manager, chosen) = (manager.clone(), chosen.to_string_lossy().into_owned());
         tokio::spawn(async move { manager.set_download_folder(id, &chosen).await })

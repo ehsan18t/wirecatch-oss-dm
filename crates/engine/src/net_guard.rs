@@ -723,6 +723,41 @@ mod tests {
         assert!(error.to_string().contains("blocked for safety"), "{error}");
     }
 
+    /// Listeners on every address `localhost` names, on one port. A client tries them in turn, and Windows takes about two seconds to refuse a closed loopback port, longer than a short stall limit; it also lets a test count a connection to any of them.
+    async fn listen_on_localhost() -> (Vec<tokio::net::TcpListener>, u16) {
+        const PORTS_TO_TRY: usize = 100;
+        let addresses: Vec<_> = tokio::net::lookup_host("localhost:0")
+            .await
+            .unwrap()
+            .collect();
+        'ports: for _ in 0..PORTS_TO_TRY {
+            let mut port = 0;
+            let mut listeners = Vec::new();
+            for address in &addresses {
+                match tokio::net::TcpListener::bind((address.ip(), port)).await {
+                    Ok(listener) => {
+                        port = listener.local_addr().unwrap().port();
+                        listeners.push(listener);
+                    }
+                    // A host without IPv6 can still list `::1` for `localhost`;
+                    // nothing connects there either.
+                    Err(error) if error.kind() == std::io::ErrorKind::AddrNotAvailable => {}
+                    // The port is free only on the address that picked it: another test may hold it on this one.
+                    Err(error) if error.kind() == std::io::ErrorKind::AddrInUse && port != 0 => {
+                        continue 'ports;
+                    }
+                    Err(error) => panic!("{}:{port}: {error}", address.ip()),
+                }
+            }
+            assert!(
+                !listeners.is_empty(),
+                "localhost has no address to listen on"
+            );
+            return (listeners, port);
+        }
+        panic!("no port was free on every address of localhost");
+    }
+
     /// A download's host resolves to a local address when it connects, as a
     /// rebinding name server would make it, after its check found it public. No
     /// connection of the download may reach that address, its first one included.
@@ -730,28 +765,7 @@ mod tests {
     async fn a_download_cannot_be_rebound_to_the_local_network() {
         use std::sync::atomic::{AtomicUsize, Ordering};
 
-        // Listen on every address `localhost` names, on one port. A client tries
-        // them in turn, and Windows takes about two seconds to refuse a closed
-        // loopback port, longer than the stall timeout below; it also lets the
-        // check count a connection to any of them.
-        let mut port = 0;
-        let mut listeners = Vec::new();
-        for addr in tokio::net::lookup_host("localhost:0").await.unwrap() {
-            match tokio::net::TcpListener::bind((addr.ip(), port)).await {
-                Ok(listener) => {
-                    port = listener.local_addr().unwrap().port();
-                    listeners.push(listener);
-                }
-                // A host without IPv6 can still list `::1` for `localhost`;
-                // nothing connects there either.
-                Err(error) if error.kind() == std::io::ErrorKind::AddrNotAvailable => {}
-                Err(error) => panic!("{addr}: {error}"),
-            }
-        }
-        assert!(
-            !listeners.is_empty(),
-            "localhost has no address to listen on"
-        );
+        let (listeners, port) = listen_on_localhost().await;
         let accepted = Arc::new(AtomicUsize::new(0));
         for listener in listeners {
             let counter = accepted.clone();
