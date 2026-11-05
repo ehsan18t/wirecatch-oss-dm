@@ -361,3 +361,34 @@ fn answer(file: &File, headers: &HeaderMap) -> (StatusCode, axum::http::Result<R
     };
     (status, response)
 }
+
+#[cfg(test)]
+mod tests {
+    use tokio::io::AsyncWriteExt;
+    use tokio::net::TcpStream;
+
+    use super::FileServer;
+    use crate::PATIENCE;
+
+    #[tokio::test]
+    async fn a_request_is_recorded_when_it_arrives() {
+        let server = FileServer::start().await;
+        server.put("file", b"body".as_slice());
+        server.hang("file", true);
+        let url = server.url("file");
+        let address = (url.host_str().unwrap(), url.port().unwrap());
+        let mut stream = TcpStream::connect(address).await.unwrap();
+        stream
+            .write_all(b"GET /file HTTP/1.1\r\nHost: test\r\n\r\n")
+            .await
+            .unwrap();
+        let deadline = std::time::Instant::now() + PATIENCE;
+        while server.requests("file") == 0 {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "a request still unanswered was not recorded"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    }
+}

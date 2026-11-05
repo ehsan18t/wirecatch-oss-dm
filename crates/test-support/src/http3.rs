@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use hyper::body::Incoming;
-use hyper::header::{ALT_SVC, CONTENT_LENGTH, CONTENT_RANGE, HeaderMap, RANGE};
+use hyper::header::{ALT_SVC, CONTENT_LENGTH, CONTENT_RANGE, HeaderMap};
 use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 
@@ -291,6 +291,8 @@ impl Drop for Blackhole {
 
 #[cfg(test)]
 mod tests {
+    use hyper::header::RANGE;
+
     use super::*;
 
     #[test]

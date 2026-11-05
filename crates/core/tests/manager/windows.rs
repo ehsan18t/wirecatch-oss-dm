@@ -4,7 +4,7 @@
 //! in the list.
 
 use wirecatch_protocol::app::{
-    AddonState, CaptureConfirmation, DownloadStatus, MediaSelection, OutputFormat, UiEvent,
+    AddonState, CaptureConfirmation, DownloadStatus, MediaSelection, UiEvent,
 };
 use wirecatch_protocol::extension::{MediaKind, NewDownload, WithdrawOutcome};
 
@@ -26,18 +26,8 @@ fn file_capture(url: String, handover: &str) -> NewDownload {
 
 fn pick(option: &str, later: bool) -> MediaSelection {
     MediaSelection {
-        option_id: option.into(),
-        folder: None,
-        file_name: None,
-        queue: None,
         later,
-        output: OutputFormat::default(),
-        audio_kbps: None,
-        subtitles: Vec::new(),
-        subtitle_files: false,
-        unembedded_subtitles: wirecatch_protocol::app::UnembeddedSubtitles::Files,
-        chapters: false,
-        every_video: None,
+        ..crate::media_support::select(option)
     }
 }
 

@@ -740,7 +740,39 @@ fn asks_too_much(headers: &HeaderMap, max: u64) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::path_key;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpStream;
+
+    use super::{Config, TestServer, path_key};
+    use crate::PATIENCE;
+
+    /// Asks `server` for a file and reads until it ends the answer, whole or broken off.
+    async fn ask(server: &TestServer) {
+        let url = server.url("file");
+        let address = (url.host_str().unwrap(), url.port().unwrap());
+        let mut stream = TcpStream::connect(address).await.unwrap();
+        stream
+            .write_all(b"GET /file HTTP/1.1\r\nHost: test\r\nConnection: close\r\n\r\n")
+            .await
+            .unwrap();
+        let mut answer = Vec::new();
+        let ended = tokio::time::timeout(PATIENCE, stream.read_to_end(&mut answer));
+        // A broken-off answer may end in a reset; what the server sent is what the test reads.
+        let (Ok(Ok(_) | Err(_)) | Err(_)) = ended.await;
+    }
+
+    #[tokio::test]
+    async fn drop_first_breaks_off_after_exactly_the_bytes_it_names() {
+        let config = Config {
+            drop_first: Some((1, 1000)),
+            ..Config::default()
+        };
+        let server = TestServer::start(vec![7; 10_000], config).await;
+        ask(&server).await;
+        ask(&server).await;
+        let sent: Vec<_> = server.stats.seen().iter().map(super::Seen::sent).collect();
+        assert_eq!(sent, [1000, 10_000]);
+    }
 
     #[test]
     fn a_path_has_one_leading_slash_however_it_is_given() {
