@@ -304,6 +304,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 277 | Switching kind can save a language this video lacks                                               | found while fixing                                                                                 | P3       | small  | Left by #440.                                                                                                    | none                                          | fixed                                                                                                                                          |
 | 278 | Keys can go dead when two things leave during a dialog                                            | found while fixing                                                                                 | P3       | small  | Left by #436.                                                                                                    | none                                          | fixed                                                                                                                                          |
 | 279 | No check catches a Settings row that wraps a lone word                                            | found while fixing                                                                                 | P3       | small  | Found while fixing #439.                                                                                         | none                                          | won't fix (no sound cheap check: the font comes from the system, rows flex with the window, and tests use a text system that measures nothing) |
+| 280 | A very long queue name runs past the window in the queue menu                                     | found while fixing                                                                                 | P3       | small  | Found while fixing #449.                                                                                         | none                                          | open                                                                                                                                           |
 
 ## Items
 
@@ -4828,6 +4829,18 @@ A description wrapping one word onto a second line was only seen in a capture.
 
 **Touches:** scripts/gate/.
 
+### 280. A very long queue name runs past the window in the queue menu
+
+P3, small, open.
+
+In a pop-up window's opened queue menu, a very long queue name runs past the window's right edge and is cut off. The closed picker truncates correctly, and its tooltip names the queue.
+
+**Fix:** Truncate the menu's entries to the window's width.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** crates/desktop/src/download_windows/view.rs, the queue menu.
+
 ## Fixed beyond the items
 
 Faults found while fixing and fixed in the same pull request:
@@ -4844,6 +4857,9 @@ Faults found while fixing and fixed in the same pull request:
 - "Remember these choices" and "Ask before each video" are separate controls (#439, D200).
 - Subtitles are one choice, Off, In the video or Separate files, linked to the format (#440, D195).
 - Main's lint and two racing tests (#378, #415, #417, #427, #433).
+- The media window's file name is real text you can edit (#447, D215).
+- The note about adding subtitles is gone (#448).
+- Pop-up windows cannot be resized (#449, D220).
 
 ## Suggestions
 

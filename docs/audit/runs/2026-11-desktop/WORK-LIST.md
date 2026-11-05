@@ -166,10 +166,13 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-156 | fix(core): save only languages a person picked     | `fix/picked-languages`           | 277                          | P3       | small  | none         | merged |
 | PR-157 | fix(desktop): keep keys when dialog parts leave    | `fix/focus-both-gone`            | 278                          | P3       | small  | none         | merged |
 | PR-158 | chore: check the width of Settings rows            | `chore/settings-row-width`       | 279                          | P3       | small  | none         | closed |
+| PR-159 | fix(desktop): keep long queue names in the menu    | `fix/queue-menu-width`           | 280                          | P3       | small  | none         | open   |
 
 ## Lanes
 
-No pull request is open: every item is fixed or recorded as won't fix.
+Only PR-159 is open. Every other item is fixed or recorded as won't fix.
+
+Not yet tried against the real thing: the subtitle choice on a real yt-dlp page and through the add-on install, Asking turned off on a real download, and every Linux path. Reports say what each pull request did not test.
 
 ## Pull requests
 
@@ -2073,3 +2076,15 @@ No pull request is open: every item is fixed or recorded as won't fix.
 - **Proof:** none
 - **Checks:** `node --test "scripts/gate/*.test.mjs"`
 - **Status:** closed without a pull request: no sound cheap check
+
+### PR-159 fix(desktop): keep long queue names in the menu
+
+- **Branch:** `fix/queue-menu-width`
+- **Items:** 280 (P3). Highest: P3.
+- **Effort:** small
+- **Why:** Own item, found while fixing #449.
+- **Depends on:** none
+- **Touches:** crates/desktop
+- **Proof:** none
+- **Checks:** `cargo test -p wirecatch-desktop`, `cargo clippy -p wirecatch-desktop`
+- **Status:** open
