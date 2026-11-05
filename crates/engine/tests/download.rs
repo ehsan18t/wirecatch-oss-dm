@@ -1294,6 +1294,41 @@ async fn a_resolved_path_resumes_later_as_exact_path() {
     dir.remove().unwrap();
 }
 
+/// A signed link read again (a video page's format, a refreshed link) continues the part file at its exact path while the server describes the same file.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_exact_path_resumes_from_a_freshly_signed_link() {
+    let server = TestServer::start(
+        test_data(3 * MIB_USIZE),
+        Config {
+            ranges: true,
+            etag: Some("\"same\"".into()),
+            ..Default::default()
+        },
+    )
+    .await;
+    server.hold_bodies_after(512 * KIB);
+    let dir = private_dir("fresh-link-resume").unwrap();
+    let target = dir.join("video.mp4");
+
+    let mut first = request(&server, "video?expire=1&sig=a", &dir, 4);
+    first.exact_path = Some(target.clone());
+    let paused = pause_midway(first, 512 * KIB).await.unwrap();
+    assert!(matches!(paused, Outcome::Paused { .. }), "got {paused:?}");
+
+    server.release_bodies();
+    let mut second = request(&server, "video?expire=2&sig=b", &dir, 4);
+    second.exact_path = Some(target.clone());
+    let (path, resumed_from) = match run(second).await.unwrap() {
+        Outcome::Completed {
+            path, resumed_from, ..
+        } => (path, resumed_from),
+        other => panic!("not completed: {other:?}"),
+    };
+    assert!(resumed_from >= 512 * KIB, "kept only {resumed_from} bytes");
+    assert_eq!(std::fs::read(path).unwrap(), server.data);
+    dir.remove().unwrap();
+}
+
 /// With the local network blocked, a download from a site (127.0.0.1 stands in
 /// for one on the internet: its own origin stays reachable) may not be
 /// redirected to a device at home, and the device is never contacted.
