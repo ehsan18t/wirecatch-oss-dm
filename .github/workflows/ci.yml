@@ -108,7 +108,7 @@ jobs:
           echo "WIRECATCH_TEST_FFMPEG=$ffmpeg" >> "$GITHUB_ENV"
           echo "WIRECATCH_REQUIRE_FFMPEG=1" >> "$GITHUB_ENV"
 
-      # Every test binary runs even after one fails, so one failure cannot hide what the others would show.
+      # Every test binary runs even after one fails, so one failure cannot hide what the others would show. Only a test that hangs ends the run, by name, well inside the job's limit (D174).
       # Windows leaves out `clippy-linux`, a partial Linux lint for machines without Linux: the Ubuntu job lints Linux in full.
       - name: Gate (Rust ${{ matrix.part }})
         run: node scripts/gate.mjs rust-${{ matrix.part }} --no-fail-fast ${{ runner.os == 'Windows' && matrix.part == 'lint' && '--skip=clippy-linux' || '' }}

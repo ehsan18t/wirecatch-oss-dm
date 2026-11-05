@@ -24,11 +24,11 @@ function invocation(command, args) {
   return { file: command, args, shell: false };
 }
 
-function describe(command, args) {
+export function describe(command, args) {
   return `\`${[command, ...args].join(' ')}\``;
 }
 
-function startFailure(command, args, error) {
+export function startFailure(command, args, error) {
   return new GateError(
     `Could not start ${describe(command, args)}: ${error.message}. Check that ${command} is installed and on your PATH.`,
   );
