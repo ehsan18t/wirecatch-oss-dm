@@ -400,32 +400,28 @@ impl MediaForm {
                 .any(|addon| addon.usable)
     }
 
-    fn join_note(&self, cx: &App) -> Option<String> {
+    fn addon_note(&self, cx: &App) -> Option<String> {
         if self.awaiting_addon.is_some() {
             return Some(
                 "Installing the media add-on. The download starts when it is ready.".to_owned(),
             );
         }
-        if !self.picked()?.needs_ffmpeg {
+        if !self.picked()?.needs_ffmpeg || !self.needs_install(cx) {
             return None;
         }
-        if self.needs_install(cx) {
-            if let Some(problem) = &self.install_problem {
-                return Some(problem.clone());
-            }
-            let library = self.library.read(cx);
-            let size = library
-                .addons
-                .first()
-                .and_then(|addon| addon.size)
-                .map_or_else(String::new, |size| format!(" ({})", format_bytes(size)));
-            return Some(format!(
-                "Video and audio download separately: {} first installs the media add-on{size} to merge them.",
-                host::CHANNEL.name(),
-            ));
+        if let Some(problem) = &self.install_problem {
+            return Some(problem.clone());
         }
-        (self.output.format == OutputFormat::Original)
-            .then(|| "Video and audio are merged into one file at the end.".to_owned())
+        let library = self.library.read(cx);
+        let size = library
+            .addons
+            .first()
+            .and_then(|addon| addon.size)
+            .map_or_else(String::new, |size| format!(" ({})", format_bytes(size)));
+        Some(format!(
+            "Video and audio download separately: {} first installs the media add-on{size} to merge them.",
+            host::CHANNEL.name(),
+        ))
     }
 
     fn answer(&mut self, later: bool, cx: &mut Context<'_, Self>) {
@@ -714,7 +710,7 @@ impl Render for MediaForm {
                 cx,
             ))
             .children(self.format_row(cx))
-            .children(self.join_note(cx).map(|text| note(text, cx)))
+            .children(self.addon_note(cx).map(|text| note(text, cx)))
             .children(conversion_note(fit.as_ref(), self.output.kbps).map(|text| note(text, cx)))
             .children(
                 quality_notes(fit.as_ref(), self.output.kbps)
