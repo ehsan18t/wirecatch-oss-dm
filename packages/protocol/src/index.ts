@@ -58,6 +58,7 @@ export type { HelloReply } from './generated/HelloReply';
 export type { ImportPreview } from './generated/ImportPreview';
 export type { ImportedFolder } from './generated/ImportedFolder';
 export type { JarCookie } from './generated/JarCookie';
+export type { LanguageSource } from './generated/LanguageSource';
 export type { Link } from './generated/Link';
 export type { LinkMatch } from './generated/LinkMatch';
 export type { LinkProtocol } from './generated/LinkProtocol';

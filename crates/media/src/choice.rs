@@ -661,7 +661,7 @@ fn nothing() -> UserError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wirecatch_protocol::app::UnembeddedSubtitles;
+    use wirecatch_protocol::app::{LanguageSource, UnembeddedSubtitles};
 
     fn page_offers(json: &str) -> Vec<Offer> {
         from_page(&serde_json::from_str::<Info>(json).unwrap()).unwrap()
@@ -991,7 +991,7 @@ mod tests {
             audio_kbps: None,
             subtitles: Vec::new(),
             subtitle_files: false,
-            languages_picked: false,
+            languages: LanguageSource::Kept,
             unembedded_subtitles: UnembeddedSubtitles::Files,
             chapters: false,
         }

@@ -5,8 +5,8 @@
 use gpui_kit::component::button::ToggleGroup;
 use gpui_kit::{App, ElementId, Window};
 use wirecatch_protocol::app::{
-    MediaChoice, MediaOption, MediaSelection, MediaSubtitle, OutputDefaults, OutputFit,
-    OutputFormat, StreamAction, SubtitleChoice, UnembeddedSubtitles,
+    LanguageSource, MediaChoice, MediaOption, MediaSelection, MediaSubtitle, OutputDefaults,
+    OutputFit, OutputFormat, StreamAction, SubtitleChoice, UnembeddedSubtitles,
 };
 use wirecatch_protocol::languages::LANGUAGES;
 use wirecatch_shell::host;
@@ -31,7 +31,7 @@ pub struct OutputChoice {
     /// What the person asked for; [`Self::subtitles_shown`] is what the format makes of it.
     pub wanted_subtitles: SubtitleChoice,
     /// Whether the person chose the languages, not the window while switching kind (D195.5).
-    pub languages_picked: bool,
+    pub languages: LanguageSource,
     pub unembedded: UnembeddedSubtitles,
     pub chapters: bool,
 }
@@ -44,7 +44,7 @@ impl OutputChoice {
             kbps: start.audio_kbps,
             subtitles: listed_subtitles(offered, &start.subtitles),
             wanted_subtitles: start.subtitle_choice(),
-            languages_picked: false,
+            languages: LanguageSource::Kept,
             unembedded: start.unembedded_subtitles,
             chapters: start.chapters,
         }
@@ -67,8 +67,9 @@ impl OutputChoice {
         offered: &[MediaSubtitle],
         saved: &OutputDefaults,
     ) {
-        self.languages_picked |=
-            self.wanted_subtitles == SubtitleChoice::Off && pick != SubtitleChoice::Off;
+        if self.wanted_subtitles == SubtitleChoice::Off && pick != SubtitleChoice::Off {
+            self.languages = LanguageSource::Picked;
+        }
         self.take_subtitles(pick, offered, saved);
     }
 
@@ -87,7 +88,7 @@ impl OutputChoice {
 
     /// The person changed the languages; with the last one gone, subtitles are off.
     pub fn pick_languages(&mut self, ids: &[String]) {
-        self.languages_picked = true;
+        self.languages = LanguageSource::Picked;
         self.subtitles = ids.to_vec();
         if ids.is_empty() {
             self.wanted_subtitles = SubtitleChoice::Off;
@@ -115,7 +116,7 @@ impl OutputChoice {
             ),
             subtitles: self.subtitles.clone(),
             wanted_subtitles: self.wanted_subtitles,
-            languages_picked: self.languages_picked,
+            languages: self.languages,
             unembedded: defaults.map_or(self.unembedded, |saved| saved.unembedded_subtitles),
             chapters: choice.chapters && defaults.is_some_and(|saved| saved.chapters),
         };
@@ -151,7 +152,7 @@ impl OutputChoice {
                 .collect()
         };
         selection.subtitle_files = self.wanted_subtitles == SubtitleChoice::Files;
-        selection.languages_picked = self.languages_picked;
+        selection.languages = self.languages;
         selection.unembedded_subtitles = self.unembedded;
         selection.chapters =
             self.chapters && choice.chapters && fit.is_some_and(|fit| fit.chapters);
@@ -574,7 +575,7 @@ mod tests {
             kbps: None,
             subtitles: vec!["a".to_owned()],
             wanted_subtitles: wanted,
-            languages_picked: false,
+            languages: LanguageSource::Kept,
             unembedded,
             chapters: false,
         }
@@ -672,7 +673,7 @@ mod tests {
         let picked_after = |act: &dyn Fn(&mut OutputChoice)| {
             let mut choice = choice_of(SubtitleChoice::Inside, UnembeddedSubtitles::Files);
             act(&mut choice);
-            choice.languages_picked
+            choice.languages == LanguageSource::Picked
         };
         let saved = OutputDefaults::default();
         assert!(picked_after(&|c| c.pick_languages(&["sub:en".to_owned()])));
@@ -695,7 +696,11 @@ mod tests {
         let off = choice_of(SubtitleChoice::Off, UnembeddedSubtitles::Files);
         let switched = off.switched(&option, &page, Some(&on));
         assert_eq!(switched.wanted_subtitles, SubtitleChoice::Files);
-        assert!(!switched.languages_picked, "the window switched it on");
+        assert_eq!(
+            switched.languages,
+            LanguageSource::Kept,
+            "the window switched it on"
+        );
     }
 
     #[test]

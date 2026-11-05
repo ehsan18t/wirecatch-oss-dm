@@ -7,8 +7,8 @@
 use serde::Serialize;
 
 use crate::app::{
-    MediaDefaults, MediaOption, MediaSelection, MediaSubtitle, OutputDefaults, OutputFormat,
-    QualityFallback, StreamAction, SubtitleChoice, VideoQuality,
+    LanguageSource, MediaDefaults, MediaOption, MediaSelection, MediaSubtitle, OutputDefaults,
+    OutputFormat, QualityFallback, StreamAction, SubtitleChoice, VideoQuality,
 };
 
 /// Where a video's quality window starts, and whether it must open.
@@ -135,7 +135,7 @@ impl OutputDefaults {
             audio_kbps: None,
             subtitles: self.subtitles_at_start(subtitles),
             subtitle_files: self.subtitles == SubtitleChoice::Files,
-            languages_picked: false,
+            languages: LanguageSource::Kept,
             unembedded_subtitles: self.unembedded_subtitles,
             chapters: chapters && self.chapters,
         }

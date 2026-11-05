@@ -7,8 +7,8 @@ use std::path::Path;
 use wirecatch_core::CoreError;
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{
-    AddonState, Category, DownloadStatus, FixAction, MediaChoice, MediaSelection, OutputFormat,
-    ProcessingStep, StreamAction, SubtitleChoice,
+    AddonState, Category, DownloadStatus, FixAction, LanguageSource, MediaChoice, MediaSelection,
+    OutputFormat, ProcessingStep, StreamAction, SubtitleChoice,
 };
 use wirecatch_protocol::extension::MediaKind;
 
@@ -204,7 +204,7 @@ async fn a_video_saved_as_mp4_is_converted_with_subtitles_and_chapters() -> Test
     let uhd = choice.options[0].id.clone();
     let mut pick = selection(&uhd, OutputFormat::Mp4);
     pick.subtitles = vec!["sub:en".into(), "auto:de-orig".into()];
-    pick.languages_picked = true;
+    pick.languages = LanguageSource::Picked;
     pick.chapters = true;
     let id = h.manager.choose_media(choice.id, pick).await.unwrap();
 
@@ -301,7 +301,7 @@ async fn audio_saved_as_mp3_gets_tags_a_cover_and_subtitle_files() -> TestResult
     let mut pick = selection(&audio.id, OutputFormat::Mp3);
     pick.audio_kbps = Some(320);
     pick.subtitles = vec!["sub:en".into()];
-    pick.languages_picked = true;
+    pick.languages = LanguageSource::Picked;
     let id = h.manager.choose_media(choice.id, pick).await.unwrap();
     let done = h.wait_status(id, DownloadStatus::Completed).await;
     assert_eq!(
