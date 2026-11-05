@@ -9,18 +9,21 @@ use gpui_kit::component::{
 };
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, ElementId, Entity, InteractiveElement as _, IntoElement, ParentElement as _,
-    StatefulInteractiveElement as _, Styled as _, div, px,
+    AnyElement, AnyWindowHandle, App, ElementId, Entity, InteractiveElement as _, IntoElement,
+    ParentElement as _, StatefulInteractiveElement as _, Styled as _, div, px,
 };
 use wirecatch_protocol::app::{ACCENTS, Accent, AppSettingsPatch, ClockFormat, Theme};
-use wirecatch_shell::host;
+use wirecatch_shell::{api, host};
 
 use super::super::backup_dialog::{self, Direction};
 use super::{change, choice, current, field_row, switch};
 use crate::app_update::{NoUpdates, Stage};
+use crate::backend::{Backend, said};
 use crate::library::Library;
-use crate::theme;
-use crate::ui::{Role, Typed as _, tokens};
+use crate::ui::{Callout, Role, Typed as _, tokens};
+use crate::{text, theme};
+
+const UP_TO_DATE: &str = "The Public Suffix List is up to date.";
 
 /// Narrow enough to leave the setting's title its room while an update downloads.
 const DOWNLOADING_WIDTH: f32 = 200.;
@@ -192,6 +195,80 @@ fn updates(library: &Entity<Library>) -> SettingGroup {
             )
             .keywords(["psl", "domains", "privacy"]),
         )
+        .item({
+            let library = library.clone();
+            SettingItem::render(move |_, _, cx| suffix_list_state(&library, cx))
+                .keywords(["psl", "domains", "check now"])
+        })
+}
+
+/// The list in use, its Check now, and a note when the last check failed (D44.4, D169).
+fn suffix_list_state(library: &Entity<Library>, cx: &App) -> AnyElement {
+    let read = library.read(cx);
+    let Some(list) = read.suffix_list else {
+        return div().into_any_element();
+    };
+    let keeps_trying = current(library, cx, |s| s.update_suffix_list, false);
+    let library = library.clone();
+    v_flex()
+        .gap_2()
+        .child(
+            h_flex()
+                .justify_between()
+                .gap_4()
+                .child(
+                    div()
+                        .text_role(Role::Meta, cx)
+                        .child(text::suffix_list_said(&list)),
+                )
+                .child(
+                    Button::new("check-suffix-list")
+                        .small()
+                        .outline()
+                        .label("Check now")
+                        .loading(read.suffix_list_checking)
+                        .on_click(move |_, window, cx| {
+                            check_suffix_list(&library, window.window_handle(), cx);
+                        }),
+                ),
+        )
+        .when(list.check_failed, |state| {
+            state.child(Callout::danger(if keeps_trying {
+                "The last check failed, so a newer list may exist. It will be tried again in a day."
+            } else {
+                "The last check failed, so a newer list may exist."
+            }))
+        })
+        .into_any_element()
+}
+
+/// Checks whatever the setting says, since the person asked (D44.4). The answer also shows in the line above the button.
+fn check_suffix_list(library: &Entity<Library>, window: AnyWindowHandle, cx: &mut App) {
+    library.update(cx, |library, cx| {
+        library.suffix_list_checking = true;
+        cx.notify();
+    });
+    let library = library.clone();
+    let done = Backend::run(cx, |manager| async move {
+        api::check_suffix_list(&manager).await
+    });
+    cx.spawn(async move |cx| {
+        let told = match said(done.await) {
+            Some(Ok(_)) => Some(UP_TO_DATE.to_owned()),
+            Some(Err(refused)) => Some(refused),
+            None => None,
+        };
+        library.update(cx, |library, cx| {
+            library.suffix_list_checking = false;
+            cx.notify();
+        });
+        if let Some(told) = told {
+            window
+                .update(cx, |_, window, cx| window.push_notification(told, cx))
+                .unwrap_or_else(|_| tracing::debug!("the window closed during the check"));
+        }
+    })
+    .detach();
 }
 
 fn backup(library: &Entity<Library>) -> SettingGroup {
