@@ -102,7 +102,7 @@ export function closingBracket(code, open) {
 }
 
 /** Splits `code` at the commas outside brackets. */
-function splitTopLevel(code) {
+export function splitTopLevel(code) {
   const parts = [];
   let depth = 0;
   let start = 0;
