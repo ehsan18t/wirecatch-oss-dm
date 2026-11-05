@@ -90,6 +90,8 @@ pub enum Step {
     Open(OpenWindow),
     /// Bring the window with this label to the front.
     Focus(String),
+    /// Take away the window with this label, already forgotten here.
+    Close(String),
 }
 
 /// Which download windows are open, which questions wait for a window, and which ones the
@@ -230,12 +232,24 @@ impl Registry {
     }
 
     /// The window `label` now shows download `id` (its question was answered there): it no
-    /// longer counts as asking, so a waiting question may open.
+    /// longer counts as asking, so a waiting question may open. A window already showing that
+    /// download stays and comes to the front, and this one goes: one window per download (D23.5).
     pub fn became_download(&mut self, label: &str, id: DownloadId) -> Vec<Step> {
-        if let Some(window) = self.windows.iter_mut().find(|w| w.label == label) {
-            window.shows = Shows::Download(id);
+        let shows = Shows::Download(id);
+        let other = self
+            .window_showing(shows)
+            .filter(|w| w.label != label)
+            .map(|w| w.label.clone());
+        let mut steps = Vec::new();
+        if let Some(other) = other {
+            self.windows.retain(|w| w.label != label);
+            steps.push(Step::Close(label.to_owned()));
+            steps.push(Step::Focus(other));
+        } else if let Some(window) = self.windows.iter_mut().find(|w| w.label == label) {
+            window.shows = shows;
         }
-        self.fill()
+        steps.extend(self.fill());
+        steps
     }
 
     /// The window `label` is gone. A question it showed was put aside by the person (closing
@@ -433,6 +447,59 @@ mod tests {
     }
 
     #[test]
+    fn answering_in_a_second_window_leaves_one_window_on_the_download() {
+        let mut r = Registry::default();
+        let Step::Open(progress) = r.show_download(DownloadId(9)) else {
+            panic!("expected a window to open");
+        };
+        let question = opened(r.ask(q(4)));
+        assert_eq!(
+            r.became_download(&question.label, DownloadId(9)),
+            [
+                Step::Close(question.label.clone()),
+                Step::Focus(progress.label.clone()),
+            ]
+        );
+        assert_eq!(r.shows(&question.label), None);
+        assert_eq!(r.windows().len(), 1);
+        assert_eq!(
+            r.show_question(q(4))
+                .map(|step| matches!(step, Step::Open(_))),
+            Some(true),
+            "answered in a window that closed, it was not put aside"
+        );
+    }
+
+    #[test]
+    fn a_window_going_because_another_shows_its_download_lets_a_waiting_question_open() {
+        let mut r = Registry::default();
+        let Step::Open(_) = r.show_download(DownloadId(9)) else {
+            panic!("expected a window to open");
+        };
+        for id in 1..=5 {
+            opened(r.ask(q(id)));
+        }
+        assert_eq!(r.ask(q(6)), None);
+        let steps = r.became_download(&Shows::Question(q(1)).label(), DownloadId(9));
+        assert!(
+            steps
+                .iter()
+                .any(|s| matches!(s, Step::Open(w) if w.shows == Shows::Question(q(6)))),
+            "{steps:?}"
+        );
+    }
+
+    #[test]
+    fn a_window_that_becomes_the_download_it_already_shows_stays() {
+        let mut r = Registry::default();
+        let Step::Open(window) = r.show_download(DownloadId(9)) else {
+            panic!("expected a window to open");
+        };
+        assert_eq!(r.became_download(&window.label, DownloadId(9)), []);
+        assert_eq!(r.windows().len(), 1);
+    }
+
+    #[test]
     fn at_most_five_questions_ask_at_once_and_the_rest_wait_their_turn() {
         let mut r = Registry::default();
         let slots: Vec<usize> = (1..=5).map(|id| opened(r.ask(q(id))).slot).collect();
@@ -521,7 +588,7 @@ mod tests {
             .iter()
             .map(|s| match s {
                 Step::Open(w) => w.shows,
-                Step::Focus(l) => panic!("focused {l}"),
+                other => panic!("expected a window to open, got {other:?}"),
             })
             .collect();
         assert_eq!(shown, [Shows::Question(q(2)), Shows::Question(q(4))]);
