@@ -592,31 +592,7 @@ fn obedient(run: FakeRun) -> EngineFuture {
 async fn a_move_that_cannot_be_undone_stops_the_download() {
     let (manager, dir) =
         manager_with(obedient, Duration::from_secs(5), DEFAULT_CAPTURE_TIMEOUT).await;
-    let id = manager
-        .add_download(add_request("https://example.com/big.iso"))
-        .await
-        .unwrap();
-    let old_path = PathBuf::from(&manager.lock().downloads[&id].row.path);
-    std::fs::create_dir_all(old_path.parent().unwrap()).unwrap();
-    for file in naming::partial_files(&old_path) {
-        std::fs::write(file, b"partial").unwrap();
-    }
-    // The first file moves; the second, and putting the first back, fail.
-    let moves = Arc::new(AtomicUsize::new(0));
-    let counted = moves.clone();
-    manager.use_fake_mover(Arc::new(move |from, to| {
-        if counted.fetch_add(1, Ordering::SeqCst) == 0 {
-            std::fs::rename(from, to)
-        } else {
-            Err(std::io::ErrorKind::PermissionDenied.into())
-        }
-    }));
-
-    let chosen = dir.path().join("chosen");
-    let error = manager
-        .set_download_folder(id, &chosen.to_string_lossy())
-        .await
-        .unwrap_err();
+    let (id, old_path, chosen, error) = split_by_a_move(&manager, dir.path()).await;
     assert!(matches!(error, CoreError::FilesSplit { .. }), "{error}");
 
     {
@@ -649,6 +625,59 @@ async fn a_move_that_cannot_be_undone_stops_the_download() {
         reopened.lock().claimed.contains(&stranded),
         "the name in the new folder was given up on restart"
     );
+}
+
+/// A download whose first file moved to the returned folder and whose others, and putting that one back, failed.
+async fn split_by_a_move(
+    manager: &Manager,
+    dir: &Path,
+) -> (DownloadId, PathBuf, PathBuf, CoreError) {
+    let id = manager
+        .add_download(add_request("https://example.com/big.iso"))
+        .await
+        .unwrap();
+    let old_path = PathBuf::from(&manager.lock().downloads[&id].row.path);
+    std::fs::create_dir_all(old_path.parent().unwrap()).unwrap();
+    for file in naming::partial_files(&old_path) {
+        std::fs::write(file, b"partial").unwrap();
+    }
+    // The first file moves; the second, and putting the first back, fail.
+    let moves = Arc::new(AtomicUsize::new(0));
+    let counted = moves.clone();
+    manager.use_fake_mover(Arc::new(move |from, to| {
+        if counted.fetch_add(1, Ordering::SeqCst) == 0 {
+            std::fs::rename(from, to)
+        } else {
+            Err(std::io::ErrorKind::PermissionDenied.into())
+        }
+    }));
+
+    let chosen = dir.join("chosen");
+    let error = manager
+        .set_download_folder(id, &chosen.to_string_lossy())
+        .await
+        .unwrap_err();
+    (id, old_path, chosen, error)
+}
+
+/// The files a failed move stranded in the new folder go with the download, and a kill before they do finds them on record.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn removing_a_split_download_deletes_its_files_in_both_folders() {
+    let (manager, dir) =
+        manager_with(obedient, Duration::from_secs(5), DEFAULT_CAPTURE_TIMEOUT).await;
+    let (id, old_path, chosen, _) = split_by_a_move(&manager, dir.path()).await;
+    let new_path = chosen.join(old_path.file_name().unwrap());
+    let stranded = naming::partial_files(&new_path)[0].clone();
+    let left = naming::partial_files(&old_path)[1].clone();
+    assert!(stranded.exists() && left.exists());
+    let record = manager.lock().downloads[&id].pending_deletion();
+    assert_eq!(record.moving_to.as_deref(), Some(new_path.as_path()));
+
+    manager.remove(&[id], RemoveFiles::Keep).await.unwrap();
+
+    assert!(!stranded.exists(), "the moved part file stayed");
+    assert!(!left.exists(), "the resume file stayed");
+    assert!(!manager.lock().claimed.contains(&new_path));
 }
 
 /// Moving download `id` to `elsewhere`, or giving it a new link, would start it
@@ -1176,6 +1205,7 @@ async fn a_start_finishes_deleting_what_a_kill_left() {
         path: path.clone(),
         media: false,
         moving_to: None,
+        moving_files: Vec::new(),
         finished: false,
     }]);
     store.close(PATIENCE).await;

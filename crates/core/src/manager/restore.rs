@@ -10,7 +10,7 @@ use wirecatch_protocol::app::{AppSettings, DownloadStatus, Queue, Setting};
 use wirecatch_protocol::proxy::ProxyUse;
 use wirecatch_protocol::rules::QueueReason;
 use wirecatch_protocol::{DownloadId, QueueId};
-use wirecatch_records::files::{MovedFile, PendingDeletion};
+use wirecatch_records::files::{MoveUnderWay, MovedFile, PendingDeletion};
 use wirecatch_settings::DEFAULT_QUEUE_ID;
 use wirecatch_settings::proxy::{ComputerProxy, SavedProxyServer};
 use wirecatch_sites::local_network::ChosenBy;
@@ -101,6 +101,7 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
         default_queue,
         &mut ids,
         around,
+        &snapshot.pending_deletions,
     );
 
     let mut settings = settings;
@@ -163,6 +164,7 @@ fn restore_downloads(
     default_queue: QueueId,
     ids: &mut Counters,
     around: &Surroundings<'_>,
+    deletions: &[PendingDeletion],
 ) -> (Vec<Entry>, Vec<StoredDownload>) {
     let mut downloads = Vec::with_capacity(stored_rows.len());
     let mut changed = Vec::new();
@@ -181,7 +183,35 @@ fn restore_downloads(
     for file in &moved_files {
         changed.extend(file.move_other_rows(&mut downloads));
     }
+    changed.extend(follow_removed_moves(&mut downloads, deletions));
     (downloads, changed)
+}
+
+/// A finished row removed during its move took its record with it: the other rows of the file finish that move, as far as the disk tells (D179). Returns those that moved, as saved.
+fn follow_removed_moves(
+    downloads: &mut [Entry],
+    deletions: &[PendingDeletion],
+) -> Vec<StoredDownload> {
+    let mut moved = Vec::new();
+    for deletion in deletions.iter().filter(|deletion| deletion.finished) {
+        let Some(path) = &deletion.moving_to else {
+            continue;
+        };
+        let record = MoveUnderWay {
+            path: path.clone(),
+            files: deletion.moving_files.clone(),
+        };
+        for entry in downloads.iter_mut().filter(|e| {
+            e.row.status == DownloadStatus::Completed
+                && crate::naming::same_path(e.path(), &deletion.path)
+        }) {
+            finish_interrupted_move(entry, &record);
+            if entry.path() == path.as_path() {
+                moved.push(entry.stored());
+            }
+        }
+    }
+    moved
 }
 
 /// Deletes what a kill cut short (D134).
@@ -203,11 +233,7 @@ fn finish_deletions(state: &State, deletions: &[PendingDeletion]) {
         }
         Partial::of(deletion).delete();
         if let Some(target) = deletion.moving_to.as_ref().filter(|to| !spared(to)) {
-            Partial::of(&PendingDeletion {
-                path: target.clone(),
-                ..deletion.clone()
-            })
-            .delete();
+            Partial::at(target, deletion.media).delete();
         }
     }
 }
@@ -385,7 +411,7 @@ mod tests {
     use super::*;
     use crate::headers::Origin;
     use wirecatch_protocol::app::{DownloadSummary, Setting};
-    use wirecatch_records::files::{DownloadFiles, MoveUnderWay};
+    use wirecatch_records::files::DownloadFiles;
     use wirecatch_sites::local_network::ChosenBy;
     use wirecatch_store::{LastIds, NameChoice};
 
@@ -488,6 +514,7 @@ mod tests {
                 path: PathBuf::from(&row.summary.path),
                 media: false,
                 moving_to: None,
+                moving_files: Vec::new(),
                 finished: false,
             }],
             downloads: vec![row],
@@ -527,6 +554,7 @@ mod tests {
                 path: path.clone(),
                 media: false,
                 moving_to: None,
+                moving_files: Vec::new(),
                 finished: false,
             }],
             ..Snapshot::default()
@@ -552,6 +580,7 @@ mod tests {
                 path: from,
                 media: false,
                 moving_to: Some(to),
+                moving_files: Vec::new(),
                 finished: false,
             }],
             ..Snapshot::default()
@@ -579,6 +608,7 @@ mod tests {
                 path: from.clone(),
                 media: false,
                 moving_to: Some(to),
+                moving_files: Vec::new(),
                 finished: true,
             }],
             ..Snapshot::default()
@@ -586,6 +616,60 @@ mod tests {
         restore(snapshot, &nowhere(&|_| None));
         assert!(!staged.exists(), "the copy under way stayed");
         assert!(from.exists() && old_part.exists() && new_part.exists());
+    }
+
+    /// The row that moved the file has gone with its record of the move: the other row of that file follows it, and its subtitle file with it.
+    #[test]
+    fn a_kill_during_a_removals_move_takes_the_files_other_row_along() {
+        let (source, target) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let (from, to) = (source.path().join("a.bin"), target.path().join("a.bin"));
+        let (old_srt, new_srt) = (source.path().join("a.srt"), target.path().join("a.srt"));
+        std::fs::write(&to, b"the file").unwrap();
+        std::fs::write(&old_srt, b"words").unwrap();
+        let mut row = stored(2, 1, DownloadStatus::Completed);
+        row.summary.path = from.to_string_lossy().into_owned();
+        row.files.sidecars = vec![old_srt.clone()];
+        let snapshot = Snapshot {
+            downloads: vec![row],
+            pending_deletions: vec![PendingDeletion {
+                path: from.clone(),
+                media: false,
+                moving_to: Some(to.clone()),
+                moving_files: vec![pair(&from, &to), pair(&old_srt, &new_srt)],
+                finished: true,
+            }],
+            ..Snapshot::default()
+        };
+        let restored = restore(snapshot, &nowhere(&|_| None));
+        let entry = &restored.state.downloads[&DownloadId(2)];
+        assert_eq!(entry.path(), to);
+        assert_eq!(entry.files.sidecars, std::slice::from_ref(&new_srt));
+        assert!(new_srt.exists() && !old_srt.exists());
+        assert_eq!(restored.changed.len(), 1, "the row must be saved again");
+    }
+
+    /// The file never got there, so the other row of it stays where it is.
+    #[test]
+    fn a_kill_before_a_removals_move_leaves_the_files_other_row() {
+        let (source, target) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let (from, to) = (source.path().join("a.bin"), target.path().join("a.bin"));
+        std::fs::write(&from, b"the file").unwrap();
+        let mut row = stored(2, 1, DownloadStatus::Completed);
+        row.summary.path = from.to_string_lossy().into_owned();
+        let snapshot = Snapshot {
+            downloads: vec![row],
+            pending_deletions: vec![PendingDeletion {
+                path: from.clone(),
+                media: false,
+                moving_to: Some(to.clone()),
+                moving_files: vec![pair(&from, &to)],
+                finished: true,
+            }],
+            ..Snapshot::default()
+        };
+        let restored = restore(snapshot, &nowhere(&|_| None));
+        assert_eq!(restored.state.downloads[&DownloadId(2)].path(), from);
+        assert_eq!(restored.changed.len(), 0);
     }
 
     /// A kill beat the row's deletion and the row came back: its files are its own, wherever its move got to.
@@ -607,6 +691,7 @@ mod tests {
                 path: from,
                 media: false,
                 moving_to: Some(to),
+                moving_files: Vec::new(),
                 finished: false,
             }],
             ..Snapshot::default()

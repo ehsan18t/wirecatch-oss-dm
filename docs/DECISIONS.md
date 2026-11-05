@@ -1418,3 +1418,9 @@ Decided on 2026-11-05. It fulfils and amends D44.4, which placed these under Adv
 1. Under the switch "Update the Public Suffix List automatically": a line such as "List published 3 Nov 2026. Last checked 4 Nov 2026." and a small Check now button. A check that failed shows a danger note until a later one works; while the switch is on the note says it will be tried again in a day.
 2. Check now tells its answer in a notification, the reason included when it failed.
 3. A failed check's advice follows its cause: no answer asks to check the internet connection, a list that could not be saved asks to free disk space, an error or an oversized answer from the host, a refused list or interrupted work asks to wait a while, and a list dated after today asks to check the computer's clock.
+### D179. A removal reaches a split download's new files and a shared file's other rows
+
+Decided on 2026-11-05. It amends D171.
+
+1. A download a failed move left split keeps its new path on its deletion record, in the place of a move's target. Its removal deletes the partial files at both paths, and so does a start that finds the record.
+2. A finished download's deletion record also lists the files of its move. A start finishes that move for the other finished rows of the file, as far as D132.2 tells, so those rows follow the file. With no such row the extra copy of D171.2 stays.

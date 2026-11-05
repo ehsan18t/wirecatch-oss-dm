@@ -27,9 +27,12 @@ pub struct PendingDeletion {
     pub path: PathBuf,
     /// A video or audio download, which also has work folders.
     pub media: bool,
-    /// The download's path once moved, while a move runs: a kill leaves files on the way there (D171).
+    /// The download's path once moved, while a move runs or a failed one left files there (D171, D179).
     #[serde(default)]
     pub moving_to: Option<PathBuf>,
+    /// What moves, for the other finished rows of the file, which follow it (D179).
+    #[serde(default)]
+    pub moving_files: Vec<MovedFile>,
     /// A finished download has no partial files, so only what its move leaves goes.
     #[serde(default)]
     pub finished: bool,
