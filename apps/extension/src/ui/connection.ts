@@ -1,4 +1,5 @@
 // How the extension's pages put the connection to the app into words.
+import { PRODUCT_NAME } from '@wirecatch/product';
 import type { Tone } from '@wirecatch/ui';
 import type { ConnectionStatus } from '../lib/native/status';
 
@@ -21,17 +22,17 @@ export function connectionBadge(status: ConnectionStatus): { label: string; tone
 export function waitingNote(status: ConnectionStatus): string {
   switch (status.state) {
     case 'connecting':
-      return 'Connecting to Wirecatch. Your settings show here once it is connected.';
+      return `Connecting to ${PRODUCT_NAME}. Your settings show here once it is connected.`;
     case 'connected':
-      return 'Loading your settings from Wirecatch.';
+      return `Loading your settings from ${PRODUCT_NAME}.`;
     case 'unavailable':
       return status.problem.kind === 'app_closed'
-        ? 'Your settings are stored in Wirecatch and appear here once it is running.'
-        : 'Your settings are stored in Wirecatch and appear here once it is connected.';
+        ? `Your settings are stored in ${PRODUCT_NAME} and appear here once it is running.`
+        : `Your settings are stored in ${PRODUCT_NAME} and appear here once it is connected.`;
   }
 }
 
 /** Why a control that needs the app cannot be used now; null while connected. */
 export function offlineReason(connected: boolean): string | null {
-  return connected ? null : 'Wirecatch is not connected.';
+  return connected ? null : `${PRODUCT_NAME} is not connected.`;
 }

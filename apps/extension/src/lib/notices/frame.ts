@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from '@wirecatch/product';
 /**
  * The notices frame in a web page (D65): the extension's notices page in a frame at the bottom right,
  * inside a closed shadow root so the website cannot reach the frame or read its address, which
@@ -58,7 +59,7 @@ export class NoticesFrame {
     const token = this.#page.newToken();
     const iframe = document.createElement('iframe');
     iframe.src = this.#page.noticesUrl(token);
-    iframe.title = 'Wirecatch alerts';
+    iframe.title = `${PRODUCT_NAME} alerts`;
     iframe.setAttribute('allowtransparency', 'true');
     // A frame whose colour scheme differs from the page around it gets an opaque backdrop; both say the same.
     Object.assign(iframe.style, {

@@ -1,5 +1,6 @@
 <script lang="ts">
   // Shown when the person took the extension's access to websites away (Firefox allows it): without it, downloads stay in the browser.
+  import { PRODUCT_NAME } from '@wirecatch/product';
   import { Button, Callout } from '@wirecatch/ui';
 
   interface Props {
@@ -12,7 +13,7 @@
 
 <Callout tone="warning">
   <svelte:element this={heading} class="font-semibold text-ink">
-    Wirecatch cannot read website cookies.
+    {PRODUCT_NAME} cannot read website cookies.
   </svelte:element>
   <p>Downloads stay in the browser until you allow access to websites.</p>
   <div class="mt-2.5 flex flex-wrap gap-2">

@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from '@wirecatch/product';
 import {
   applyBrowserControlsPatch,
   applyExtensionSettingsPatch,
@@ -163,13 +164,13 @@ export class PopupModel {
     if (view === null || this.mediaStatus[key]?.tone === 'busy') return;
     this.mediaStatus = {
       ...this.mediaStatus,
-      [key]: { tone: 'busy', text: 'Sending to Wirecatch…' },
+      [key]: { tone: 'busy', text: `Sending to ${PRODUCT_NAME}…` },
     };
     const result = await this.#send({ type: 'download_media', tabId: view.tabId, key });
     this.mediaStatus = {
       ...this.mediaStatus,
       [key]: result.ok
-        ? { tone: 'success', text: result.message ?? 'Sent to Wirecatch.' }
+        ? { tone: 'success', text: result.message ?? `Sent to ${PRODUCT_NAME}.` }
         : { tone: 'error', text: result.message },
     };
   }

@@ -1,5 +1,6 @@
 <script lang="ts">
   // What keeps the extension from the app, what to do about it, and the button that does it: connect a closed app, which starts it in the tray (D86), or try again.
+  import { PRODUCT_NAME } from '@wirecatch/product';
   import { Button, Callout } from '@wirecatch/ui';
   import { describeProblem, type Problem } from '../../lib/native/status';
 
@@ -24,7 +25,7 @@
   {/if}
   <div class="mt-2.5 flex flex-wrap gap-2">
     {#if closed}
-      <Button size="sm" variant="primary" onclick={onconnect}>Connect Wirecatch</Button>
+      <Button size="sm" variant="primary" onclick={onconnect}>Connect {PRODUCT_NAME}</Button>
     {:else}
       <Button size="sm" onclick={onretry}>Try again</Button>
     {/if}

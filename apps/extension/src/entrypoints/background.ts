@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from '@wirecatch/product';
 import { browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
 import {
@@ -46,7 +47,7 @@ function registerContextMenu(hub: Hub): void {
       .then(() => {
         browser.contextMenus.create({
           id: MENU_ID,
-          title: 'Download with Wirecatch',
+          title: `Download with ${PRODUCT_NAME}`,
           contexts: ['link', 'image', 'video', 'audio'],
         });
       })
