@@ -432,18 +432,10 @@ impl MainWindow {
 
     fn new(library: Entity<Library>, window: &mut Window, cx: &mut Context<'_, Self>) -> Self {
         let follow_system = theme::follow_system(window, cx);
-        let redraw = cx.observe_in(&library, window, |this, library, window, cx| {
-            if !library.read(cx).startup_notices.is_empty() {
-                this.tell_startup_notices(window, cx);
-            }
+        let redraw = cx.observe_in(&library, window, |this, _, _, cx| {
             this.keep_queue_speeds(cx);
             cx.notify();
         });
-        if !library.read(cx).startup_notices.is_empty() {
-            cx.defer_in(window, |this, window, cx| {
-                this.tell_startup_notices(window, cx);
-            });
-        }
         let closing = library.downgrade();
         crate::closing::on_close(window, cx, move |_, cx| {
             let close_to_tray = closing
@@ -795,8 +787,7 @@ impl Render for MainWindow {
                     v_flex()
                         .flex_1()
                         .min_h_0()
-                        .children(self.storage_banner(cx))
-                        .children(Self::update_banner(cx))
+                        .children(self.banners(cx))
                         .children(self.queue_header(cx))
                         .child(self.list(cx)),
                 ),

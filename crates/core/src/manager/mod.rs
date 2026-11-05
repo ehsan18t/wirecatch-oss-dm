@@ -405,12 +405,11 @@ impl Manager {
         let (now, now_millis) = (config.clock.local_now(), config.clock.unix_millis());
         let (addons_at, temp_at) = (addon_dir.clone(), temp_dir.clone());
         // Restoring checks the disk for finished files, so it runs off async threads too.
-        let notices_dir = dir.clone();
         let computer = config.computer_proxy.clone();
         let (store, mut restored, recoveries, not_private) = blocking(&runtime, move || {
             let (store, mut snapshot) = Store::open(&dir, on_save_news)?;
             let recoveries = std::mem::take(&mut snapshot.recoveries);
-            let not_private = snapshot.not_private.take();
+            let not_private = snapshot.not_private;
             let around = restore::Surroundings {
                 now,
                 now_millis,
@@ -455,7 +454,7 @@ impl Manager {
             stopped: CancellationToken::new(),
             startup_notices: startup::list_recovered(&recoveries)
                 .into_iter()
-                .chain(not_private.map(|reason| startup::not_private(&notices_dir, &reason)))
+                .chain(not_private.then(startup::not_private))
                 .collect(),
             set_aside_list: recoveries.iter().find_map(|r| match r {
                 Recovery::Damaged { kept_at } => Some(kept_at.clone()),

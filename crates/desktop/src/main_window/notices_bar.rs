@@ -1,10 +1,9 @@
-//! What the window must tell before anything else: that the download list could not be saved,
-//! above the list until it saves again or is dismissed, and this start's notices, once.
+//! What the window must tell before anything else, above the list so it covers nothing: that the
+//! download list could not be saved, until it saves again or is dismissed, and this start's
+//! notices, until dismissed (D190).
 
 use gpui_kit::component::Sizable as _;
-use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::notification::Notification;
 use gpui_kit::component::progress::Progress as ProgressBar;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
@@ -20,9 +19,17 @@ use crate::backend::{Backend, act};
 use crate::ui::Callout;
 
 impl MainWindow {
+    /// Every banner above the list, in the order they stack (D190).
+    pub(super) fn banners(&self, cx: &mut Context<'_, Self>) -> Vec<AnyElement> {
+        let mut banners: Vec<_> = self.storage_banner(cx).into_iter().collect();
+        banners.extend(self.startup_banners(cx));
+        banners.extend(Self::update_banner(cx));
+        banners
+    }
+
     /// A newer version of the app, until it is installed or put aside, with its download and why
     /// it failed (D111.4).
-    pub(super) fn update_banner(cx: &App) -> Option<AnyElement> {
+    fn update_banner(cx: &App) -> Option<AnyElement> {
         let updates = crate::app_update::entity(cx);
         let read = updates.read(cx);
         let put_aside =
@@ -41,7 +48,7 @@ impl MainWindow {
     }
 
     /// The banner while the list could not be saved. It goes by itself once saving recovers; Try again retries at once, and Dismiss only hides it (D167).
-    pub(super) fn storage_banner(&self, cx: &mut Context<'_, Self>) -> Option<AnyElement> {
+    fn storage_banner(&self, cx: &mut Context<'_, Self>) -> Option<AnyElement> {
         let read = self.library.read(cx);
         let problem = read.storage_problem.clone()?;
         let retrying = read.storage_retrying;
@@ -91,25 +98,48 @@ impl MainWindow {
         )
     }
 
-    /// This start's notices, once, as notifications in the window; a damaged list set aside
-    /// offers to show the old one in its folder.
-    pub(super) fn tell_startup_notices(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
-        let notices = self.library.update(cx, |library, _| {
-            std::mem::take(&mut library.startup_notices)
-        });
-        for notice in notices {
-            let mut shown =
-                Notification::warning(notice.message.clone()).title(notice.title.clone());
-            if notice.set_aside {
-                shown = shown.action(|_, _, _| {
-                    Button::new("show-set-aside")
-                        .small()
-                        .label("Show the old list")
-                        .on_click(|_, window, cx| show_set_aside(window, cx))
-                });
-            }
-            window.push_notification(shown, cx);
-        }
+    /// This start's notices, one banner each, in the core's order; a damaged list set aside
+    /// offers to show the old one in its folder (D190).
+    fn startup_banners(&self, cx: &App) -> Vec<AnyElement> {
+        let library = &self.library;
+        library
+            .read(cx)
+            .startup_notices
+            .iter()
+            .enumerate()
+            .map(|(index, notice)| {
+                let library = library.clone();
+                div()
+                    .px_5()
+                    .pb_2()
+                    .child(
+                        Callout::warning(notice.message.clone())
+                            .title(notice.title.clone())
+                            .when(notice.set_aside, |callout| {
+                                callout.action(
+                                    Button::new("show-set-aside")
+                                        .small()
+                                        .outline()
+                                        .label("Show the old list")
+                                        .on_click(|_, window, cx| show_set_aside(window, cx)),
+                                )
+                            })
+                            .action(
+                                Button::new(("startup-notice-dismiss", index))
+                                    .small()
+                                    .ghost()
+                                    .label("Dismiss")
+                                    .on_click(move |_, _, cx| {
+                                        library.update(cx, |library, cx| {
+                                            library.dismiss_startup_notice(index);
+                                            cx.notify();
+                                        });
+                                    }),
+                            ),
+                    )
+                    .into_any_element()
+            })
+            .collect()
     }
 }
 

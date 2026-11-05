@@ -42,7 +42,8 @@ pub struct Library {
     pub suffix_list: Option<SuffixListInfo>,
     /// Check now was pressed and its answer has not come.
     pub suffix_list_checking: bool,
-    /// What the person must know about this start, such as a damaged list set aside.
+    /// What the person must know about this start, such as a damaged list set aside, until
+    /// dismissed (D190).
     pub startup_notices: Vec<StartupNotice>,
     notices_kept: bool,
     /// The questions the core asks about browser downloads, oldest first.
@@ -151,6 +152,13 @@ impl Library {
     fn keep_startup_notices(&mut self, notices: Vec<StartupNotice>) {
         if !std::mem::replace(&mut self.notices_kept, true) {
             self.startup_notices = notices;
+        }
+    }
+
+    /// Puts away one of this start's notices; a reload cannot bring it back.
+    pub fn dismiss_startup_notice(&mut self, index: usize) {
+        if index < self.startup_notices.len() {
+            self.startup_notices.remove(index);
         }
     }
 
@@ -362,18 +370,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_reload_does_not_bring_back_a_notice_already_told() {
-        let notice = || StartupNotice {
-            title: "Title".to_owned(),
+    fn a_reload_does_not_bring_back_a_dismissed_notice() {
+        let notice = |title: &str| StartupNotice {
+            title: title.to_owned(),
             message: "Message".to_owned(),
             set_aside: false,
         };
         let mut library = Library::empty();
-        library.keep_startup_notices(vec![notice()]);
-        assert_eq!(library.startup_notices.len(), 1);
-        library.startup_notices.clear();
-        library.keep_startup_notices(vec![notice()]);
-        assert_eq!(library.startup_notices.len(), 0);
+        library.keep_startup_notices(vec![notice("First"), notice("Second")]);
+        library.dismiss_startup_notice(0);
+        assert_eq!(library.startup_notices, vec![notice("Second")]);
+        library.keep_startup_notices(vec![notice("First"), notice("Second")]);
+        assert_eq!(library.startup_notices, vec![notice("Second")]);
+        library.dismiss_startup_notice(0);
+        library.dismiss_startup_notice(0);
+        library.keep_startup_notices(vec![notice("First")]);
+        assert_eq!(library.startup_notices, vec![]);
     }
 
     #[test]
