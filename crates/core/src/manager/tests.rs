@@ -44,6 +44,33 @@ fn media_requests_name_the_app_or_the_browser() {
     );
 }
 
+// On this one-thread runtime the read spawned by `media_addon_ready` waits for the first `await`, so the stage still holds its token.
+#[tokio::test]
+async fn a_page_read_stops_with_the_manager() {
+    let dir = tempfile::tempdir().unwrap();
+    let folders = KnownFolders::under_home(dir.path().join("home"));
+    let manager = Manager::open(ManagerConfig::for_tests(dir.path().join("data"), folders))
+        .await
+        .unwrap();
+    let id = manager
+        .add_video_page(AddRequest {
+            url: "https://example.com/watch/7".to_owned().into(),
+            queue: None,
+            folder: None,
+            file_name: None,
+            start: true,
+        })
+        .unwrap();
+    manager.media_addon_ready();
+    let token = match &manager.lock().media.get(&id).unwrap().stage {
+        super::media::MediaStage::Analysing(token) => token.clone(),
+        _ => panic!("the page is not being read"),
+    };
+    assert!(!token.is_cancelled());
+    manager.shutdown().await;
+    assert!(token.is_cancelled());
+}
+
 /// A manager in a temporary folder whose runs are played by `engine`.
 async fn manager_with(
     engine: impl Fn(FakeRun) -> EngineFuture + Send + Sync + 'static,
