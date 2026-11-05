@@ -1521,7 +1521,7 @@ crate::exported::exported_consts! {
     pub const DOWNLOAD_WINDOW_WIDTH: u32 = 460;
     /// The least height a download window keeps, in logical pixels, however little it shows:
     /// below the shortest question, so every window fits what it asks.
-    pub const DOWNLOAD_WINDOW_MIN_HEIGHT: u32 = 200;
+    pub const DOWNLOAD_WINDOW_MIN_HEIGHT: u32 = 120;
     /// The most height a download window takes, in logical pixels, however much it shows: past
     /// it the window's body scrolls, so opening a folded group never makes a towering window.
     pub const DOWNLOAD_WINDOW_MAX_HEIGHT: u32 = 680;

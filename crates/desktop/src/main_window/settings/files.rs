@@ -6,16 +6,18 @@ use gpui_kit::component::setting::{SettingField, SettingGroup, SettingItem, Sett
 use gpui_kit::component::{ActiveTheme as _, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, Axis, ElementId, Entity, IntoElement as _, ParentElement as _, SharedString,
-    Styled as _, Window, div, px,
+    AnyElement, App, Axis, ElementId, Entity, InteractiveElement as _, IntoElement as _,
+    ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div,
+    px,
 };
 use wirecatch_protocol::app::{
     AppSettingsPatch, Category, CategoryRule, PortablePath, WhenFileExists,
 };
 
 use super::{Typing, change, choice, current, list_field};
+use crate::backend::Backend;
 use crate::library::Library;
-use crate::ui::{Role, Typed as _};
+use crate::ui::{Role, Typed as _, tooltip};
 use crate::{files, text};
 
 const WHEN_FILE_EXISTS: &[(WhenFileExists, &str)] = &[
@@ -82,11 +84,22 @@ fn where_files_go(library: &Entity<Library>) -> SettingGroup {
         )
 }
 
+/// The real path of a folder setting, which may hold a placeholder such as `{Downloads}`, once the manager has opened.
+fn shown_folder(folder: &PortablePath, cx: &App) -> String {
+    Backend::now(cx)
+        .0
+        .and_then(|manager| manager.folder_here(folder).ok())
+        .map_or_else(
+            || text::folder(&folder.0),
+            |path| path.display().to_string(),
+        )
+}
+
 fn download_folder(library: &Entity<Library>, cx: &App) -> AnyElement {
     let folder = current(
         library,
         cx,
-        |s| text::folder(&s.default_folder.0),
+        |s| shown_folder(&s.default_folder, cx),
         String::new(),
     );
     let theme = cx.theme();
@@ -95,6 +108,7 @@ fn download_folder(library: &Entity<Library>, cx: &App) -> AnyElement {
         .gap_2()
         .child(
             div()
+                .id("download-folder")
                 .flex_1()
                 .min_w_0()
                 .px_2()
@@ -103,7 +117,8 @@ fn download_folder(library: &Entity<Library>, cx: &App) -> AnyElement {
                 .border_color(theme.border)
                 .rounded(theme.radius)
                 .truncate()
-                .text_role(Role::Secondary, cx)
+                .text_role(Role::Body, cx)
+                .tooltip(tooltip::plain(folder.clone()))
                 .child(folder),
         )
         .child(
@@ -132,6 +147,30 @@ fn download_folder(library: &Entity<Library>, cx: &App) -> AnyElement {
         .into_any_element()
 }
 
+/// Where a type of file goes, whole in a tooltip since long paths are cut off.
+fn type_folder_path(index: usize, rule: Option<&CategoryRule>, cx: &App) -> AnyElement {
+    let folder = rule.map_or_else(
+        || "Download folder".to_owned(),
+        |rule| shown_folder(&rule.folder, cx),
+    );
+    let tone = if rule.is_some() {
+        Role::Body
+    } else {
+        Role::Meta
+    };
+    div()
+        .id(ElementId::NamedInteger(
+            "type-folder-path".into(),
+            index as u64,
+        ))
+        .w(px(FOLDER_WIDTH))
+        .truncate()
+        .text_role(tone, cx)
+        .tooltip(tooltip::plain(folder.clone()))
+        .child(folder)
+        .into_any_element()
+}
+
 /// Each type of file with its extensions and its folder.
 fn folders_by_type(library: &Entity<Library>, window: &mut Window, cx: &mut App) -> AnyElement {
     let rules = current(library, cx, |s| s.categories.clone(), Vec::new());
@@ -142,10 +181,6 @@ fn folders_by_type(library: &Entity<Library>, window: &mut Window, cx: &mut App)
         .map(|(index, &category)| {
             let rule = rules.iter().find(|rule| rule.category == category);
             let extensions = rule.map(|rule| rule.extensions.clone()).unwrap_or_default();
-            let folder = rule.map_or_else(
-                || "Download folder".to_owned(),
-                |rule| text::folder(&rule.folder.0),
-            );
             let (typing, picking) = (library.clone(), library.clone());
             h_flex()
                 .px_3()
@@ -170,13 +205,7 @@ fn folders_by_type(library: &Entity<Library>, window: &mut Window, cx: &mut App)
                     window,
                     cx,
                 )))
-                .child(
-                    div()
-                        .w(px(FOLDER_WIDTH))
-                        .truncate()
-                        .text_role(Role::Meta, cx)
-                        .child(folder),
-                )
+                .child(type_folder_path(index, rule, cx))
                 .child(
                     Button::new(ElementId::NamedInteger("type-folder".into(), index as u64))
                         .small()

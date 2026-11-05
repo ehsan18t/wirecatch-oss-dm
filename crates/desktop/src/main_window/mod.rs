@@ -792,7 +792,7 @@ impl Render for MainWindow {
                     v_flex()
                         .flex_1()
                         .min_h_0()
-                        .children(self.banners(cx))
+                        .children(self.banner_stack(cx))
                         .children(self.queue_header(cx))
                         .child(self.list(cx)),
                 ),

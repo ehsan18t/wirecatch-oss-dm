@@ -13,7 +13,7 @@
 
 ## Where things stand and what comes next
 
-As of 2026-11-05, items 1 to 12 under "Before the first release" are done, and so is the desktop audit's fix list except items 280 and 281. The GPUI desktop app is on main (D95, D107), and so are queues that decide how their downloads run (D72), proxy profiles (D73), queue folders (D94) and the rebuilt download list (D115). The release setup that is the maintainer's comes next; this list is the order after it, which the maintainer may change.
+As of 2026-11-05, items 1 to 12 under "Before the first release" are done, and so is the desktop audit's fix list. The GPUI desktop app is on main (D95, D107), and so are queues that decide how their downloads run (D72), proxy profiles (D73), queue folders (D94) and the rebuilt download list (D115). The release setup that is the maintainer's comes next; this list is the order after it, which the maintainer may change.
 
 ## After the first release
 
@@ -41,10 +41,7 @@ Open, found on 2026-11-04. Whether the release waits for them is not decided.
 
 To fix:
 
-- **The Download folder field may read as a placeholder.** Saving files shows a dim "Downloads" where other screens show the full path. Not yet checked whether this is intended.
-- **Empty space in a short download window.** The "already answered" note leaves a gap under Close, because the window keeps its minimum height.
-- **On Linux, yt-dlp and ffmpeg keep running after the app crashes.** Only a live app kills their process group (`crates/streams/src/process/tree.rs`). `PR_SET_PDEATHSIG` does not solve it: it fires when the thread that started the program exits, and the runtime threads come and go. It needs another mechanism, such as a small supervisor that kills the group when the pipe to the app closes, with a test that kills the app and finds both programs gone.
-- **On Linux, a launch that cannot hand over tells only the log.** The "already running" message from `crates/shell/src/launch.rs` is not shown there, so a launch refused by an older running copy looks as if nothing happened. D221 removes the usual cause after an upgrade; a launch made while the package manager is still working can still meet it.
+- **A long extensions field in Settings shows part of a second line.** In Saving files, a file type whose extensions do not fit on one line shows the top of the next line cut off at the field's foot.
 
 Not tested yet:
 
@@ -343,8 +340,8 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 277. Switching kind can save a language this video lacks (fixed)
 278. Keys can go dead when two things leave during a dialog (fixed)
 279. No check catches a Settings row that wraps a lone word (won't fix (no sound cheap check: the font comes from the system, rows flex with the window, and tests use a text system that measures nothing))
-280. A very long queue name runs past the window in the queue menu (open)
-281. Stacked banners can clip the empty state (open)
+280. A very long queue name runs past the window in the queue menu (fixed)
+281. Stacked banners can clip the empty state (fixed)
 282. A kill during a move may leave two copies of a kept file (fixed)
 283. The quit test still passes if quit stops ending the process (fixed)
 284. Streams on one site can share parts when only signing values differ (won't fix (by design: a refreshed stream must keep its segments, and these links match in final name, segment paths and piece counts))

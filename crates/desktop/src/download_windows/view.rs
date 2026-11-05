@@ -21,7 +21,7 @@ use gpui_kit::component::{
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, AnyWindowHandle, App, AppContext as _, Context, Entity, Hsla,
-    InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render, SharedString,
+    InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render,
     StatefulInteractiveElement as _, Styled as _, Subscription, Window, canvas, div, px, relative,
     size,
 };
@@ -62,6 +62,10 @@ const FILE_CONTENT_HEIGHT: f32 = 288.;
 const TINT: f32 = 0.14;
 /// The queue picker's widest, leaving the row's buttons their full labels.
 const PICKER_WIDTH: f32 = 136.;
+/// The queue menu's widest, inside a window whose width is fixed: the menu's default runs past its edge.
+const QUEUE_MENU_WIDTH: f32 = 420.;
+/// The most its text takes, after the menu's padding and the tick.
+const QUEUE_MENU_TEXT_WIDTH: f32 = 364.;
 
 /// One download window.
 pub struct DownloadWindow {
@@ -1056,15 +1060,23 @@ pub(super) fn queue_badge_picker(
             menu = menu
                 .scrollable(true)
                 .max_h(px(220.))
+                .max_w(px(QUEUE_MENU_WIDTH))
                 .item(
                     PopupMenuItem::element(move |_, cx| {
                         v_flex().child("Automatic").child(
                             h_flex()
+                                .max_w(px(QUEUE_MENU_TEXT_WIDTH))
                                 .gap_1()
                                 .text_role(Role::Meta, cx)
-                                .child(lead.clone())
+                                .child(div().flex_shrink_0().child(lead.clone()))
                                 .when_some(value.clone(), |line, value| {
-                                    line.child(div().text_color(cx.theme().primary).child(value))
+                                    line.child(
+                                        div()
+                                            .min_w_0()
+                                            .truncate()
+                                            .text_color(cx.theme().primary)
+                                            .child(value),
+                                    )
                                 }),
                         )
                     })
@@ -1073,10 +1085,16 @@ pub(super) fn queue_badge_picker(
                 )
                 .separator();
             for (id, name) in &queues {
+                let name = name.clone();
                 menu = menu.item(
-                    PopupMenuItem::new(SharedString::from(name.clone()))
-                        .checked(picked == Some(*id))
-                        .on_click(on_pick(Some(*id))),
+                    PopupMenuItem::element(move |_, _| {
+                        div()
+                            .max_w(px(QUEUE_MENU_TEXT_WIDTH))
+                            .truncate()
+                            .child(name.clone())
+                    })
+                    .checked(picked == Some(*id))
+                    .on_click(on_pick(Some(*id))),
                 );
             }
             menu

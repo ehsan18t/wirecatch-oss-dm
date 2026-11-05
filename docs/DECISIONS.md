@@ -1448,6 +1448,7 @@ Decided on 2026-11-05.
 2. Each notice is one banner with a full-width line for its words, its action if it has one (Show the old list), and Dismiss. Several stack in the order the core gave them.
 3. Each shows once per start. It stays until dismissed, also when the window is closed and opened again, and a reload after missed events does not bring back a dismissed one. The system notification is unchanged.
 4. A notice's words carry no path and no system error text: the store logs them. The not-private notice says the log has the folder's location.
+5. Together they take at most half the height above the list and scroll past that, so the list or its empty page keeps the rest.
 
 ### D195. A video's subtitles are one choice of three, tied to its format
 

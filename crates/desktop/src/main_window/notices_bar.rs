@@ -2,12 +2,13 @@
 //! download list could not be saved, until it saves again or is dismissed, and this start's
 //! notices, until dismissed (D190).
 
-use gpui_kit::component::Sizable as _;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::progress::Progress as ProgressBar;
+use gpui_kit::component::{Sizable as _, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, Context, Entity, IntoElement, ParentElement as _, Styled as _, Window, div,
+    AnyElement, App, Context, Entity, InteractiveElement as _, IntoElement, ParentElement as _,
+    StatefulInteractiveElement as _, Styled as _, Window, div, relative,
 };
 use wirecatch_core::AppUpdate;
 use wirecatch_engine::Progress;
@@ -19,12 +20,20 @@ use crate::backend::{Backend, act};
 use crate::ui::Callout;
 
 impl MainWindow {
-    /// Every banner above the list, in the order they stack (D190).
-    pub(super) fn banners(&self, cx: &mut Context<'_, Self>) -> Vec<AnyElement> {
+    /// Every banner above the list, in the order they stack (D190). Past half the height they scroll, so the list or empty page keeps the rest.
+    pub(super) fn banner_stack(&self, cx: &mut Context<'_, Self>) -> Option<AnyElement> {
         let mut banners: Vec<_> = self.storage_banner(cx).into_iter().collect();
         banners.extend(self.startup_banners(cx));
         banners.extend(Self::update_banner(cx));
-        banners
+        (!banners.is_empty()).then(|| {
+            v_flex()
+                .id("banners")
+                .flex_shrink_0()
+                .max_h(relative(0.5))
+                .overflow_y_scroll()
+                .children(banners)
+                .into_any_element()
+        })
     }
 
     /// A newer version of the app, until it is installed or put aside, with its download and why

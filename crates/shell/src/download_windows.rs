@@ -388,7 +388,9 @@ mod tests {
         // A short progress view: smaller than the opening size, rounded up to whole pixels.
         assert_eq!(fitted_height(431.2, Some(1040.0)), 432.0);
         // Never smaller than the smallest window.
-        assert_eq!(fitted_height(120.0, Some(1040.0)), MIN_WINDOW_HEIGHT);
+        assert_eq!(fitted_height(80.0, Some(1040.0)), MIN_WINDOW_HEIGHT);
+        // The closed note, far shorter than any question, leaves no empty space under its button.
+        assert_eq!(fitted_height(133.0, Some(1040.0)), 133.0);
         // A long quality list, or a group opened: never taller than the most a window takes;
         // the body scrolls.
         assert_eq!(fitted_height(2000.0, Some(1440.0)), MAX_WINDOW_HEIGHT);
@@ -400,7 +402,7 @@ mod tests {
         // Unknown screen: no taller than the opening size.
         assert_eq!(fitted_height(900.0, None), WINDOW_SIZE.1);
         // A tiny screen still gets the smallest window, and nonsense gives the smallest too.
-        assert_eq!(fitted_height(700.0, Some(250.0)), MIN_WINDOW_HEIGHT);
+        assert_eq!(fitted_height(700.0, Some(190.0)), MIN_WINDOW_HEIGHT);
         assert_eq!(fitted_height(f64::NAN, Some(1040.0)), MIN_WINDOW_HEIGHT);
         assert_eq!(
             fitted_height(f64::INFINITY, Some(1040.0)),
