@@ -9,7 +9,7 @@ The result of the code audit of the `desktop` scope, on branch `docs/record-open
 - **Disproved:** 2 (`12-5`, `B01-2`), listed at the end.
 - **Downgraded:** 29. Also, 10 reports were raised to match the severity of the bug they repeat.
 - **Final severity of the 401 reports left:** 4 P0, 34 P1, 180 P2, 183 P3.
-- **Fix items:** 244. 3 P0, 19 P1, 116 P2, 106 P3. An item takes the highest severity of its findings. 8 more were found while fixing (245 to 252).
+- **Fix items:** 244. 3 P0, 19 P1, 116 P2, 106 P3. An item takes the highest severity of its findings. 42 more were found while fixing (245 to 286).
 
 **What the audit established.** Every chunk and flow was read by one reader and checked by a second who tried to disprove each finding. All 25 patches behind the P0 and P1 findings were rerun in one clean build at `5cb4b35f5`, with the same code the verdicts judged, and each failed as claimed. The real downloader survived dropped connections, ranges that stop working, lying sizes, a file changing mid-download, files over 4 GiB and killed processes, with two small exceptions (`F-1`, `F-2`).
 
@@ -305,6 +305,12 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 278 | Keys can go dead when two things leave during a dialog                                            | found while fixing                                                                                 | P3       | small  | Left by #436.                                                                                                    | none                                          | fixed                                                                                                                                          |
 | 279 | No check catches a Settings row that wraps a lone word                                            | found while fixing                                                                                 | P3       | small  | Found while fixing #439.                                                                                         | none                                          | won't fix (no sound cheap check: the font comes from the system, rows flex with the window, and tests use a text system that measures nothing) |
 | 280 | A very long queue name runs past the window in the queue menu                                     | found while fixing                                                                                 | P3       | small  | Found while fixing #449.                                                                                         | none                                          | open                                                                                                                                           |
+| 281 | Stacked banners can clip the empty state                                                          | found while fixing                                                                                 | P3       | small  | Found while reviewing the startup notices.                                                                       | none                                          | open                                                                                                                                           |
+| 282 | A kill during a move may leave two copies of a kept file                                          | found while fixing                                                                                 | P3       | small  | Found while reviewing the move's recovery.                                                                       | none                                          | open                                                                                                                                           |
+| 283 | The quit test still passes if quit stops ending the process                                       | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-10.                                                                                     | none                                          | open                                                                                                                                           |
+| 284 | Streams on one site can share parts when only signing values differ                               | found while fixing                                                                                 | P3       | small  | Left by item 14.                                                                                                 | none                                          | won't fix (by design: a refreshed stream must keep its segments, and these links match in final name, segment paths and piece counts)          |
+| 285 | A crash between a stream's join and its first note downloads it again                             | found while fixing                                                                                 | P3       | small  | Left by PR-94.                                                                                                   | none                                          | won't fix (the window is short and the only cost is the repeated download; the joined file is already flushed)                                 |
+| 286 | Decision numbers are out of order in DECISIONS.md                                                 | found while fixing                                                                                 | P3       | small  | Found while running the fix lanes, which took numbers in blocks.                                                 | none                                          | won't fix (numbers are identifiers, every reference still resolves, and moving the sections adds nothing)                                      |
 
 ## Items
 
@@ -4840,6 +4846,78 @@ In a pop-up window's opened queue menu, a very long queue name runs past the win
 **Blocks:** nothing. **Blocked by:** nothing.
 
 **Touches:** crates/desktop/src/download_windows/view.rs, the queue menu.
+
+### 281. Stacked banners can clip the empty state
+
+P3, small, open.
+
+Up to four banners can stack in the main window. At the minimum window size, three of them clip the empty state until one is dismissed. Reported by a reviewer, not reproduced since.
+
+**Fix:** Keep the empty state readable under a stack of banners, or limit how many show at once.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** crates/desktop/src/main_window/notices_bar.rs; crates/desktop/src/main_window/mod.rs.
+
+### 282. A kill during a move may leave two copies of a kept file
+
+P3, small, open.
+
+`move_by_copy` renames the copy into place and then deletes the original, so a kill between the two leaves both. With a row and its move record, `finish_interrupted_move` deletes the original at the next start. Whether a file kept through a removal has any record that covers it is not confirmed by a run.
+
+**Fix:** Write a test that kills at this point for a kept file. If both copies stay, record the original on the deletion record.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** crates/core/src/manager/relocate.rs; crates/core/src/manager/downloads.rs, finish_removing.
+
+### 283. The quit test still passes if quit stops ending the process
+
+P3, small, open.
+
+The test proves `end_process` beats a stuck runtime, but it would still pass if `lifecycle::quit` went back to `cx.quit()`.
+
+**Fix:** Test that `lifecycle::quit` reaches `end_process`.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** crates/desktop/src/lifecycle.rs; crates/shell/src/quit.rs.
+
+### 284. Streams on one site can share parts when only signing values differ
+
+P3, small, won't fix (by design: a refreshed stream must keep its segments, and these links match in final name, segment paths and piece counts).
+
+Item 14 gives a work folder an identity, but links on one site that differ only in signing values, with the same final name, segment paths and piece counts, still share parts.
+
+**Fix:** None. Telling these apart would also throw away the segments of a refreshed link.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** crates/core/src/manager/media_run/placement.rs.
+
+### 285. A crash between a stream's join and its first note downloads it again
+
+P3, small, won't fix (the window is short and the only cost is the repeated download; the joined file is already flushed).
+
+A crash after a stream is joined and before the first note is written downloads the stream again.
+
+**Fix:** None.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** crates/core/src/manager/media_run/placement.rs.
+
+### 286. Decision numbers are out of order in DECISIONS.md
+
+P3, small, won't fix (numbers are identifiers, every reference still resolves, and moving the sections adds nothing).
+
+`docs/DECISIONS.md` has its D-numbers out of order in 10 places, because parallel work took numbers in blocks.
+
+**Fix:** None.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** docs/DECISIONS.md.
 
 ## Fixed beyond the items
 
