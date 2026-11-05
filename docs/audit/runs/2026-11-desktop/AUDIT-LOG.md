@@ -79,7 +79,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 52  | A damaged list set aside can be deleted at the next start                                         | `03-5` `Xdatabase-migrations-1`                                                                    | P2       | small  | P2, 2 findings, small                                                                                            | `03-5`                                        | fixed  |
 | 53  | The quality form loses the person's choice or says nothing around an add-on install               | `24-1` `24-2`                                                                                      | P2       | small  | P2, 2 findings, small; after item 40                                                                             | none                                          | fixed  |
 | 54  | The file-exists question never says whether it is the same file                                   | `24-4` `30-1`                                                                                      | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | open   |
-| 55  | Cancel in a download window discards the partial file with no question                            | `24-7` `U-14`                                                                                      | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | open   |
+| 55  | Cancel in a download window discards the partial file with no question                            | `24-7` `U-14`                                                                                      | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
 | 56  | A pasted link is cut at an apostrophe, a space or a bracket, so another address is downloaded     | `23-2` `Xpath-normal-download-4`                                                                   | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
 | 57  | Choosing a file or folder without a file chooser portal does nothing and says nothing             | `23-6` `B18-1`                                                                                     | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
 | 58  | A typed file name with a dot loses the words after it                                             | `17-3` `Xrepeated-logic-2`                                                                         | P2       | small  | P2, 2 findings, small                                                                                            | `17-3`                                        | fixed  |
@@ -105,7 +105,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 78  | A download moved to another queue shows in the wrong place                                        | `23-1` `25-5`                                                                                      | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | fixed  |
 | 79  | The window and a restart disagree with what a queue's run really is                               | `18-2` `18-3`                                                                                      | P2       | medium | P2, 2 findings, medium; clears the way for item 138                                                              | none                                          | open   |
 | 80  | Answering the file-exists question opens a second window for the same download                    | `24-6` `U-7`                                                                                       | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | open   |
-| 81  | Download windows offer only Try again, whatever fix the failure needs                             | `30-2` `Xfeature-behaviour-5`                                                                      | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | open   |
+| 81  | Download windows offer only Try again, whatever fix the failure needs                             | `30-2` `Xfeature-behaviour-5`                                                                      | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | fixed  |
 | 82  | Refreshing the link cannot clear the check against what the browser saw                           | `Xpath-normal-download-3`                                                                          | P2       | small  | P2 with one finding; placed here because saving this check alone would remove the only way out of it             | `Xpath-normal-download-3`                     | fixed  |
 | 83  | An answered Replace and a capture's size check are lost at a restart                              | `05-6` `Xcrash-and-resume-5`                                                                       | P2       | medium | P2, 2 findings, medium; after items 4, 82                                                                        | `05-6` `Xcrash-and-resume-5`                  | fixed  |
 | 84  | A write that can never pass raises a notification for every batch                                 | `03-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | `03-3`                                        | open   |
@@ -150,7 +150,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 123 | A failure notice in the browser loses its buttons after 32 later notices                          | `26-1`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 124 | A tray action that fails tells the person nothing                                                 | `26-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 125 | An unfinished download reads 100%                                                                 | `23-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
-| 126 | A finished download whose file is gone gets advice it cannot follow                               | `23-8`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
+| 126 | A finished download whose file is gone gets advice it cannot follow                               | `23-8`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 127 | Settings, Media shows an empty Resolution after a rarer quality                                   | `27-6`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 128 | The Add dialog says By file type for downloads going to a queue's folder                          | `Xpath-normal-download-7`                                                                          | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 129 | scripts/linux-test.sh can never pass                                                              | `33-1`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
@@ -223,7 +223,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 196 | Doc comments on media runs sit on the wrong items                                                 | `17-10`                                                                                            | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 197 | Sizes and bit rates a page chooses are added without a check                                      | `16-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | `B07-p2-tests`                                | fixed  |
 | 198 | The key error prints the whole signed address                                                     | `14-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 199 | On Linux, media programs may outlive an app ended by a signal                                     | `Xshutdown-4`                                                                                      | P3       | medium | P3, 1 finding, medium                                                                                            | none                                          | open   |
+| 199 | On Linux, media programs may outlive an app ended by a signal                                     | `Xshutdown-4`                                                                                      | P3       | medium | P3, 1 finding, medium                                                                                            | none                                          | fixed  |
 | 200 | Placing a finished video has its own weaker no-replace move                                       | `Xrepeated-logic-4`                                                                                | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 201 | Moving a finished video leaves its subtitle files behind                                          | `B10-1`                                                                                            | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 202 | A failed browser registration logs no reason                                                      | `22-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
@@ -280,7 +280,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 253 | A quit right after a cancel can leave a part file                                                 | found while fixing                                                                                 | P3       | small  | Found while fixing PR-123.                                                                                       | fixed                                         |
 | 254 | Ticking a folded group does nothing the person can act on                                         | found while fixing                                                                                 | P3       | small  | Found while fixing PR-81.                                                                                        | open                                          |
 | 255 | A page read can outlive the app after a quit past the limit                                       | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-10. Read from the code, not run.                                                        | open                                          |
-| 256 | A retry on the best format can move the bar backwards                                             | found while fixing                                                                                 | P3       | small  | Left by PR-76.                                                                                                   | open                                          |
+| 256 | A retry on the best format can move the bar backwards                                             | found while fixing                                                                                 | P3       | small  | Left by PR-76.                                                                                                   | fixed                                         |
 
 ## Items
 
@@ -1253,7 +1253,7 @@ P2, small, open.
 
 ### 55. Cancel in a download window discards the partial file with no question
 
-P2, small, open.
+P2, small, fixed.
 
 `progress-cancel` is wired straight to `api::cancel`, next to Hide, in the running and paused states. The partial file goes at one click, while D23.4 says it asks first and the list does ask.
 
@@ -1698,7 +1698,7 @@ P2, medium, open.
 
 ### 81. Download windows offer only Try again, whatever fix the failure needs
 
-P2, medium, open.
+P2, medium, fixed.
 
 `progress_buttons` and `row_buttons` take only a status, so a 404 offers Try again where the list offers Get a new link. `Reveal::details` has no caller. D23.4 promises any error with its fix.
 
@@ -2422,7 +2422,7 @@ The `row.done >= total` branch of `percent` contradicts its doc, and it is reach
 
 ### 126. A finished download whose file is gone gets advice it cannot follow
 
-P2, small, open.
+P2, small, fixed.
 
 `file_to_open` tells a finished row to retry, but `can_retry` is only for failed and cancelled rows and `requeue` refuses. `item_to_reveal` says "Wirecatch creates it when the download starts" for a finished row too.
 
@@ -3040,6 +3040,8 @@ Messages in `notifications.rs`, `tray.rs`, `api.rs`, `appimage.rs`, `bridge.rs` 
 - `26-9`: confirmed, P3. Two messages name the product with a literal. Full text in `chunks/26.md`, verdict in `verdicts/B17.md`.
 - `B17-1`: confirmed, P3. Product name written out in more messages than the two of 26-9. Full text in `verdicts/B17.md`, verdict in `verdicts/new-findings.md`.
 
+**Left to do:** The six listed files read the product crate. About 120 non-test lines in other crates still hold the name, many in messages people read (core startup.rs, bridge app.rs), and the check to add is not done.
+
 ### 162. A navigation item left behind keeps its hover colour until the mouse moves
 
 P3, small, open.
@@ -3651,7 +3653,7 @@ P3, small, open.
 
 ### 199. On Linux, media programs may outlive an app ended by a signal
 
-P3, medium, open.
+P3, medium, fixed.
 
 No `crates/` code outside the CLI handles a signal, and `Tree::kill` runs only from a live process. When the app ends on `SIGTERM`, the pipes close, and how yt-dlp and ffmpeg each answer was not checked, so "goes on downloading" is not established. Linux was not run.
 
@@ -4523,7 +4525,7 @@ A yt-dlp page read still running at exit is no longer killed by dropping the run
 
 ### 256. A retry on the best format can move the bar backwards
 
-P3, small, open.
+P3, small, fixed.
 
 A row with no saved formats runs the best selection with nothing to seed the total, so if yt-dlp takes two formats the total grows and the bar drops when the second starts.
 

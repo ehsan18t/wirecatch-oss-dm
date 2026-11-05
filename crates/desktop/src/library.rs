@@ -120,7 +120,7 @@ impl Library {
         })
     }
 
-    fn empty() -> Self {
+    pub(crate) fn empty() -> Self {
         Self {
             loaded: Loaded::Loading,
             downloads: Rows::default(),

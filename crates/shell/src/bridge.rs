@@ -22,9 +22,9 @@ pub use wirecatch_product::BRIDGE_FILE_NAME;
 pub enum BridgeError {
     #[error("Could not find the browser bridge next to the app.")]
     NoFolder,
-    #[error("The browser bridge is in a temporary folder ({}), so it is not registered. Install Wirecatch, or run it from a permanent folder.", .0.display())]
+    #[error("The browser bridge is in a temporary folder ({}), so it is not registered. Install {app}, or run it from a permanent folder.", .0.display(), app = crate::host::CHANNEL.name())]
     Temporary(PathBuf),
-    #[error("The browser bridge is missing ({}). Reinstall Wirecatch so browser downloads reach it.", .0.display())]
+    #[error("The browser bridge is missing ({}). Reinstall {app} so browser downloads reach it.", .0.display(), app = crate::host::CHANNEL.name())]
     Missing(PathBuf),
     #[error("Could not run {} ({source}).", .bridge.display())]
     Start {
@@ -157,8 +157,9 @@ where
     };
     use wirecatch_protocol::{MIN_PROTOCOL_VERSION, frame};
 
+    let app = crate::host::CHANNEL.name();
     let message = format!(
-        "Wirecatch is running but could not open its download list: {reason} Restart Wirecatch; if that does not help, see its tray icon for details."
+        "{app} is running but could not open its download list: {reason} Restart {app}; if that does not help, see its tray icon for details."
     );
     loop {
         let Some(body) = frame::read_body_async(&mut stream)
