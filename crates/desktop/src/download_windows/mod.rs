@@ -60,6 +60,7 @@ pub fn follow(event: &UiEvent, cx: &mut App) {
         UiEvent::AddonRequired { id, .. } => ask(*id, cx),
         UiEvent::MediaChoiceRequested(choice) => ask(choice.id, cx),
         UiEvent::FileExistsRequested(question) => ask(question.id, cx),
+        UiEvent::FileTypeRequested(question) => ask(question.id, cx),
         UiEvent::ConfirmationClosed { id } => closed(*id, cx),
         UiEvent::CaptureRepeated(Repeated::Question(id)) => {
             let step = update(cx, |registry| registry.show_question(*id));

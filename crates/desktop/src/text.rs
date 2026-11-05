@@ -5,9 +5,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use chrono::{Datelike as _, Local, NaiveDate, NaiveTime, TimeZone as _};
 use wirecatch_protocol::UnixMillis;
 use wirecatch_protocol::app::{
-    Category, ClockFormat, DownloadStatus, DownloadSummary, FileExistsQuestion, FixAction,
-    MediaSummary, OutputFormat, PER_MILLE_DONE, ProcessingStep, QueueSettings, Schedule, TimeOfDay,
-    WaitReason, Weekday,
+    Category, ClockFormat, DownloadStatus, DownloadSummary, FileExistsQuestion, FileTypeQuestion,
+    FixAction, MediaSummary, OutputFormat, PER_MILLE_DONE, ProcessingStep, QueueSettings, Schedule,
+    TimeOfDay, WaitReason, Weekday,
 };
 use wirecatch_protocol::extension::MediaKind;
 use wirecatch_protocol::rules::{AddDownloads, LinkProtocol, Rule};
@@ -542,6 +542,14 @@ fn file_exists_said_on(
     format!(
         "{which} is already in {} ({facts}).",
         folder(&question.folder)
+    )
+}
+
+/// What the question about a server's name of another file type says (D166).
+pub fn file_type_said(question: &FileTypeQuestion) -> String {
+    format!(
+        "The server named this file {}, which is a different type of file from {}. Which name do you want to save it under?",
+        question.server_name, question.confirmed_name
     )
 }
 

@@ -42,6 +42,15 @@ impl From<&RemoteFile> for ServerAnswer {
     }
 }
 
+/// Where a server's answer puts a download.
+struct Place {
+    dir: PathBuf,
+    name: String,
+    category: Category,
+    /// Its path until now.
+    provisional: PathBuf,
+}
+
 /// Chooses a download's path from the server's answer; `Err` refuses the file.
 pub(super) type Settle = Arc<dyn Fn(&ServerAnswer) -> Result<PathBuf, String> + Send + Sync>;
 
@@ -150,6 +159,48 @@ impl Manager {
         off_async_worker(|| self.settle_on_disk(id, run_id, remote, free_on_disk))
     }
 
+    /// Where the server's answer puts run `run_id` of download `id`, unless it stops the run.
+    fn place_for_answer(
+        &self,
+        id: DownloadId,
+        run_id: u64,
+        remote: &ServerAnswer,
+    ) -> Result<Place, String> {
+        let state = self.lock();
+        let entry = current_run(&state, id, run_id)?;
+        if let Some(expect) = &entry.expect {
+            check_expectation(expect, remote)?;
+        }
+        let name = naming::settled_name(
+            entry.naming.name.as_deref(),
+            &remote.suggested_name,
+            &remote.final_url,
+            entry.plain_name.as_deref().unwrap_or(&entry.row.file_name),
+        )
+        .map_err(|e| e.to_string())?;
+        if entry
+            .confirmed_name
+            .as_deref()
+            .is_some_and(|confirmed| naming::changes_file_type(confirmed, &name))
+        {
+            drop(state);
+            return Err(self.stop_for_file_type(id, run_id, name)?);
+        }
+        let category = settled_category(&state, entry, &name, remote);
+        let dir = match &entry.naming.folder {
+            Some(folder) => PathBuf::from(folder),
+            None => state
+                .folder_for(entry.row.queue, category, &self.inner.folders)
+                .map_err(|e| e.to_string())?,
+        };
+        Ok(Place {
+            dir,
+            name,
+            category,
+            provisional: entry.path().to_path_buf(),
+        })
+    }
+
     fn settle_on_disk(
         &self,
         id: DownloadId,
@@ -160,28 +211,12 @@ impl Manager {
         if self.read_as_video(id, run_id, remote)? {
             return Err(READ_AS_VIDEO.into());
         }
-        let (dir, name, category, provisional) = {
-            let state = self.lock();
-            let entry = current_run(&state, id, run_id)?;
-            if let Some(expect) = &entry.expect {
-                check_expectation(expect, remote)?;
-            }
-            let name = naming::settled_name(
-                entry.naming.name.as_deref(),
-                &remote.suggested_name,
-                &remote.final_url,
-                entry.plain_name.as_deref().unwrap_or(&entry.row.file_name),
-            )
-            .map_err(|e| e.to_string())?;
-            let category = settled_category(&state, entry, &name, remote);
-            let dir = match &entry.naming.folder {
-                Some(folder) => PathBuf::from(folder),
-                None => state
-                    .folder_for(entry.row.queue, category, &self.inner.folders)
-                    .map_err(|e| e.to_string())?,
-            };
-            (dir, name, category, entry.path().to_path_buf())
-        };
+        let Place {
+            dir,
+            name,
+            category,
+            provisional,
+        } = self.place_for_answer(id, run_id, remote)?;
 
         let first = naming::candidate(&dir, &name, 0);
         self.stop_for_duplicate(id, run_id, remote, &first, category)?;
@@ -237,6 +272,7 @@ impl Manager {
         entry.naming.settled = true;
         entry.naming.writing = true;
         entry.plain_name = None;
+        entry.confirmed_name = None;
         entry.expect = None;
         entry.video_check = false;
         self.save(state, id);
@@ -280,6 +316,9 @@ const READ_AS_VIDEO: &str = "The link is a web page, read for its video instead.
 /// Ends a run whose file is already in the folder (D88); never shown, as the download is
 /// replaced, kept or asked about instead.
 const FILE_EXISTS: &str = "The file is already in the folder.";
+/// Ends a run whose server changed the type of the confirmed name (D166); never shown, as the
+/// download is asked about instead.
+const FILE_TYPE_CHANGED: &str = "The server changed the file's type.";
 
 impl Manager {
     /// Stops run `run_id` of download `id` when the file at `path`, where it would save, seems to
@@ -306,6 +345,25 @@ impl Manager {
             }
         }
         Err(FILE_EXISTS.into())
+    }
+
+    /// Stops run `run_id` of download `id` to ask about `server_name` (D166). `Ok` holds why the run ended.
+    fn stop_for_file_type(
+        &self,
+        id: DownloadId,
+        run_id: u64,
+        server_name: String,
+    ) -> Result<String, String> {
+        let mut state = self.lock();
+        current_run(&state, id, run_id)?;
+        if let Some(entry) = state.downloads.get_mut(&id) {
+            entry.offered_file = true;
+            if let Some(run) = entry.run.as_mut() {
+                run.stop = Some(Stop::FileTypeChanged);
+                run.server_name = Some(server_name);
+            }
+        }
+        Ok(FILE_TYPE_CHANGED.into())
     }
 
     /// Whether download `id`, added in the app, answered run `run_id` with a web
