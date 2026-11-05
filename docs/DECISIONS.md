@@ -1334,4 +1334,4 @@ It amends D65.2. `START_NOTICE_TIMES` and `FINISH_NOTICE_TIMES` had no reader on
 
 Decided on 2026-11-05.
 
-A yt-dlp row's total starts from the page's sizes, which may be estimates, and its bytes are real. When a larger size arrives while the run goes on, the row's total follows the bytes at the ratio already shown, until it reaches the real size, so the bar waits rather than falling. A format begun again shows its real total. Hiding the total until the sizes are real was rejected: a fragmented format only ever has an estimate, so its row would have no bar at all.
+A yt-dlp row's total starts from the page's sizes, which may be estimates, and its bytes are real. When a larger size arrives while the run goes on, the row's total follows the bytes at the ratio already shown, until it reaches the real size, so the bar waits rather than falling. A format begun again, or one not listed before, shows the real total. Hiding the total until the sizes are real was rejected: a fragmented format only ever has an estimate, so its row would have no bar at all.

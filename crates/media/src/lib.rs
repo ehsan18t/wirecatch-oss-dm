@@ -81,6 +81,7 @@ impl OwnProgress {
             .iter()
             .position(|f| f.id == id)
             .unwrap_or_else(|| {
+                self.shown = None;
                 self.formats.push(OwnFormat {
                     id: id.to_owned(),
                     done: 0,
@@ -535,6 +536,17 @@ mod tests {
         progress.set_own("137", 10, Some(200));
         let reading = progress.read();
         assert_eq!((reading.done, reading.total), (10, Some(200)));
+    }
+
+    /// A format no size was expected for is more to get, not a better estimate: the bar shows the real share.
+    #[test]
+    fn a_format_not_expected_reads_the_real_total() {
+        let progress = MediaProgress::default();
+        progress.set_own("video", 100, Some(100));
+        assert_eq!(progress.read().total, Some(100));
+        progress.set_own("audio", 10, Some(200));
+        let reading = progress.read();
+        assert_eq!((reading.done, reading.total), (110, Some(300)));
     }
 
     /// Bytes past the estimate show no total until a larger one is known, which then holds the bar where it was.
