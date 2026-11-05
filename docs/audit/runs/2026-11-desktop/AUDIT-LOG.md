@@ -279,7 +279,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 252 | A quit during a removal can leave part files behind                                               | found while fixing                                                                                 | P3       | small  | Found while fixing PR-27.                                                                                        | fixed                                         |
 | 253 | A quit right after a cancel can leave a part file                                                 | found while fixing                                                                                 | P3       | small  | Found while fixing PR-123.                                                                                       | fixed                                         |
 | 254 | Ticking a folded group does nothing the person can act on                                         | found while fixing                                                                                 | P3       | small  | Found while fixing PR-81.                                                                                        | open                                          |
-| 255 | A page read can outlive the app after a quit past the limit                                       | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-10. Read from the code, not run.                                                        | open                                          |
+| 255 | A page read can outlive the app after a quit past the limit                                       | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-10. Read from the code, not run.                                                        | fixed                                         |
 | 256 | A retry on the best format can move the bar backwards                                             | found while fixing                                                                                 | P3       | small  | Left by PR-76.                                                                                                   | fixed                                         |
 
 ## Items
@@ -4515,7 +4515,7 @@ A folded group's heading circle ticks ids that `laid.rows` leaves out. The circl
 
 ### 255. A page read can outlive the app after a quit past the limit
 
-P3, small, open.
+P3, small, fixed.
 
 A yt-dlp page read still running at exit is no longer killed by dropping the runtime, because its token at `crates/shell/src/media.rs:617` does not come from `stopped`. On Linux it should end on a closed pipe or at its time limit.
 
