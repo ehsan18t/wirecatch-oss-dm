@@ -122,6 +122,7 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
         claimed: Claimed::default(),
         running: BTreeSet::default(),
         unfinished: BTreeSet::default(),
+        arriving: Vec::new(),
         system_proxy: None,
         computer_proxy: ComputerProxy::Read,
         pending: questions::captures(),
@@ -281,8 +282,7 @@ fn restore_queues(stored: Vec<Queue>) -> Vec<QueueSlot> {
 
 /// One stored download as it continues, and whether its stored row needed
 /// fixing: one whose queue is gone joins `default_queue`, one whose file
-/// finished is completed, and one that was running goes back in line first and
-/// its queue continues the run that was under way.
+/// finished is completed, and one that was running goes back in line first.
 fn restore_entry(
     stored: StoredDownload,
     queues: &[QueueSlot],

@@ -60,6 +60,8 @@ pub(super) struct State {
     pub computer_proxy: ComputerProxy,
     /// Every unfinished download, and any finished since [`State::prune_finished`] last ran: the scheduler visits these, not the whole history (CORE-10). A finished download never becomes unfinished again, so only adding one puts it here.
     pub unfinished: BTreeSet<DownloadId>,
+    /// The queue of each download being added in place of one that gave way to its page: out of `media`, and not yet in the list (D155.3).
+    pub arriving: Vec<QueueId>,
     pub pending: Questions<Pending>,
     /// Media captures being looked at, waiting for the media add-on, or waiting
     /// for the user's choice of quality. Their ids come from the same counter as

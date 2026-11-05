@@ -224,7 +224,13 @@ fn queues_with_work(state: &State) -> HashSet<QueueId> {
         .values()
         .filter(|pending| !pending.replaces.is_empty())
         .map(|pending| pending.placed.queue);
-    planned.chain(moving).chain(asked).chain(pages).collect()
+    let arriving = state.arriving.iter().copied();
+    planned
+        .chain(moving)
+        .chain(asked)
+        .chain(pages)
+        .chain(arriving)
+        .collect()
 }
 
 /// Queued and not running, moving or being removed.

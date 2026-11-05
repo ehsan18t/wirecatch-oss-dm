@@ -5,15 +5,17 @@
 use std::path::Path;
 use std::time::Duration;
 
-use wirecatch_core::CoreError;
+use wirecatch_core::{CoreError, DEFAULT_QUEUE_ID};
 use wirecatch_protocol::app::{
     AddRequest, AddonId, AddonState, Category, DownloadStatus, DownloadSummary, FileExistsAnswer,
-    FileExistsChoice, FixAction, MediaChoice, MediaSelection, QualityFallback, Repeated, UiEvent,
-    VideoQuality, WaitReason, WhenFileExists,
+    FileExistsChoice, FixAction, MediaChoice, MediaSelection, QualityFallback, Repeated, Schedule,
+    TimeOfDay, UiEvent, VideoQuality, WaitReason, WhenFileExists,
 };
 use wirecatch_protocol::extension::{AddAction, MediaKind, NewDownload};
 
-use crate::common::{Harness, PATIENCE, QUIET, TestResult, extension, test_data, tune, wait_until};
+use crate::common::{
+    Harness, PATIENCE, QUIET, TestResult, extension, monday, test_data, tune, wait_until,
+};
 use crate::media_support::{
     FileServer, Releases, args, choice_requested, harness, harness_refreshing, install,
     media_capture, mp4_data, next_event, publish, real_ffmpeg, select, tell_tool, use_real_ffmpeg,
@@ -689,6 +691,69 @@ async fn an_added_link_that_answers_with_a_web_page_is_read_for_its_video() -> T
     // The plain download gave way to the question.
     wait_until("the page's download gone", || {
         h.manager.list_downloads().is_empty().then_some(())
+    })
+    .await;
+    Ok(())
+}
+
+/// A queue in the run its start time began, whose only download is the page at `page`.
+async fn page_in_a_run(h: &Harness, server: &FileServer, page: &str) -> TestResult {
+    h.clock.set(monday(1, 0)?);
+    let mut main = h
+        .manager
+        .list_queues()
+        .into_iter()
+        .find(|q| q.id == DEFAULT_QUEUE_ID)
+        .ok_or("the default queue is missing")?;
+    main.settings.schedule = Some(Schedule {
+        start: TimeOfDay { hour: 2, minute: 0 },
+        stop: None,
+        days: vec![],
+    });
+    h.manager.update_queue(main.id, main.settings)?;
+    h.manager.add_download(added(&server.url(page))).await?;
+    h.clock.set(monday(2, 0)?);
+    Ok(())
+}
+
+/// A run goes on while its last download's page is read and its question waits, and the video it finds downloads at once. A run that ended here would not come back, so the wait for the question stands for the read too.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_queue_run_outlasts_the_page_read_of_its_last_download() -> TestResult {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    let (video, audio) = (mp4_data(KIB_USIZE), mp4_data(KIB_USIZE));
+    tell_tool(&h, "info.json", &page_info(&server, &video, &audio))?;
+    server.put_typed("clip/9", "<html></html>", "text/html; charset=utf-8");
+    let mut ui = h.manager.subscribe();
+    page_in_a_run(&h, &server, "clip/9").await?;
+
+    let choice = choice_requested(&mut ui).await;
+    let in_run = h
+        .manager
+        .list_queues()
+        .iter()
+        .any(|q| q.id == DEFAULT_QUEUE_ID && q.status.running_until_empty);
+    assert!(in_run, "the run ended while the page was read");
+    let id = h.manager.choose_media(choice.id, select("137+140")).await?;
+    h.wait_status(id, DownloadStatus::Completed).await;
+    Ok(())
+}
+
+/// A page without a video downloads as the file it is, in the same run.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_queue_run_outlasts_a_page_read_that_finds_no_video() -> TestResult {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    tell_tool(&h, "fail.txt", "[generic] Unsupported URL")?;
+    server.put_typed("about", "<html></html>", "text/html");
+    page_in_a_run(&h, &server, "about").await?;
+    wait_until("the page's own download", || {
+        h.manager
+            .list_downloads()
+            .into_iter()
+            .find(|r| r.status == DownloadStatus::Completed)
     })
     .await;
     Ok(())
