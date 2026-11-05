@@ -281,13 +281,18 @@ function stageLinux(product, built, root, triple) {
   writeNotices(product, triple, license);
 }
 
+/** Fills the package hook `name` from its template and returns the file it wrote. */
+function packageHook(name, product, arch) {
+  const hook = join(OUT, `${name}-${arch}.sh`);
+  const template = readFileSync(join(ROOT, 'config', 'templates', `${name}.sh`), 'utf8');
+  writeFileSync(hook, fillTemplate(template, product, `${name}.sh`), { mode: 0o755 });
+  return hook;
+}
+
 async function linux(product, built, arch, triple) {
   const { name, slug, version, summary, description, license } = product.product;
   const root = join(OUT, `stage-linux-${arch}`);
   stageLinux(product, built, root, triple);
-  const prerm = join(OUT, `prerm-${arch}.sh`);
-  const template = readFileSync(join(ROOT, 'config', 'templates', 'prerm.sh'), 'utf8');
-  writeFileSync(prerm, fillTemplate(template, product, 'prerm.sh'), { mode: 0o755 });
 
   const nfpmArchive = await tool('nfpm', arch);
   const nfpmDir = join(nfpmArchive, '..');
@@ -314,7 +319,10 @@ async function linux(product, built, arch, triple) {
       })),
       { src: `${join(root, 'usr', 'share')}/`, dst: '/usr/share', type: 'tree' },
     ],
-    scripts: { preremove: prerm },
+    scripts: {
+      postinstall: packageHook('postinst', product, arch),
+      preremove: packageHook('prerm', product, arch),
+    },
     overrides: { deb: { depends: depends.deb }, rpm: { depends: depends.rpm } },
   };
   const configFile = join(OUT, `nfpm-${arch}.yaml`);
