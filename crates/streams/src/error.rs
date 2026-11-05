@@ -261,6 +261,9 @@ impl std::fmt::Display for Chain<'_> {
     }
 }
 
+/// What the text around an address may put straight after it: `(https://h/a): refused`.
+const SENTENCE_MARKS: [char; 6] = [')', ':', ',', ';', '.', '\''];
+
 /// `text` with each address cut to its site: a signed address can carry its token in the path, where no pattern tells it from a name.
 fn sites_only(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
@@ -272,8 +275,9 @@ fn sites_only(text: &str) -> String {
             .find(|c: char| c.is_whitespace() || matches!(c, '"' | '<' | '>' | '`'))
             .unwrap_or(after.len());
         let (address, beyond) = after.split_at(link);
-        let site = address.find(['/', '?', '#']).unwrap_or(link);
-        out.push_str(address.get(..site).unwrap_or_default());
+        let (site, cut) = address.split_at(address.find(['/', '?', '#']).unwrap_or(link));
+        out.push_str(site);
+        out.push_str(&cut[cut.trim_end_matches(SENTENCE_MARKS).len()..]);
         rest = beyond;
     }
     out.push_str(rest);
@@ -614,6 +618,14 @@ mod tests {
             (
                 "server answered 403 for https://cdn.example:8443/tok/k.bin?a=b",
                 "server answered 403 for https://cdn.example:8443",
+            ),
+            (
+                "error sending request for url (https://h/x/s.ts): tcp connect error",
+                "error sending request for url (https://h): tcp connect error",
+            ),
+            (
+                "got 'https://h/x', then \"https://i/y\", done",
+                "got 'https://h', then \"https://i\", done",
             ),
             ("no address here: /a/b", "no address here: /a/b"),
             ("ftp://a/x and https://b/y", "ftp://a and https://b"),
