@@ -82,7 +82,14 @@ async fn no_request_asks_for_more_than_the_limit_while_connections_split() {
     let server = strict_server(5 * MIB_USIZE + 333, limit, Some(4 * MIB)).await;
     let dir = private_dir("split").unwrap();
 
-    let (path, _) = completed(run(request(&server, &dir, 4, Some(limit))).await.unwrap());
+    let outcome = server
+        .hold_until_joined(
+            "video.mp4",
+            2,
+            Box::pin(run(request(&server, &dir, 4, Some(limit)))),
+        )
+        .await;
+    let (path, _) = completed(outcome.unwrap());
 
     assert_eq!(std::fs::read(&path).unwrap(), server.data);
     assert_all_within(&server, limit);

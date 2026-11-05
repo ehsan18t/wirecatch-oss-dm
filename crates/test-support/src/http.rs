@@ -312,14 +312,39 @@ impl TestServer {
     ///
     /// When none arrives within `patience`.
     pub async fn wait_for_request(&self, path: &str, patience: Duration) {
+        self.wait_for_requests(path, 1, patience).await;
+    }
+
+    /// Waits until `count` requests for `path` (a leading `/` is optional) have arrived,
+    /// held or not.
+    ///
+    /// # Panics
+    ///
+    /// When fewer arrive within `patience`.
+    pub async fn wait_for_requests(&self, path: &str, count: usize, patience: Duration) {
         let key = path_key(path);
         let mut arrived = self.inner.arrived.subscribe();
-        let seen =
-            tokio::time::timeout(patience, arrived.wait_for(|paths| paths.contains(&key))).await;
+        let enough = |paths: &Vec<String>| paths.iter().filter(|p| **p == key).count() >= count;
+        let seen = tokio::time::timeout(patience, arrived.wait_for(enough)).await;
         assert!(
             matches!(seen, Ok(Ok(_))),
-            "the server saw no request for {path} within {patience:?}"
+            "the server saw fewer than {count} requests for {path} within {patience:?}"
         );
+    }
+
+    /// Runs `client` with bodies held until `count` requests for `path` have arrived, so that many connections overlap however the machine is loaded.
+    pub async fn hold_until_joined<T>(
+        &self,
+        path: &str,
+        count: usize,
+        client: impl Future<Output = T>,
+    ) -> T {
+        self.hold_bodies();
+        let release = async {
+            self.wait_for_requests(path, count, crate::PATIENCE).await;
+            self.release_bodies();
+        };
+        tokio::join!(client, release).0
     }
 
     /// The requests for `path` (a leading `/` is optional) answered so far, oldest
