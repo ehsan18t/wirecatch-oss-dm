@@ -86,9 +86,18 @@ impl SuffixCheck {
 /// Why a check left the list in use as it was.
 #[derive(Debug, thiserror::Error)]
 enum NotTaken {
-    /// The list could not be fetched, or not kept on disk.
+    /// No answer reached the app.
     #[error("{0}")]
-    Failed(String),
+    Unreachable(String),
+    /// The host answered with an error or with too much, instead of the list.
+    #[error("{0}")]
+    HostRefused(String),
+    /// The new list could not be written to the disk.
+    #[error("the new list could not be saved: {0}")]
+    NotSaved(String),
+    /// The app's own work on it was cut off, as when it is closing.
+    #[error("{0}")]
+    Interrupted(String),
     /// The list fetched failed a check of a downloaded list (D44.3).
     #[error("the list it got was refused: {0}")]
     Refused(Refused),
@@ -102,7 +111,9 @@ impl NotTaken {
             Self::Refused(Refused::FromTheFuture) => {
                 "check that your computer's date and time are right"
             }
-            Self::Failed(_) | Self::Refused(_) => "check your internet connection",
+            Self::Unreachable(_) => "check your internet connection",
+            Self::NotSaved(_) => "make sure the disk has free space",
+            Self::HostRefused(_) | Self::Interrupted(_) | Self::Refused(_) => "wait a while",
         }
     }
 }
@@ -179,7 +190,7 @@ impl Manager {
         match failed {
             None => Ok(info),
             Some(reason) => Err(CoreError::UpdateCheckFailed(format!(
-                "{PRODUCT_NAME} could not update its list of public domains ({reason}). It keeps using the list it has; {}, then try again.",
+                "{PRODUCT_NAME} could not update the Public Suffix List ({reason}). It keeps using the list it has; {}, then try again.",
                 reason.advice()
             ))),
         }
@@ -214,8 +225,15 @@ impl Manager {
             fetcher.get(source, None, MAX_LIST_BYTES).await
         })
         .await
-        .map_err(|_| NotTaken::Failed("publicsuffix.org took too long to answer".into()))?
-        .map_err(|e| NotTaken::Failed(e.to_string()))?;
+        .map_err(|_| NotTaken::Unreachable("publicsuffix.org took too long to answer".into()))?
+        .map_err(|e| match e {
+            wirecatch_engine::Error::HttpStatus { .. }
+            | wirecatch_engine::Error::TooLarge { .. } => NotTaken::HostRefused(e.to_string()),
+            wirecatch_engine::Error::Cancelled | wirecatch_engine::Error::Internal(_) => {
+                NotTaken::Interrupted(e.to_string())
+            }
+            other => NotTaken::Unreachable(other.to_string()),
+        })?;
         let current = self.lock().suffixes.clone();
         let now = self.inner.clock.unix_millis();
         let dir = self.inner.data_dir.clone();
@@ -230,14 +248,12 @@ impl Manager {
             Ok(
                 match wirecatch_files::whole_file::replace(&dir, KEPT_FILE, &fetched.body) {
                     Ok(()) => Ok(Some(Arc::new(list))),
-                    Err(e) => Err(NotTaken::Failed(format!(
-                        "the new list could not be saved: {e}"
-                    ))),
+                    Err(e) => Err(NotTaken::NotSaved(e.to_string())),
                 },
             )
         })
         .await
-        .map_err(|e| NotTaken::Failed(e.to_string()))?
+        .map_err(|e| NotTaken::Interrupted(e.to_string()))?
     }
 
     /// Runs a check when the weekly one is due, the setting is on and no download runs.
@@ -522,13 +538,57 @@ mod tests {
         std::fs::create_dir(data.join("public-suffix-list.dat.tmp")).unwrap();
         h.server.put(LIST, whole);
         let unkept = h.manager.check_suffix_list().await.unwrap_err();
-        assert!(
-            matches!(unkept, CoreError::UpdateCheckFailed(_)),
-            "{unkept:?}"
-        );
+        let CoreError::UpdateCheckFailed(message) = unkept else {
+            panic!("{unkept:?}");
+        };
+        assert!(message.contains("free space"), "{message}");
+        assert!(!message.contains("internet connection"), "{message}");
         assert_eq!(h.manager.suffix_list().published, before.published);
         h.add_local_site("customers.example.net").unwrap();
         assert!(!data.join("public-suffix-list.dat").exists());
+    }
+
+    #[tokio::test]
+    async fn a_host_that_answers_with_an_error_does_not_blame_the_connection() {
+        let h = Harness::new().await;
+        let refused = h.manager.check_suffix_list().await.unwrap_err();
+        let CoreError::UpdateCheckFailed(message) = refused else {
+            panic!("{refused:?}");
+        };
+        assert!(message.contains("wait a while"), "{message}");
+        assert!(!message.contains("internet connection"), "{message}");
+    }
+
+    #[tokio::test]
+    async fn a_list_too_large_to_take_does_not_blame_the_connection() {
+        let h = Harness::new().await;
+        let too_many = usize::try_from(MAX_LIST_BYTES).unwrap() + 1;
+        h.server.put(LIST, vec![b'a'; too_many]);
+        let refused = h.manager.check_suffix_list().await.unwrap_err();
+        let CoreError::UpdateCheckFailed(message) = refused else {
+            panic!("{refused:?}");
+        };
+        assert!(message.contains("wait a while"), "{message}");
+        assert!(!message.contains("internet connection"), "{message}");
+    }
+
+    #[tokio::test]
+    async fn a_host_that_cannot_be_reached_asks_about_the_connection() {
+        let dir = tempfile::tempdir().unwrap();
+        let free = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let source = Url::parse(&format!("http://{}/list", free.local_addr().unwrap())).unwrap();
+        drop(free);
+        let folders = KnownFolders::under_home(dir.path().join("home"));
+        let config = ManagerConfig::for_tests(dir.path().join("data"), folders)
+            .with_suffix_list_source(source);
+        let manager = Manager::open(config).await.unwrap();
+
+        let refused = manager.check_suffix_list().await.unwrap_err();
+
+        let CoreError::UpdateCheckFailed(message) = refused else {
+            panic!("{refused:?}");
+        };
+        assert!(message.contains("internet connection"), "{message}");
     }
 
     #[tokio::test]

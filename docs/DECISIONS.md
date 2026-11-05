@@ -1410,3 +1410,11 @@ Decided on 2026-11-05. It amends D23: a name left as proposed in the confirmatio
 2. When the server's answer would save it under another file type (the last extension, ignoring case), nothing is written: the download pauses and its window asks with `FileTypeQuestion`, naming both, with Keep my name, Use server's name and Cancel. The answer counts as a name the person typed. Resuming, cancelling or removing the download closes the question, and a later run asks again.
 3. A server may still improve the name otherwise: another name with the same type, or any name when the confirmed one has no type (`get` becoming `report.pdf`), since that promised none. Two extensions for one type (`jpg`, `jpeg`) count as different: the rule stays one comparison, and the cost is one question.
 4. A name nobody confirmed (a browser's file with no window, a link added in the app with the name field empty) follows the server as before. The program warning and the Mark of the Web still apply when it is opened.
+
+### D169. The Public Suffix List's state sits in General, under Updates
+
+Decided on 2026-11-05. It fulfils and amends D44.4, which placed these under Advanced.
+
+1. Under the switch "Update the Public Suffix List automatically": a line such as "List published 3 Nov 2026. Last checked 4 Nov 2026." and a small Check now button. A check that failed shows a danger note until a later one works; while the switch is on the note says it will be tried again in a day.
+2. Check now tells its answer in a notification, the reason included when it failed.
+3. A failed check's advice follows its cause: no answer asks to check the internet connection, a list that could not be saved asks to free disk space, an error or an oversized answer from the host, a refused list or interrupted work asks to wait a while, and a list dated after today asks to check the computer's clock.

@@ -7,7 +7,7 @@ use wirecatch_protocol::UnixMillis;
 use wirecatch_protocol::app::{
     Category, ClockFormat, DownloadStatus, DownloadSummary, FileExistsQuestion, FileTypeQuestion,
     FixAction, MediaSummary, OutputFormat, PER_MILLE_DONE, ProcessingStep, QueueSettings, Schedule,
-    TimeOfDay, WaitReason, Weekday,
+    SuffixListInfo, TimeOfDay, WaitReason, Weekday,
 };
 use wirecatch_protocol::extension::MediaKind;
 use wirecatch_protocol::rules::{AddDownloads, LinkProtocol, Rule};
@@ -456,6 +456,26 @@ pub fn date(at: UnixMillis) -> String {
     }
 }
 
+/// What is known of the Public Suffix List in use: `List published 3 Nov 2026. Last checked 4 Nov 2026.`
+pub fn suffix_list_said(list: &SuffixListInfo) -> String {
+    let published = whole_day(list.published);
+    match list.checked {
+        Some(checked) => format!(
+            "List published {published}. Last checked {}.",
+            whole_day(checked)
+        ),
+        None => format!("List published {published}. Not checked yet."),
+    }
+}
+
+/// A moment's local day, year included: `3 Nov 2026`.
+fn whole_day(at: UnixMillis) -> String {
+    Local
+        .timestamp_millis_opt(at.0)
+        .single()
+        .map_or_else(String::new, |at| at.format("%-d %b %Y").to_string())
+}
+
 /// The local day of a moment.
 pub fn local_day(at: UnixMillis) -> Option<NaiveDate> {
     Local
@@ -669,6 +689,32 @@ fn ordinal(n: u32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_suffix_list_says_its_days_or_that_it_was_never_checked() {
+        let noon = |day| {
+            UnixMillis(
+                Local
+                    .with_ymd_and_hms(2026, 11, day, 12, 0, 0)
+                    .single()
+                    .expect("noon exists")
+                    .timestamp_millis(),
+            )
+        };
+        let list = |checked| SuffixListInfo {
+            published: noon(3),
+            checked,
+            check_failed: false,
+        };
+        assert_eq!(
+            suffix_list_said(&list(Some(noon(4)))),
+            "List published 3 Nov 2026. Last checked 4 Nov 2026."
+        );
+        assert_eq!(
+            suffix_list_said(&list(None)),
+            "List published 3 Nov 2026. Not checked yet."
+        );
+    }
 
     #[test]
     fn an_unfinished_download_never_reads_100() {
