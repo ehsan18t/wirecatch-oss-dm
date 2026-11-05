@@ -390,7 +390,7 @@ pub(crate) async fn run(
         .watching(output.to_path_buf());
     match process::run(program, args, dir, options, cancel, |_, _| {}).await {
         Ok(ran) if ran.success() => Ok(true),
-        Ok(ran) => Err(Error::Ffmpeg(ran.stderr.summary(SUMMARY_LINES))),
+        Ok(ran) => Err(Error::Ffmpeg(ran.all_said())),
         Err(RunError::Cancelled) => Ok(false),
         Err(RunError::Start { source, .. }) if source.kind() == io::ErrorKind::NotFound => {
             Err(Error::FfmpegMissing(program.to_path_buf()))
@@ -398,9 +398,6 @@ pub(crate) async fn run(
         Err(e) => Err(Error::FfmpegRun(e)),
     }
 }
-
-/// Lines of ffmpeg's error output kept in its error message.
-const SUMMARY_LINES: usize = 3;
 
 #[cfg(test)]
 mod tests {

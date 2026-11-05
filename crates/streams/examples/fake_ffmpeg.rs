@@ -5,7 +5,8 @@
 //! `file:<path>`). This shows exactly what a real process sees, so the tests
 //! can prove that paths with spaces, quotes or leading dashes arrive as single,
 //! unchanged arguments. An output name containing `fail-please` makes it fail
-//! with a message on stderr, like a real ffmpeg error.
+//! with a message on stderr, like a real ffmpeg error; one containing
+//! `fail-early-cause` names the cause first, with general lines after it.
 
 use std::process::ExitCode;
 
@@ -26,6 +27,16 @@ fn main() -> ExitCode {
                 return ExitCode::from(1);
             }
         }
+    }
+    if output.contains("fail-early-cause") {
+        eprintln!(
+            "[mp4 @ 0x1] codec not currently supported in container
+Could not write header
+Error opening output file
+Error while filtering
+Conversion failed!"
+        );
+        return ExitCode::from(1);
     }
     if output.contains("fail-please") {
         eprintln!("[mp4 @ 0x1] fake ffmpeg failed\nConversion failed!");

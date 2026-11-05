@@ -110,10 +110,7 @@ pub(crate) async fn run(
     let result = match ran {
         Ok(ran) if ran.success() && is_file(output).await => return Ok(Finished::Done),
         Ok(ran) => Err(FfmpegError::Failed {
-            reason: match ran.stderr.to_string() {
-                said if said.is_empty() => ran.reason(),
-                said => said,
-            },
+            reason: ran.all_said(),
         }),
         Err(RunError::Cancelled) => Ok(Finished::Cancelled),
         Err(RunError::Start { source, .. }) => Err(FfmpegError::Start(source)),
