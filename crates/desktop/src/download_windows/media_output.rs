@@ -147,34 +147,33 @@ pub fn video_length(milliseconds: u64) -> String {
     }
 }
 
-/// One sentence on what saving as `format` does to this quality, before the person starts.
+/// One sentence on what converting to the format does to this quality, before the person starts; `None` when nothing is converted.
 pub fn conversion_note(fit: Option<&OutputFit>, kbps: Option<u32>) -> Option<String> {
     let fit = fit.filter(|fit| fit.format != OutputFormat::Original)?;
     let name = format_name(fit.format);
-    Some(match fit.video {
+    match fit.video {
         StreamAction::None if fit.audio == StreamAction::Encode || kbps.is_some() => {
             let at = kbps.map_or_else(String::new, |kbps| format!(" at {kbps} kbps"));
-            format!("Converted to {name}{at} after downloading, which is quick.")
+            Some(format!(
+                "Converted to {name}{at} after downloading, which is quick."
+            ))
         }
-        StreamAction::None => format!("No conversion: the audio is copied into {name} as it is."),
-        StreamAction::Encode => format!(
+        StreamAction::Encode => Some(format!(
             "This quality has no {name} version, so {} converts the video to {} after downloading, which takes longer.",
             host::CHANNEL.name(),
             fit.video_codec.as_deref().unwrap_or(name),
-        ),
+        )),
         StreamAction::Copy if fit.audio == StreamAction::Encode => {
             let from = fit
                 .audio_codec
                 .as_ref()
                 .map_or_else(String::new, |codec| format!(" ({codec})"));
-            format!(
+            Some(format!(
                 "The video is copied as it is; only the audio{from} is converted for {name}, which is quick."
-            )
+            ))
         }
-        StreamAction::Copy => format!(
-            "No conversion: the video and audio are copied into {name} as they are, which takes seconds."
-        ),
-    })
+        StreamAction::None | StreamAction::Copy => None,
+    }
 }
 
 /// Notes on quality: a bit rate above the download's, or a lossless format from lossy audio.
@@ -356,12 +355,16 @@ mod tests {
     }
 
     #[test]
-    fn the_note_says_what_happens_to_the_file() {
-        let copied = fit(OutputFormat::Mp4, StreamAction::Copy, StreamAction::Copy);
+    fn only_a_conversion_gets_a_note() {
+        let copied = fit(OutputFormat::Mkv, StreamAction::Copy, StreamAction::Copy);
+        assert_eq!(conversion_note(Some(&copied), None), None);
+        let audio_copied = fit(OutputFormat::M4a, StreamAction::None, StreamAction::Copy);
+        assert_eq!(conversion_note(Some(&audio_copied), None), None);
+        let audio_for_video = fit(OutputFormat::Mp4, StreamAction::Copy, StreamAction::Encode);
         assert!(
-            conversion_note(Some(&copied), None)
+            conversion_note(Some(&audio_for_video), None)
                 .unwrap()
-                .starts_with("No conversion")
+                .contains("only the audio (Opus) is converted")
         );
         let encoded = fit(OutputFormat::Mp4, StreamAction::Encode, StreamAction::Copy);
         assert!(
