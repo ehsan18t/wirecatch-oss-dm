@@ -63,6 +63,8 @@ pub mod proxy;
 pub mod redaction;
 #[cfg(feature = "resume")]
 pub mod resume;
+#[cfg(feature = "settings")]
+pub mod settings;
 #[cfg(feature = "servers")]
 pub mod silent;
 #[cfg(feature = "servers")]

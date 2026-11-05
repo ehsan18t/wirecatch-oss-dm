@@ -23,7 +23,7 @@ wirecatch-server.workspace = true
 wirecatch-ipc.workspace = true
 wirecatch-product.workspace = true
 wirecatch-protocol = { workspace = true, features = ["tokio"] }
-wirecatch-test-support = { path = "../test-support", features = ["bridge", "servers"] }
+wirecatch-test-support = { path = "../test-support", features = ["bridge", "servers", "settings"] }
 anyhow.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "sync", "io-util", "process"] }

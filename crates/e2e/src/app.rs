@@ -12,8 +12,8 @@ use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::Instant;
 use wirecatch_core::{KnownFolders, Manager, ManagerConfig};
 use wirecatch_ipc::{Endpoint, Listener};
-use wirecatch_protocol::app::DownloadSummary;
-use wirecatch_protocol::extension::NewDownload;
+use wirecatch_protocol::app::{AppSettingsPatch, DownloadSummary};
+use wirecatch_protocol::extension::{ExtensionSettingsPatch, NewDownload};
 use wirecatch_server::serve_connection;
 use wirecatch_test_support::{PrivateDir, private_dir};
 
@@ -186,11 +186,13 @@ impl App {
         let manager = Manager::open(config).await?;
         // These tests drive captures that start at once; a fresh install shows a window first
         // (D23), so they switch that off. The test of the window switches it back on.
-        let mut settings = manager.get_settings();
-        if settings.extension.ask_before_download {
-            settings.extension.ask_before_download = false;
-            manager.update_settings(settings)?;
-        }
+        manager.change_settings(AppSettingsPatch {
+            extension: Some(ExtensionSettingsPatch {
+                ask_before_download: Some(false),
+                ..ExtensionSettingsPatch::default()
+            }),
+            ..AppSettingsPatch::default()
+        })?;
         let listener = Listener::bind(endpoint)?;
         let accepted = Arc::new(AtomicUsize::new(0));
         let (ended_tx, ended) = watch::channel(0);

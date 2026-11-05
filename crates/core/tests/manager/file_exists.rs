@@ -50,7 +50,8 @@ async fn add_into(h: &Harness, link: &str, dir: &Path) -> TestResult<DownloadSum
 fn choose(h: &Harness, when: WhenFileExists) -> TestResult {
     let mut settings = h.manager.get_settings();
     settings.when_file_exists = when;
-    h.manager.update_settings(settings)?;
+    h.manager
+        .change_settings(wirecatch_test_support::settings::whole_patch(&settings))?;
     Ok(())
 }
 

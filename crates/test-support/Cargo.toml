@@ -68,6 +68,8 @@ servers = [
 ]
 # A download as the manager lists it, for tests of what shows it.
 downloads = ["dep:wirecatch-protocol"]
+# The patch that makes the settings a whole value, for tests that change a few fields.
+settings = ["dep:wirecatch-protocol"]
 # The bridge built with its `test-overrides` feature, for tests that start it.
 bridge = ["dep:serde_json", "dep:wirecatch-product"]
 # Comparing what a resumed download asks for with what its resume file says is on disk.

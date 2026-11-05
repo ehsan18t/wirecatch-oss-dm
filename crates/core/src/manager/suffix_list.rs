@@ -380,13 +380,16 @@ mod tests {
         fn set_updates(&self, on: bool) {
             let mut settings = self.manager.get_settings();
             settings.update_suffix_list = on;
-            self.manager.update_settings(settings).unwrap();
+            self.manager
+                .change_settings(wirecatch_test_support::settings::whole_patch(&settings))
+                .unwrap();
         }
 
         fn add_local_site(&self, site: &str) -> Result<()> {
             let mut settings = self.manager.get_settings();
             settings.local_sites = vec![site.to_string()];
-            self.manager.update_settings(settings)
+            self.manager
+                .change_settings(wirecatch_test_support::settings::whole_patch(&settings))
         }
     }
 
@@ -440,7 +443,9 @@ mod tests {
         assert_eq!(h.manager.get_settings().local_sites, Vec::<String>::new());
         let mut settings = h.manager.get_settings();
         settings.connections_per_download = 3;
-        h.manager.update_settings(settings).unwrap();
+        h.manager
+            .change_settings(wirecatch_test_support::settings::whole_patch(&settings))
+            .unwrap();
     }
 
     // The weekly check runs out of sight, and a failed Check now changes when the list was

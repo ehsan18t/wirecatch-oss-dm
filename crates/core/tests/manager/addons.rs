@@ -615,7 +615,8 @@ async fn a_refusal_after_the_update_button_is_told_once() -> TestResult {
     let (server, h, _) = updatable("button").await?;
     let mut settings = h.manager.get_settings();
     settings.auto_update_addons = false;
-    h.manager.update_settings(settings)?;
+    h.manager
+        .change_settings(wirecatch_test_support::settings::whole_patch(&settings))?;
     let replayed = crate::media_support::ytdlp_release("2026.08.19")?;
     let size = replayed.len() as u64;
     serve_release(
@@ -699,7 +700,8 @@ async fn a_failed_update_leaves_the_add_on_usable() -> TestResult {
     let (server, h, new_ytdlp) = updatable("fu").await?;
     let mut settings = h.manager.get_settings();
     settings.auto_update_addons = false;
-    h.manager.update_settings(settings)?;
+    h.manager
+        .change_settings(wirecatch_test_support::settings::whole_patch(&settings))?;
     serve_release(
         &server,
         "2026.09.30",
@@ -1573,7 +1575,8 @@ async fn a_bad_release_does_not_hide_an_older_good_one() -> TestResult {
     server.put("api/releases", serde_json::json!([bad, good]).to_string());
     let mut settings = h.manager.get_settings();
     settings.auto_update_addons = false;
-    h.manager.update_settings(settings)?;
+    h.manager
+        .change_settings(wirecatch_test_support::settings::whole_patch(&settings))?;
 
     let error = h.manager.check_addon_updates().await.unwrap_err();
     assert!(error.to_string().contains("2026.10.01"), "{error}");
@@ -1589,7 +1592,8 @@ async fn a_failed_check_keeps_the_offer() -> TestResult {
     let (server, h, new_ytdlp) = updatable("kp").await?;
     let mut settings = h.manager.get_settings();
     settings.auto_update_addons = false;
-    h.manager.update_settings(settings)?;
+    h.manager
+        .change_settings(wirecatch_test_support::settings::whole_patch(&settings))?;
     serve_release(
         &server,
         "2026.09.30",

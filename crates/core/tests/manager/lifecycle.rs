@@ -5,7 +5,9 @@ use std::time::Duration;
 
 use wirecatch_core::{CoreError, DEFAULT_QUEUE_ID, LinkFrom, RemoveFiles};
 use wirecatch_protocol::DownloadId;
-use wirecatch_protocol::app::{DownloadStatus, FixAction, QueueSettings, UiEvent};
+use wirecatch_protocol::app::{
+    AppSettingsPatch, DownloadStatus, FixAction, QueueSettings, UiEvent,
+};
 use wirecatch_protocol::wire::ErrorCode;
 
 use crate::common::{
@@ -243,7 +245,7 @@ async fn commands_return_what_the_ui_expects() -> TestResult {
         m.create_queue(QueueSettings::new("Later")).unwrap();
     let nothing: [(); 11] = [
         m.update_queue(queue.id, queue.settings.clone()).unwrap(),
-        m.update_settings(m.get_settings()).unwrap(),
+        m.change_settings(AppSettingsPatch::default()).unwrap(),
         m.pause(id).unwrap(),
         m.resume(id).unwrap(),
         m.pause_all().unwrap(),
@@ -286,7 +288,9 @@ async fn sync_methods_work_from_a_thread_outside_the_runtime() -> TestResult {
             .unwrap();
         manager.update_queue(queue.id, queue.settings).unwrap();
         let settings = manager.get_settings();
-        manager.update_settings(settings).unwrap();
+        manager
+            .change_settings(wirecatch_test_support::settings::whole_patch(&settings))
+            .unwrap();
     })
     .join()
     .expect("a manager method needed a Tokio runtime on the calling thread");
