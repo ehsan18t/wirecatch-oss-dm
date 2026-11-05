@@ -209,15 +209,14 @@ async fn a_server_that_never_answers_cannot_hang_the_app() -> TestResult {
     for row in [&paused, &removed, &left] {
         assert_eq!(row.status, DownloadStatus::Connecting);
     }
-    let patience = Duration::from_secs(5);
 
     h.manager.pause(paused.id).unwrap();
     h.wait_status(paused.id, DownloadStatus::Paused).await;
-    tokio::time::timeout(patience, h.manager.remove(&[removed.id], RemoveFiles::Keep))
+    tokio::time::timeout(PATIENCE, h.manager.remove(&[removed.id], RemoveFiles::Keep))
         .await
         .expect("remove waited forever")
         .unwrap();
-    tokio::time::timeout(patience, h.manager.shutdown())
+    tokio::time::timeout(PATIENCE, h.manager.shutdown())
         .await
         .expect("shutdown waited forever");
     // Interrupted by shutdown, so it continues on the next start.

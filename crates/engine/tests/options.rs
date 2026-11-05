@@ -11,10 +11,7 @@ use wirecatch_engine::{
     MAX_CONNECTIONS, Progress, download,
 };
 use wirecatch_test_support::http::{Config, TestServer};
-use wirecatch_test_support::{TestResult, private_dir, test_data};
-
-/// Long enough for a refused download to return, short enough that a hang fails the test instead of stalling it.
-const DEADLINE: Duration = Duration::from_secs(10);
+use wirecatch_test_support::{PATIENCE, TestResult, private_dir, test_data};
 
 /// An option's name and a way to set it out of range.
 type Unworkable = (&'static str, fn(&mut DownloadOptions));
@@ -54,7 +51,7 @@ fn within_deadline<T: Send + 'static>(
         drop(done.send(result));
     });
     let finished = finished
-        .recv_timeout(DEADLINE)
+        .recv_timeout(PATIENCE)
         .map_err(|_| format!("{what} hung the download"))?;
     Ok(finished?)
 }
