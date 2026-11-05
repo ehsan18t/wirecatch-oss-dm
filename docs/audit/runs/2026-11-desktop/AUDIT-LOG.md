@@ -284,8 +284,8 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 257 | A server can change the type of a name the person confirmed                                       | found while fixing                                                                                 | P2       | medium | Found while reviewing PR-51.                                                                                     | none                                          | fixed                                                                          |
 | 258 | A real size above the estimate moves a video's bar backwards                                      | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-131. Read from the code, not run.                                                       | none                                          | fixed                                                                          |
 | 259 | A finished group's heading counts go stale                                                        | found while fixing                                                                                 | P3       | small  | Found while fixing PR-41.                                                                                        | none                                          | fixed                                                                          |
-| 260 | A startup notice covers the toolbar and Settings rows                                             | found while fixing                                                                                 | P3       | small  | Found while fixing PR-102.                                                                                       | none                                          | open                                                                           |
-| 261 | The not-private notice carries a path and a long sentence                                         | found while fixing                                                                                 | P3       | small  | Found while fixing PR-102.                                                                                       | none                                          | open                                                                           |
+| 260 | A startup notice covers the toolbar and Settings rows                                             | found while fixing                                                                                 | P3       | small  | Found while fixing PR-102.                                                                                       | none                                          | fixed                                                                          |
+| 261 | The not-private notice carries a path and a long sentence                                         | found while fixing                                                                                 | P3       | small  | Found while fixing PR-102.                                                                                       | none                                          | fixed                                                                          |
 | 262 | A kill during a removal can leave a moved copy behind                                             | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-129.                                                                                    | none                                          | fixed                                                                          |
 | 263 | Some tests still throttle a server so connections join                                            | found while fixing                                                                                 | P3       | small  | Found while fixing PR-126.                                                                                       | none                                          | fixed                                                                          |
 | 264 | The proxy's shown name has two copies                                                             | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-116.                                                                                    | none                                          | fixed                                                                          |
@@ -4585,7 +4585,7 @@ A queue group's heading counts in the complete window are not updated when `Fini
 
 ### 260. A startup notice covers the toolbar and Settings rows
 
-P3, small, open.
+P3, small, fixed.
 
 A persistent startup notice stays until it is closed, over the toolbar and over the Theme and Accent colour rows in Settings.
 
@@ -4597,7 +4597,7 @@ A persistent startup notice stays until it is closed, over the toolbar and over 
 
 ### 261. The not-private notice carries a path and a long sentence
 
-P3, small, open.
+P3, small, fixed.
 
 `not_private` puts a folder path and a long sentence on the notification surface, which breaks a path across many lines at its fixed width. The same fault in the list-recovered notice is fixed.
 

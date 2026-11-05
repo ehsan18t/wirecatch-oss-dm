@@ -273,9 +273,9 @@ pub struct Snapshot {
     pub proxy_servers: Vec<SavedProxyServer>,
     /// What had to be repaired to open the list, for the person to be told.
     pub recoveries: Vec<Recovery>,
-    /// Why the data folder could not be made private to the current user, when it could
-    /// not: the list holds cookies (D17), so the person is told.
-    pub not_private: Option<String>,
+    /// The data folder could not be made private to the current user: the list holds cookies
+    /// (D17), so the person is told.
+    pub not_private: bool,
 }
 
 /// A repair made while opening the download list.
@@ -485,10 +485,11 @@ impl Store {
         // The folder first, so the database and its journal files inherit its access. It is
         // what keeps other accounts out of every file in it, so the person is told when it
         // stays open.
-        let not_private = owner_only::restrict(dir).err().map(|e| {
-            warn!(path = %dir.display(), error = %e, "could not restrict access to the current user");
-            e.to_string()
-        });
+        let not_private = owner_only::restrict(dir)
+            .inspect_err(|e| {
+                warn!(path = %dir.display(), error = %e, "could not restrict access to the current user");
+            })
+            .is_err();
         let path = dir.join(DATABASE_FILE);
         // Before anything touches the files: a second manager would set the first one's
         // live list aside, or write over its rows.
@@ -1541,7 +1542,7 @@ fn load(conn: &Connection) -> Result<Snapshot> {
         .flatten()
         .chain(kept.0.into_iter().map(Recovery::ValueKept))
         .collect(),
-        not_private: None,
+        not_private: false,
     })
 }
 
@@ -2382,11 +2383,11 @@ mod tests {
     fn a_data_folder_that_cannot_be_made_private_is_reported() {
         let dir = tempfile::tempdir().unwrap();
         let (store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
-        assert_eq!(snapshot.not_private, None);
+        assert!(!snapshot.not_private, "{snapshot:?}");
         close(&store);
         wirecatch_files::owner_only::refuse_on_this_thread();
         let (_store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
-        assert!(snapshot.not_private.is_some(), "{snapshot:?}");
+        assert!(snapshot.not_private, "{snapshot:?}");
     }
 
     /// A media download whose stored details are damaged must not run as a

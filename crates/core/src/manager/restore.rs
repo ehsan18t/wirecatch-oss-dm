@@ -1027,7 +1027,7 @@ mod tests {
             proxy_logins: wirecatch_settings::proxy::Logins::new(),
             proxy_servers: Vec::new(),
             recoveries: Vec::new(),
-            not_private: None,
+            not_private: false,
         };
         let restored = restore(snapshot, &nowhere(&|_| None));
         let state = &restored.state;

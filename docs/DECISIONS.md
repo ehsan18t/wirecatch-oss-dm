@@ -1439,3 +1439,11 @@ Decided on 2026-11-05. It carries out D168.2.
 
 1. When the element holding focus leaves the main window, such as a button that left with its row, or one a closing dialog gives focus back to, focus moves to the list, so the window's keys keep working.
 2. While a dialog is open, focus stays out of the list, so the keys cannot act on the rows behind the dialog.
+### D190. A start's notices wait in a banner above the list
+
+Decided on 2026-11-05.
+
+1. A start's notices (a repaired or set-aside download list, a data folder that could not be made private) are banners in the row above the download list, under the storage banner and over the update banner, instead of floating notifications. They cover nothing: the list moves down until they are dismissed. Settings and the other pages do not show them.
+2. Each notice is one banner with a full-width line for its words, its action if it has one (Show the old list), and Dismiss. Several stack in the order the core gave them.
+3. Each shows once per start. It stays until dismissed, also when the window is closed and opened again, and a reload after missed events does not bring back a dismissed one. The system notification is unchanged.
+4. A notice's words carry no path and no system error text: the store logs them. The not-private notice says the log has the folder's location.

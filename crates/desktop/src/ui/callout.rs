@@ -13,6 +13,7 @@ use gpui_kit::{
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Tone {
     Danger,
+    Warning,
     Info,
 }
 
@@ -29,6 +30,10 @@ pub struct Callout {
 impl Callout {
     pub fn danger(message: impl Into<SharedString>) -> Self {
         Self::of(Tone::Danger, message)
+    }
+
+    pub fn warning(message: impl Into<SharedString>) -> Self {
+        Self::of(Tone::Warning, message)
     }
 
     pub fn info(message: impl Into<SharedString>) -> Self {
@@ -76,6 +81,7 @@ impl RenderOnce for Callout {
         let has_actions = !self.actions.is_empty();
         let tint = match self.tone {
             Tone::Danger => theme.danger,
+            Tone::Warning => theme.warning,
             Tone::Info => theme.info,
         };
         let said = v_flex()

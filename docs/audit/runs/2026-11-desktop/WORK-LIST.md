@@ -145,7 +145,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-135 | fix(core): ask when a server changes the file type | `fix/ask-on-type-change`         | 257                          | P2       | medium | none         | merged |
 | PR-136 | fix(media): keep the bar steady past an estimate   | `fix/bar-past-estimate`          | 258                          | P3       | small  | none         | merged |
 | PR-137 | fix(desktop): keep finished group counts current   | `fix/finished-group-counts`      | 259                          | P3       | small  | none         | merged |
-| PR-138 | fix(desktop): keep startup notices out of the way  | `fix/startup-notice-place`       | 260, 261                     | P3       | small  | none         | open   |
+| PR-138 | fix(desktop): keep startup notices out of the way  | `fix/startup-notice-place`       | 260, 261                     | P3       | small  | none         | merged |
 | PR-139 | fix(core): clean up a move a removal cut short     | `fix/removal-move-copy`          | 262                          | P3       | small  | none         | merged |
 | PR-140 | test: hold servers instead of throttling to join   | `test/hold-to-join`              | 263                          | P3       | small  | none         | merged |
 | PR-141 | refactor(desktop): use the one proxy display name  | `refactor/one-proxy-name`        | 264                          | P3       | small  | none         | merged |
@@ -1834,7 +1834,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** crates/desktop, crates/core
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-desktop`, `cargo clippy -p wirecatch-desktop`
-- **Status:** open
+- **Status:** merged
 
 ### PR-139 fix(core): clean up a move a removal cut short
 
