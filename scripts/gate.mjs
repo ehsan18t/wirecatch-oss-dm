@@ -27,6 +27,7 @@ import { clippyLinux } from './gate/linux.mjs';
 import { GateError, options } from './gate/process.mjs';
 import { NOTICES_CHECKS } from './gate/notices.mjs';
 import { DESKTOP_CRATE, installTools, RUST_CHECKS, toolSpecs } from './gate/rust.mjs';
+import { SHELL_CALLER_CHECKS } from './gate/shell-callers.mjs';
 import { SUFFIX_LIST_CHECKS } from './gate/suffix-list.mjs';
 import { TEST_TIMING_CHECKS } from './gate/test-timing.mjs';
 import { TEXT_CHECKS } from './gate/text.mjs';
@@ -49,6 +50,7 @@ const CHECKS = {
   ...TEXT_CHECKS,
   ...COMMIT_CHECKS,
   ...SUFFIX_LIST_CHECKS,
+  ...SHELL_CALLER_CHECKS,
   ...NOTICES_CHECKS,
   ...ICON_CHECKS,
   product: productCheck('product'),
@@ -75,7 +77,7 @@ const GROUPS = {
   js: ['js-policy', 'protocol', 'js-check', 'js-lint', 'js-test', 'js-build'],
   // Apart from `js` so CI runs them alongside it: they take minutes and need no Rust. They skip themselves, saying so, only where their browser is not installed (WIRECATCH_REQUIRE_BROWSER=1 makes that fail too).
   browser: ['e2e-extension'],
-  repo: ['text', 'exceptions', 'product', 'icon', 'commits'],
+  repo: ['text', 'exceptions', 'shell-callers', 'product', 'icon', 'commits'],
   'supply-chain': ['unused-deps', 'deny', 'notices', 'npm-audit'],
   // Only when publishing a release, never in DEFAULT: the product identity still holds placeholders until the publisher's details are decided (D29). `product` first, so committed generated files are what is checked. Every step that publishes runs this group first.
   publish: ['product', 'product-placeholders'],

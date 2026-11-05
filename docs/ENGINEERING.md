@@ -104,6 +104,7 @@ Enforced by: gate (`undocumented_unsafe_blocks`); review for the wrapper modules
 - A module has one responsibility. A file past about 500 lines or a function past about 80 is a signal to split; clippy's `too_many_lines` enforces the function limit.
 - Lower layers never import from higher ones (for example, the engine's HTTP layer never reaches into the download orchestrator).
 - A doc comment is written where it says what the signature cannot; no item gets one to satisfy a lint (D76).
+- A public item of `crates/shell` has a caller outside tests. Gate (`shell-callers`, which compares names, so an item sharing its name with another can pass); the compiler reports nothing unused in a library.
 
 ## 5. TypeScript and Svelte
 
