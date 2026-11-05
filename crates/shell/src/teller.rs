@@ -16,7 +16,7 @@ use crate::activity::Ended;
 use crate::notifications::{self, Notification};
 
 /// Downloads finishing (or failing) within this long of the first one share one notification.
-pub const NOTIFY_BATCH: Duration = Duration::from_secs(3);
+const NOTIFY_BATCH: Duration = Duration::from_secs(3);
 
 /// What to tell the person about downloads that ended (D52).
 #[derive(Debug, Clone, PartialEq)]

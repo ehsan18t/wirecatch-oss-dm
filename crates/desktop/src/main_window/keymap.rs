@@ -212,15 +212,14 @@ pub(super) fn page() -> SettingPage {
 
 #[cfg(test)]
 mod tests {
-    use super::super::selection;
     use super::*;
     use gpui_kit::component::button::Button;
     use gpui_kit::component::input::{Input, InputState};
-    use gpui_kit::component::{h_flex, v_flex};
+    use gpui_kit::component::{WindowExt, h_flex, v_flex};
     use gpui_kit::prelude::FluentBuilder as _;
     use gpui_kit::{
         AppContext as _, Context, Entity, FocusHandle, InteractiveElement as _, IntoElement,
-        Render, TestAppContext, Window,
+        Render, Subscription, TestAppContext, VisualTestContext, Window, WindowOptions,
     };
 
     /// The tree `MainWindow::render` and `command_bar` build around the search field.
@@ -289,62 +288,106 @@ mod tests {
     /// The tree `MainWindow::render` builds around the row the selection takes.
     struct RowInWindow {
         focus: FocusHandle,
-        row: FocusHandle,
         command: FocusHandle,
         held: bool,
-        was_held: bool,
         dismissals: usize,
+        _focus_lost: Subscription,
     }
 
     impl Render for RowInWindow {
-        fn render(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
-            selection::row_taken(
-                &mut self.was_held,
-                self.held,
-                (&self.row, &self.focus),
-                window,
-                cx,
-            );
+        fn render(&mut self, _: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
             v_flex()
                 .id("main-window")
                 .key_context(KEY_CONTEXT)
                 .track_focus(&self.focus)
                 .on_action(cx.listener(|this, _: &Dismiss, _, _| this.dismissals += 1))
-                .child(h_flex().track_focus(&self.row).when(!self.held, |row| {
+                .child(h_flex().when(!self.held, |row| {
                     row.child(Button::new("sort").track_focus(&self.command))
                 }))
         }
+    }
+
+    /// A window that can open dialogs, with focus on the row's button.
+    fn row_window(cx: &mut TestAppContext) -> (Entity<RowInWindow>, &mut VisualTestContext) {
+        cx.update(|cx| {
+            gpui_kit::component::init(cx);
+            bind(cx);
+        });
+        let (window, root) = cx
+            .update(|cx| {
+                gpui_kit::open_window(WindowOptions::default(), cx, |window, cx| {
+                    cx.new(|cx| RowInWindow {
+                        focus: cx.focus_handle(),
+                        command: cx.focus_handle(),
+                        held: false,
+                        dismissals: 0,
+                        _focus_lost: cx.on_focus_lost(
+                            window,
+                            |this: &mut RowInWindow, window, cx| {
+                                super::super::list_takes_lost_focus(&this.focus, window, cx);
+                            },
+                        ),
+                    })
+                })
+            })
+            .unwrap();
+        let cx = VisualTestContext::from_window(window, cx).into_mut();
+        cx.run_until_parked();
+        let command = root.read_with(cx, |root, _| root.command.clone());
+        cx.update(|window, cx| command.focus(window, cx));
+        cx.run_until_parked();
+        (root, cx)
+    }
+
+    fn take_the_row(root: &Entity<RowInWindow>, cx: &mut VisualTestContext) {
+        root.update(cx, |root, cx| {
+            root.held = true;
+            cx.notify();
+        });
+        cx.run_until_parked();
     }
 
     #[gpui_kit::test]
     fn the_window_keys_still_work_when_the_focused_button_leaves_with_the_row(
         cx: &mut TestAppContext,
     ) {
-        cx.update(|cx| {
-            gpui_kit::component::init(cx);
-            bind(cx);
-        });
-        let (root, cx) = cx.add_window_view(|_, cx| RowInWindow {
-            focus: cx.focus_handle(),
-            row: cx.focus_handle(),
-            command: cx.focus_handle(),
-            held: false,
-            was_held: false,
-            dismissals: 0,
-        });
-        cx.run_until_parked();
-        let command = root.read_with(cx, |root, _| root.command.clone());
-        cx.update(|window, cx| command.focus(window, cx));
+        let (root, cx) = row_window(cx);
+
+        take_the_row(&root, cx);
+        cx.simulate_keystrokes("escape");
+
+        assert_eq!(root.read_with(cx, |root, _| root.dismissals), 1);
+    }
+
+    #[gpui_kit::test]
+    fn the_window_keys_still_work_when_a_dialog_gives_focus_back_to_a_button_that_left(
+        cx: &mut TestAppContext,
+    ) {
+        let (root, cx) = row_window(cx);
+        cx.update(|window, cx| crate::ui::dialog::open(window, cx, |dialog, _, _| dialog));
         cx.run_until_parked();
 
-        root.update(cx, |root, cx| {
-            root.held = true;
-            cx.notify();
-        });
+        take_the_row(&root, cx);
+        cx.update(WindowExt::close_dialog);
         cx.run_until_parked();
         cx.simulate_keystrokes("escape");
 
         assert_eq!(root.read_with(cx, |root, _| root.dismissals), 1);
+    }
+
+    #[gpui_kit::test]
+    fn focus_lost_under_an_open_dialog_does_not_reach_the_list(cx: &mut TestAppContext) {
+        let (root, cx) = row_window(cx);
+        cx.update(|window, cx| crate::ui::dialog::open(window, cx, |dialog, _, _| dialog));
+        cx.run_until_parked();
+
+        take_the_row(&root, cx);
+        let (focus, command) =
+            root.read_with(cx, |root, _| (root.focus.clone(), root.command.clone()));
+        cx.update(|window, cx| command.focus(window, cx));
+        cx.run_until_parked();
+
+        cx.update(|window, _| assert!(!focus.is_focused(window)));
     }
 
     #[gpui_kit::test]

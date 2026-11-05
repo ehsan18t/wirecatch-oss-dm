@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from '@wirecatch/product';
 /**
  * One-off messages between the media button (a content script) and the background
  * script. Kept apart from the popup messages so the content script stays tiny.
@@ -109,7 +110,7 @@ export interface DownloadAnswer {
 }
 
 /** For media there is no browser download to fall back on, so the person has to act. */
-export const MEDIA_UNREACHABLE = 'Wirecatch could not be reached. Open Wirecatch, then try again.';
+export const MEDIA_UNREACHABLE = `${PRODUCT_NAME} could not be reached. Open ${PRODUCT_NAME}, then try again.`;
 
 /** An http(s) address no longer than `MAX_MEDIA_URL_LENGTH`: the only sources worth sending. */
 export function isWebSrc(src: string): boolean {

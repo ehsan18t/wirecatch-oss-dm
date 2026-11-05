@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from '@wirecatch/product';
 import type { MediaKind } from '@wirecatch/protocol';
 import { chooseTarget, describeTarget, popupTargets, type MediaTarget } from './choose';
 import {
@@ -112,12 +113,9 @@ export interface MediaCenterDeps {
 /** How long changes are gathered before the lists are saved, so a burst of detections is written once. */
 const SAVE_DELAY_MS = 250;
 
-export const PRIVATE_WINDOW =
-  'Wirecatch is turned off in private windows. Turn on "Work in private windows" in the Wirecatch popup to download here.';
-export const IGNORED_SITE =
-  'This site is on your list of ignored sites. Remove it from that list in the Wirecatch popup to download from it.';
-const NOTHING_FOUND =
-  'Wirecatch has not found anything to download here yet. Play the video for a moment, then try again.';
+export const PRIVATE_WINDOW = `${PRODUCT_NAME} is turned off in private windows. Turn on "Work in private windows" in the ${PRODUCT_NAME} popup to download here.`;
+export const IGNORED_SITE = `This site is on your list of ignored sites. Remove it from that list in the ${PRODUCT_NAME} popup to download from it.`;
+const NOTHING_FOUND = `${PRODUCT_NAME} has not found anything to download here yet. Play the video for a moment, then try again.`;
 const TAB_GONE = 'This tab is closed.';
 const ITEM_GONE = 'This item is no longer on the page. Reopen the popup to see what is there now.';
 

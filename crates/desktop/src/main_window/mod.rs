@@ -332,9 +332,6 @@ pub struct MainWindow {
     /// Where the cursor's row was last drawn, for the keyboard's menu.
     cursor_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
     folded: HashSet<Group>,
-    /// The row the command bar and a held selection take in turn.
-    row_focus: FocusHandle,
-    selection_took_row: bool,
     /// The title bar's search, which narrows the list to names and links holding it.
     search: Entity<InputState>,
     /// The links typed or pasted into the search.
@@ -474,6 +471,9 @@ impl MainWindow {
         );
         let focus = cx.focus_handle();
         focus.focus(window, cx);
+        let focus_lost = cx.on_focus_lost(window, |this, window, cx| {
+            list_takes_lost_focus(&this.focus, window, cx);
+        });
         let updates = Self::follow_updates(cx);
         Self {
             library,
@@ -498,11 +498,9 @@ impl MainWindow {
             all_queues: false,
             queue_speeds: HashMap::new(),
             focus,
-            row_focus: cx.focus_handle(),
-            selection_took_row: false,
             search,
             typed: links::Kept::default(),
-            _subscriptions: vec![follow_system, redraw, searched, updates],
+            _subscriptions: vec![follow_system, redraw, searched, updates, focus_lost],
         }
     }
 
@@ -736,6 +734,13 @@ impl MainWindow {
     }
 }
 
+/// The element holding focus left the window, which leaves the window's keys out of reach (D182). An open dialog keeps the keyboard from the list behind it.
+fn list_takes_lost_focus(list: &FocusHandle, window: &mut Window, cx: &mut App) {
+    if !window.has_active_dialog(cx) {
+        list.focus(window, cx);
+    }
+}
+
 impl Render for MainWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
         let rail = self.shows_rail(window.viewport_size().width);
@@ -745,14 +750,6 @@ impl Render for MainWindow {
             self.sidebar(cx).into_any_element()
         };
         let background = cx.theme().background;
-        let held = self.selection_held(cx);
-        selection::row_taken(
-            &mut self.selection_took_row,
-            held,
-            (&self.row_focus, &self.focus),
-            window,
-            cx,
-        );
         v_flex()
             .id("main-window")
             .key_context(KEY_CONTEXT)

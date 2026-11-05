@@ -13,6 +13,7 @@ import ts from 'typescript-eslint';
 import { noAssertionOnInput } from './rules/no-assertion-on-input.js';
 import { noBrandAssertion } from './rules/no-brand-assertion.js';
 import { noMagicNumbers } from './rules/no-magic-numbers.js';
+import { noProductName } from './rules/no-product-name.js';
 import { noSilentCatch } from './rules/no-silent-catch.js';
 import { noTypeArgumentAssertion } from './rules/no-type-argument-assertion.js';
 import { tokensOnly } from './rules/tokens-only.js';
@@ -34,6 +35,7 @@ const plugin = {
     'no-assertion-on-input': noAssertionOnInput,
     'no-brand-assertion': noBrandAssertion,
     'no-magic-numbers': noMagicNumbers,
+    'no-product-name': noProductName,
     'no-silent-catch': noSilentCatch,
     'no-type-argument-assertion': noTypeArgumentAssertion,
     'tokens-only': tokensOnly,

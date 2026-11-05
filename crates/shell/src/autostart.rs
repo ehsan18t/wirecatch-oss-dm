@@ -17,7 +17,7 @@ use crate::launch::BACKGROUND_FLAG;
 
 /// Why the start-at-sign-in entry could not be brought in line with the setting.
 #[derive(Debug, thiserror::Error)]
-pub enum AutostartError {
+enum AutostartError {
     #[error("could not write the start-at-sign-in entry ({0})")]
     Write(#[source] io::Error),
     #[error("could not remove the start-at-sign-in entry ({0})")]
@@ -32,7 +32,7 @@ pub const REMOVE_ENTRY_FLAG: &str = "--remove-start-entry";
 
 /// The state of the system's start-at-sign-in entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EntryState {
+enum EntryState {
     /// No entry.
     Missing,
     /// An entry that runs at sign-in.
@@ -43,7 +43,7 @@ pub enum EntryState {
 
 /// What to do about the entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Action {
+enum Action {
     /// Write the entry (again), turned on.
     Write,
     /// Remove the entry.
@@ -57,7 +57,7 @@ pub enum Action {
 /// Decides what to do. `just_turned_on` is set when the person switched the setting on in
 /// Wirecatch a moment ago, rather than at start or after some other settings change.
 #[must_use]
-pub fn decide(wanted: bool, state: EntryState, just_turned_on: bool) -> Action {
+fn decide(wanted: bool, state: EntryState, just_turned_on: bool) -> Action {
     match (wanted, state) {
         (true, EntryState::TurnedOff) if !just_turned_on => Action::TurnSettingOff,
         (true, _) => Action::Write,
@@ -83,29 +83,16 @@ pub fn desktop_entry_turned_off(text: &str) -> bool {
 }
 
 /// What changes the start-at-sign-in entry: the system's own, or a stand-in.
-pub trait Launcher {
+trait Launcher {
     /// Writes the entry, turned on.
-    ///
-    /// # Errors
-    ///
-    /// The system refused to write the entry (the registry or the autostart folder).
     fn enable(&self) -> io::Result<()>;
     /// Removes the entry.
-    ///
-    /// # Errors
-    ///
-    /// The system refused to remove the entry.
     fn disable(&self) -> io::Result<()>;
 }
 
 /// Carries out one start-at-sign-in step: decides from the entry's `state` and does it, through
 /// `launcher` or, to follow a choice made outside Wirecatch, by turning the setting off.
-///
-/// # Errors
-///
-/// The `launcher` could not write or remove the entry, or the setting could not be saved (the
-/// manager has shut down).
-pub fn apply(
+fn apply(
     launcher: &impl Launcher,
     manager: &Manager,
     state: EntryState,
@@ -192,7 +179,7 @@ fn windows_command(program: &Path) -> String {
 
 /// Reads the state of the entry named `name`.
 #[cfg(windows)]
-pub fn read_state(name: &str) -> EntryState {
+fn read_state(name: &str) -> EntryState {
     use winreg::RegKey;
     use winreg::enums::{HKEY_CURRENT_USER, KEY_READ};
 
@@ -270,7 +257,7 @@ fn autostart_folder() -> Option<PathBuf> {
 /// Reads the state of the entry named `name`.
 #[cfg(not(windows))]
 #[must_use]
-pub fn read_state(name: &str) -> EntryState {
+fn read_state(name: &str) -> EntryState {
     autostart_folder().map_or(EntryState::Missing, |folder| state_in(&folder, name))
 }
 

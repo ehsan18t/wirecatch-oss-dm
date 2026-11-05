@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { isTestModuleFile, namesInStrings, testModuleFolders } from './product-name.mjs';
+import { namesInStrings } from './product-name.mjs';
 
 const lines = (...text) => namesInStrings(text.join('\n'), 'Wirecatch');
 
@@ -61,22 +61,4 @@ test("code a person's build can run still counts", () => {
   ]) {
     assert.deepEqual(lines(attribute, 'fn h() {', '    say("Wirecatch");', '}'), [3], attribute);
   }
-});
-
-test('a file behind a test-only module declaration is test code', () => {
-  const folders = (file, ...text) => testModuleFolders(file, text.join('\n'));
-  assert.deepEqual(folders('crates/a/src/lib.rs', '#[cfg(test)]', 'mod fake;', 'mod real;'), [
-    'crates/a/src/fake',
-  ]);
-  assert.deepEqual(folders('crates/a/src/x/mod.rs', '#[cfg(test)]', 'pub(crate) mod fake;'), [
-    'crates/a/src/x/fake',
-  ]);
-  assert.deepEqual(folders('crates/a/src/x.rs', '#[cfg(test)]', 'mod fake;'), [
-    'crates/a/src/x/fake',
-  ]);
-  const under = ['crates/a/src/fake'];
-  assert.ok(isTestModuleFile('crates/a/src/fake.rs', under));
-  assert.ok(isTestModuleFile('crates/a/src/fake/mod.rs', under));
-  assert.ok(isTestModuleFile('crates/a/src/fake/deep.rs', under));
-  assert.ok(!isTestModuleFile('crates/a/src/fakes.rs', under));
 });

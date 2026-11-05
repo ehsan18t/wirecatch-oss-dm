@@ -29,7 +29,7 @@ fn plain<T>(result: wirecatch_core::Result<T>) -> CommandResult<T> {
 }
 
 /// A request the shell itself turns down, worded for a person.
-pub fn refused(message: impl Into<String>) -> ProtocolError {
+fn refused(message: impl Into<String>) -> ProtocolError {
     ProtocolError {
         code: ErrorCode::InvalidRequest,
         message: message.into(),
@@ -331,7 +331,7 @@ fn find(m: &Manager, id: DownloadId) -> CommandResult<DownloadSummary> {
 /// there, and the desktop may pick a program for it by its content instead (a `.desktop`
 /// launcher, say), so it must ask, and trimming would wrongly call it an mp4.
 #[must_use]
-pub fn file_type(name: &str) -> Option<String> {
+fn file_type(name: &str) -> Option<String> {
     let name = if cfg!(windows) {
         name.trim_end_matches(['.', ' '])
     } else {
@@ -345,7 +345,7 @@ pub fn file_type(name: &str) -> Option<String> {
 /// [`SAFE_EXTENSIONS`], a file without an extension, and on Linux any file marked executable,
 /// whatever its name.
 #[must_use]
-pub fn is_program(path: &Path) -> bool {
+fn is_program(path: &Path) -> bool {
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy())

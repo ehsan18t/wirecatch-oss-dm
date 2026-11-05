@@ -1345,6 +1345,7 @@ Decided on 2026-11-05. Amends D52.6.
 
 1. A queue's heading counts move with the rows the group lists: when one is removed, changes status, is dropped by a reload, or ends again in a newer group.
 2. The book keeps nothing of the downloads past `MAX_FINISHED_LISTED`, so what happens to them later does not reach the counts. Removing one leaves the heading one too high, and one that fails, is retried and ends counts in both groups. Keeping their ids and statuses would hold data for every download of a large queue to correct a heading few people would read that closely.
+
 ### D174. The gate stops a Rust test that hangs and names it
 
 Decided on 2026-11-05. D58 stands: the tests stay under `cargo test`, with no cargo-nextest.
@@ -1352,17 +1353,20 @@ Decided on 2026-11-05. D58 stands: the tests stay under `cargo test`, with no ca
 1. The `test` and `test-http3` checks read `cargo test`'s output. libtest prints a notice for a test still running at 60 seconds; a test with no result four minutes after that fails the check by name (`scripts/gate/test-limit.mjs`). Five minutes is more than two `PATIENCE` waits that run out, and far enough inside the Rust job's 20 minutes (D57) that the job is not cancelled and its log is kept.
 2. A hang stops `cargo test` and the program it runs, so the test binaries after it do not run, also under `--no-fail-fast`. libtest gives no way to stop one test.
 3. This holds on every system and for every run of the checks, so there is one way the tests run. libtest gives no notice when it runs one test at a time (a machine with one core, or `--test-threads=1`); such a run has no limit. Neither has a test target without libtest: `crates/logging`'s `harness = false` test. On Unix a program a test puts in its own process group outlives the stop.
+
 ### D173. A video's bar never falls past an estimate
 
 Decided on 2026-11-05.
 
 A yt-dlp row's total starts from the page's sizes, which may be estimates, and its bytes are real. When a larger size arrives while the run goes on, the row's total follows the bytes at the ratio already shown, until it reaches the real size, so the bar waits rather than falling. A format begun again, or one not listed before, shows the real total. Hiding the total until the sizes are real was rejected: a fragmented format only ever has an estimate, so its row would have no bar at all.
+
 ### D171. A removal keeps a move's target on record
 
 Decided on 2026-11-05. It amends D132.3 and D134.1.
 
 1. A removal waits for a move under way, and by then the row and its record of the move have left the list. The deletion record therefore also names where the move is going, and a finished download gets a deletion record for as long as it moves. A move that starts after the removal began adds the target before its first file moves.
 2. A start deletes the temporary copies in that target's folder. For an unfinished download it also deletes the partial files at the target, unless a download holds that path or its old one. For a finished download it deletes nothing else: a kept file is the person's, and D134.2 still holds for one being deleted. A kill between a copy to another drive taking its name and the original's deletion leaves the whole file in both places, and the extra copy stays.
+
 ### D172. A subtitle file's move is noted as the video's is
 
 Decided on 2026-11-05. It amends D132.4.
@@ -1384,6 +1388,7 @@ Decided on 2026-11-05. Its row is the same height as the command bar's, so ticki
 1. While a selection is held (D160), its bar replaces the search field and the buttons beside it. Clearing the selection brings them back with what the field held.
 2. Going to the search (Ctrl+K, F6) clears the selection first. When the row changes hands, focus inside it moves to the list, so typing cannot narrow the list unseen and the window's keys keep working.
 3. No tooltip shows while focus is inside a `PopupMenu`. Tooltips over rows and on the rail go through `ui::tooltip`; a tooltip on other buttons is left, as the kit's `Button` has no way to hold one back.
+
 ### D167. The could-not-save banner follows the saves
 
 Decided on 2026-11-05.
@@ -1402,6 +1407,8 @@ Decided on 2026-11-05. Holds up D29.
 2. Crates below the shell read `PRODUCT_NAME` from `wirecatch-product`: `CHANNEL` lives in the shell, these crates cannot depend on it, and the bridge and the command-line tool also run beside an app of the other channel. So a development build's messages from below the shell say `Wirecatch`.
 3. Names people read change this way. Ids and paths stay, among them the theme ids `Wirecatch Light` and `Wirecatch Dark`, which `assets/theme.json` also holds.
 4. The `product-name` check fails on the name written in a Rust string that is not test code: test files, test items and modules, and what a `cfg` of `test`, or of `test` with only features, keeps out of the build.
+5. The extension's text reads `PRODUCT_NAME` from `@wirecatch/product`. The `wirecatch/no-product-name` rule fails on the name written in a string or in Svelte markup under the extension's `src`; comments and ids are not read, and tests may write it.
+
 ### D166. A server cannot change the file type of a confirmed name unasked
 
 Decided on 2026-11-05. It amends D23: a name left as proposed in the confirmation window is no longer free for the server to change.
@@ -1418,9 +1425,17 @@ Decided on 2026-11-05. It fulfils and amends D44.4, which placed these under Adv
 1. Under the switch "Update the Public Suffix List automatically": a line such as "List published 3 Nov 2026. Last checked 4 Nov 2026." and a small Check now button. A check that failed shows a danger note until a later one works; while the switch is on the note says it will be tried again in a day.
 2. Check now tells its answer in a notification, the reason included when it failed.
 3. A failed check's advice follows its cause: no answer asks to check the internet connection, a list that could not be saved asks to free disk space, an error or an oversized answer from the host, a refused list or interrupted work asks to wait a while, and a list dated after today asks to check the computer's clock.
+
 ### D179. A removal reaches a split download's new files and a shared file's other rows
 
 Decided on 2026-11-05. It amends D171.
 
 1. A download a failed move left split keeps its new path on its deletion record, in the place of a move's target. Its removal deletes the partial files at both paths, and so does a start that finds the record.
 2. A finished download's deletion record also lists the files of its move. A start finishes that move for the other finished rows of the file, as far as D132.2 tells, so those rows follow the file. With no such row the extra copy of D171.2 stays.
+
+### D182. Focus that has nowhere to go falls to the list
+
+Decided on 2026-11-05. It carries out D168.2.
+
+1. When the element holding focus leaves the main window, such as a button that left with its row, or one a closing dialog gives focus back to, focus moves to the list, so the window's keys keep working.
+2. While a dialog is open, focus stays out of the list, so the keys cannot act on the rows behind the dialog.

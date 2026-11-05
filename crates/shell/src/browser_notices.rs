@@ -1,7 +1,7 @@
 //! Notices in the browser (D65): the person is told something in the tab they are looking at, by
 //! the extension of the browser in front, instead of in a system notification. Every connected
 //! browser is asked; the one in front shows the notice and says so, and when none does within
-//! [`ANSWER_WAIT`] (no browser runs, or it is not in front, or its tab cannot show one) the system
+//! `ANSWER_WAIT` (no browser runs, or it is not in front, or its tab cannot show one) the system
 //! notification shows instead. The app keeps what each button does, so the extension and the page
 //! never hold a download's id. A notice offers the system notification's buttons, Open included: a
 //! website can lay a decoy over the notice so the person presses it unseen, but Open runs a program,
@@ -22,7 +22,7 @@ use crate::notifications::{Act, Notification, chosen};
 
 /// How long the app waits for a browser to say it showed a notice before it shows the system
 /// notification instead. A browser in front answers within milliseconds.
-pub const ANSWER_WAIT: Duration = Duration::from_millis(NOTICE_ANSWER_WAIT_MS);
+const ANSWER_WAIT: Duration = Duration::from_millis(NOTICE_ANSWER_WAIT_MS);
 
 /// Notices whose buttons still work, this many of each kind: a notice stays until it is closed,
 /// but past this many the oldest of its kind is forgotten and its buttons do nothing. Kinds count
@@ -182,7 +182,7 @@ impl BrowserNotices {
     }
 }
 
-/// Whether no browser said within [`ANSWER_WAIT`] that it showed the notice `answer` is for. A
+/// Whether no browser said within `ANSWER_WAIT` that it showed the notice `answer` is for. A
 /// notice taken back meanwhile drops its sender: nothing is left to tell, so it counts as answered.
 pub async fn unanswered(answer: oneshot::Receiver<()>) -> bool {
     tokio::time::timeout(ANSWER_WAIT, answer).await.is_err()
