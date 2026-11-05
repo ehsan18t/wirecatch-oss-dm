@@ -261,7 +261,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 196. Doc comments on media runs sit on the wrong items (fixed)
 197. Sizes and bit rates a page chooses are added without a check (fixed)
 198. The key error prints the whole signed address (open)
-199. On Linux, media programs may outlive an app ended by a signal (open)
+199. On Linux, media programs may outlive an app ended by a signal (fixed)
 200. Placing a finished video has its own weaker no-replace move (fixed)
 201. Moving a finished video leaves its subtitle files behind (fixed)
 202. A failed browser registration logs no reason (fixed)

@@ -1288,3 +1288,11 @@ Decided on 2026-11-05. It amends D119.
 1. A removal saves which partial files it will delete before its row leaves the list, and clears that when they are gone. A start deletes what is still on record, unless a download holds that path: a kill between the two saves leaves the row, and the files are its own. It then clears the record whatever came of each delete: one that fails is logged and not tried again.
 2. A finished file that "Remove and delete" had not reached is not deleted at the next start: by then the name may hold a file the person saved, and only disk space is at stake.
 3. The delete after a cancel is on the same record, and `Manager::shutdown` waits for it. A start finishes only a delete a kill cut short, once, also at a path its own cancelled row holds. A cancelled row with nothing on record keeps whatever lies at its path, since another program may have saved that name.
+
+### D137. An app ended by a signal stops its media programs first
+
+Decided on 2026-11-05.
+
+1. On Unix, `SIGTERM`, `SIGHUP` and `SIGINT` kill every running program's group, then end the app as the signal would have by default. Every program has a group of its own, so none of them hears a terminal's Ctrl+C by itself. A thread of its own waits for them, through `signal-hook`: a handler on a tokio runtime would go on swallowing the signal after that runtime ended.
+2. A signal the app was started ignoring, as `nohup` does for `SIGHUP`, stays ignored. The command-line downloader starts no programs and has no handler of this kind. A program that waits on `SIGINT` itself and has started a media program, as `crates/core/examples/headless.rs` does, ends at once instead of shutting down; what it had downloaded resumes on its next run.
+3. This does not cover a crash or `SIGKILL`, which no handler sees. The supervisor that case needs stays on the roadmap.
