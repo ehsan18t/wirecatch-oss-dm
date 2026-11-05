@@ -12,8 +12,7 @@ use gpui_kit::{
 };
 use wirecatch_core::AppUpdate;
 use wirecatch_engine::Progress;
-use wirecatch_protocol::app::AppSettingsPatch;
-use wirecatch_shell::{api, host};
+use wirecatch_shell::host;
 
 use super::MainWindow;
 use crate::app_update::{Stage, Updates};
@@ -41,9 +40,11 @@ impl MainWindow {
         Some(div().px_5().pb_2().child(callout).into_any_element())
     }
 
-    /// The banner while the list could not be saved: Try again saves again, Dismiss hides it.
+    /// The banner while the list could not be saved. It goes by itself once saving recovers; Try again retries at once, and Dismiss only hides it (D167).
     pub(super) fn storage_banner(&self, cx: &mut Context<'_, Self>) -> Option<AnyElement> {
-        let problem = self.library.read(cx).storage_problem.clone()?;
+        let read = self.library.read(cx);
+        let problem = read.storage_problem.clone()?;
+        let retrying = read.storage_retrying;
         let app = host::CHANNEL.name();
         let library = self.library.clone();
         Some(
@@ -51,41 +52,40 @@ impl MainWindow {
                 .px_5()
                 .pb_2()
                 .child(
-                    Callout::danger(format!(
-                        "{problem} Recent changes may be lost when {app} closes."
-                    ))
-                    .title(format!("{app} could not save its download list"))
-                    .action(
-                        Button::new("storage-retry")
-                            .small()
-                            .outline()
-                            .label("Try again")
-                            .on_click({
-                                let library = library.clone();
-                                move |_, window, cx| {
+                    Callout::danger(problem)
+                        .title(format!("{app} could not save its download list"))
+                        .action(
+                            Button::new("storage-retry")
+                                .small()
+                                .outline()
+                                .label("Try again")
+                                .loading(retrying)
+                                .on_click({
+                                    let library = library.clone();
+                                    move |_, window, cx| {
+                                        library.update(cx, |library, cx| {
+                                            library.storage_retrying = true;
+                                            cx.notify();
+                                        });
+                                        act(window.window_handle(), cx, |manager| {
+                                            manager.retry_saving();
+                                            Ok(())
+                                        });
+                                    }
+                                }),
+                        )
+                        .action(
+                            Button::new("storage-dismiss")
+                                .small()
+                                .ghost()
+                                .label("Dismiss")
+                                .on_click(move |_, _, cx| {
                                     library.update(cx, |library, cx| {
                                         library.storage_problem = None;
                                         cx.notify();
                                     });
-                                    // An empty change goes through the save like any other.
-                                    act(window.window_handle(), cx, |manager| {
-                                        api::change_settings(manager, AppSettingsPatch::default())
-                                    });
-                                }
-                            }),
-                    )
-                    .action(
-                        Button::new("storage-dismiss")
-                            .small()
-                            .ghost()
-                            .label("Dismiss")
-                            .on_click(move |_, _, cx| {
-                                library.update(cx, |library, cx| {
-                                    library.storage_problem = None;
-                                    cx.notify();
-                                });
-                            }),
-                    ),
+                                }),
+                        ),
                 )
                 .into_any_element(),
         )

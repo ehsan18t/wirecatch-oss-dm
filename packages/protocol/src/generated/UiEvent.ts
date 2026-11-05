@@ -29,6 +29,7 @@ export type UiEvent =
   | { type: 'captured'; data: DownloadSummary }
   | { type: 'confirmation_requested'; data: PendingCapture }
   | { type: 'storage_failed'; data: UserError }
+  | { type: 'storage_recovered' }
   | { type: 'media_choice_requested'; data: MediaChoice }
   | { type: 'file_exists_requested'; data: FileExistsQuestion }
   | { type: 'file_type_requested'; data: FileTypeQuestion }

@@ -323,6 +323,12 @@ impl Manager {
         .await
     }
 
+    /// Tries the changes that could not be saved again now. The answer comes as
+    /// [`UiEvent::StorageRecovered`] or [`UiEvent::StorageFailed`], whatever it is (D167).
+    pub fn retry_saving(&self) {
+        self.inner.store.retry_kept();
+    }
+
     /// Stores checked settings and tells the UI and, if their part changed, every
     /// socket client.
     pub(super) fn apply_settings(&self, state: &mut State, new: AppSettings) {
