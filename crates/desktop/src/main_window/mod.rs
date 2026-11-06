@@ -525,7 +525,7 @@ impl MainWindow {
         let placeholder = match view {
             View::All => ALL_PLACEHOLDER.to_owned(),
             View::Group(_) | View::Queue(_) => {
-                format!("Search {} or paste links", self.title(cx))
+                format!("Search in {} or paste links", self.title(cx))
             }
         };
         self.search.update(cx, |search, cx| {

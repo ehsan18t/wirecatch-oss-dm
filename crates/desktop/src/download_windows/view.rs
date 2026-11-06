@@ -542,7 +542,7 @@ impl DownloadWindow {
                         ),
                         button(
                             "capture-later",
-                            "Download later",
+                            text::DOWNLOAD_LATER,
                             ButtonVariant::Secondary,
                             busy,
                         )

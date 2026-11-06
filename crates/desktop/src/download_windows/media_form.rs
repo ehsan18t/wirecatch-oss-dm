@@ -713,7 +713,7 @@ impl MediaForm {
             )
             .child(
                 Button::new("media-later")
-                    .label("Download later")
+                    .label(text::DOWNLOAD_LATER)
                     .with_variant(ButtonVariant::Secondary)
                     .disabled(busy)
                     .on_click(cx.listener(|form, _, _, cx| form.answer(true, cx))),

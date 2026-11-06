@@ -122,7 +122,7 @@ pub fn open(
                     .justify_end()
                     .child(
                         Button::new("add-paused")
-                            .label("Add paused")
+                            .label(text::DOWNLOAD_LATER)
                             .disabled(busy)
                             .on_click(move |_, window, cx| {
                                 paused.update(cx, |form, cx| form.submit(false, window, cx));

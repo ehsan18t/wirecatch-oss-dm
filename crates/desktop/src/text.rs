@@ -187,6 +187,17 @@ pub fn speed(bytes_per_second: u64) -> String {
     format!("{}/s", format_bytes(bytes_per_second))
 }
 
+/// Pauses or resumes every download: the list's headings and the command palette.
+pub const PAUSE_ALL: &str = "Pause all";
+pub const RESUME_ALL: &str = "Resume all";
+
+/// Pauses or resumes one queue: its header and its menu.
+pub const PAUSE_QUEUE: &str = "Pause queue";
+pub const RESUME_QUEUE: &str = "Resume queue";
+
+/// Adds a download without starting it: the New download dialog and the download windows.
+pub const DOWNLOAD_LATER: &str = "Download later";
+
 pub fn status_label(status: DownloadStatus) -> &'static str {
     match status {
         DownloadStatus::Queued => "Waiting",
@@ -267,7 +278,7 @@ pub fn wait_short(wait: &WaitReason) -> String {
         } => format!("Starts {}", time(*at)),
         WaitReason::QueueSchedule { starts_at: None } => "Outside schedule".to_owned(),
         WaitReason::QueueFull { .. } => "Waiting for a slot".to_owned(),
-        WaitReason::GlobalLimit { .. } => "Global limit".to_owned(),
+        WaitReason::GlobalLimit { .. } => "Next, waiting for a free slot".to_owned(),
         WaitReason::InLine { position } => format!("{} in line", ordinal(*position)),
         WaitReason::ServerRefused { retry_at } => format!("Retrying at {}", clock(*retry_at)),
     }
@@ -324,7 +335,7 @@ pub fn wait_long(wait: &WaitReason, queue: &str) -> Sentence {
             " is running {running} of {limit}. This starts when one of them finishes."
         )),
         WaitReason::GlobalLimit { running, limit } => format!(
-            "Global limit: {running} of {limit} downloads are running. This starts when one of them finishes."
+            "Next in line: {running} of {limit} downloads are running. This starts when one of them finishes."
         )
         .into(),
         WaitReason::InLine { position } => said
@@ -692,6 +703,16 @@ pub fn time(at: TimeOfDay) -> String {
         .map_or_else(String::new, |time| format_time(time, false, clock_format()))
 }
 
+/// What a queue's tile says while it runs: `3 running · 2 waiting`, or with nothing waiting
+/// `3 running · 4 min left`.
+pub fn queue_running(running: usize, waiting: usize, left_secs: Option<u64>) -> String {
+    match (waiting, left_secs) {
+        (1.., _) => format!("{running} running · {waiting} waiting"),
+        (0, Some(left)) => format!("{running} running · {} left", eta(left)),
+        (0, None) => format!("{running} running"),
+    }
+}
+
 /// The local clock time of a moment: `7:05 AM` or `07:05`.
 pub fn clock(at: UnixMillis) -> String {
     clock_in(at, false, clock_format())
@@ -847,6 +868,26 @@ mod tests {
             wait_long(&WaitReason::QueuePaused, "Main").marked(),
             ["Main"]
         );
+    }
+
+    #[test]
+    fn the_first_in_line_waits_for_a_free_slot() {
+        let first = WaitReason::GlobalLimit {
+            running: 5,
+            limit: 5,
+        };
+        assert_eq!(wait_short(&first), "Next, waiting for a free slot");
+        assert_eq!(
+            wait_short(&WaitReason::InLine { position: 2 }),
+            "2nd in line"
+        );
+    }
+
+    #[test]
+    fn a_running_queue_counts_what_runs_and_what_waits() {
+        assert_eq!(queue_running(3, 2, Some(240)), "3 running · 2 waiting");
+        assert_eq!(queue_running(3, 0, Some(240)), "3 running · 4 min left");
+        assert_eq!(queue_running(1, 0, None), "1 running");
     }
 
     #[test]

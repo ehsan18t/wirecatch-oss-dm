@@ -122,9 +122,11 @@ fn command_for(group: Group, tally: &Tally) -> Option<(&'static str, GroupComman
         return None;
     }
     match group {
-        Group::Downloading => Some(("Pause all", GroupCommand::PauseAll)),
-        Group::UpNext if tally.running.is_empty() => Some(("Pause all", GroupCommand::PauseAll)),
-        Group::Paused => Some(("Resume all", GroupCommand::ResumeAll)),
+        Group::Downloading => Some((text::PAUSE_ALL, GroupCommand::PauseAll)),
+        Group::UpNext if tally.running.is_empty() => {
+            Some((text::PAUSE_ALL, GroupCommand::PauseAll))
+        }
+        Group::Paused => Some((text::RESUME_ALL, GroupCommand::ResumeAll)),
         _ => None,
     }
 }
