@@ -9,7 +9,7 @@ use wirecatch_protocol::QueueId;
 use super::{Group, MainWindow, View};
 use crate::backend::try_opening_again;
 use crate::library::{Library, Loaded};
-use crate::ui::{Role, Typed as _};
+use crate::ui::{Role, Sentence, Typed as _};
 
 /// The widest the note under an empty list grows.
 const NOTE_WIDTH: f32 = 440.;
@@ -17,7 +17,7 @@ const NOTE_WIDTH: f32 = 440.;
 struct Empty {
     icon: IconName,
     title: String,
-    note: String,
+    note: Sentence,
     actions: Vec<AnyElement>,
 }
 
@@ -92,7 +92,7 @@ impl MainWindow {
         Empty {
             icon: IconName::Search,
             title: format!("Nothing matches “{needle}”"),
-            note: "The search looks at file names and links in this view.".to_owned(),
+            note: "The search looks at file names and links in this view.".into(),
             actions,
         }
     }
@@ -109,9 +109,10 @@ impl MainWindow {
         Empty {
             icon: IconName::Inbox,
             title: format!("{name} is empty"),
-            note: format!(
-                "Add a download straight into this queue, or drag downloads onto it in the sidebar from {other} or any other list."
-            ),
+            note: Sentence::new()
+                .text("Add a download straight into this queue, or drag downloads onto it in the sidebar from ")
+                .queue(&other)
+                .text(" or any other list."),
             actions: vec![
                 Button::new("add-to-queue")
                     .primary()
@@ -140,7 +141,7 @@ impl MainWindow {
         Empty {
             icon,
             title,
-            note: "Downloads appear here as soon as they match this view.".to_owned(),
+            note: "Downloads appear here as soon as they match this view.".into(),
             actions: vec![
                 Button::new("show-all")
                     .label("Show all downloads")
@@ -156,7 +157,7 @@ fn could_not_open(reason: String, cx: &mut Context<'_, MainWindow>) -> Empty {
     Empty {
         icon: IconName::CircleX,
         title: format!("{app} could not open your download list"),
-        note: reason,
+        note: reason.into(),
         actions: vec![
             Button::new("reload")
                 .primary()
@@ -179,7 +180,7 @@ fn opening() -> Empty {
     Empty {
         icon: IconName::Inbox,
         title: "Opening your downloads".to_owned(),
-        note: "This can take a moment with a long list or a slow disk.".to_owned(),
+        note: "This can take a moment with a long list or a slow disk.".into(),
         actions: Vec::new(),
     }
 }
@@ -189,7 +190,7 @@ fn not_downloaded(cx: &mut Context<'_, MainWindow>) -> Empty {
     Empty {
         icon: IconName::Globe,
         title: "Not in your downloads yet".to_owned(),
-        note: "Press Enter to download it, or keep typing to search.".to_owned(),
+        note: "Press Enter to download it, or keep typing to search.".into(),
         actions: vec![
             Button::new("download-typed-empty")
                 .primary()
@@ -208,7 +209,8 @@ fn first_run(cx: &mut Context<'_, MainWindow>) -> Empty {
         note: format!(
             "{app} downloads it right away, using several connections at once. Downloads you start in your browser show up here too once the {} extension is installed.",
             wirecatch_product::PRODUCT_NAME
-        ),
+        )
+        .into(),
         actions: vec![
             Button::new("first-download")
                 .primary()

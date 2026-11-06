@@ -117,28 +117,26 @@ impl LinkTrial {
     /// Where the link goes and why, then the switched-off queue that would have matched it.
     fn lines(&self, found: &LinkMatch, draft: Option<&Draft>, cx: &App) -> Vec<Sentence> {
         let library = self.library.read(cx);
-        let name = |queue: Option<QueueId>| {
+        let named = |said: Sentence, queue: Option<QueueId>| {
             if let Some(draft) = draft
                 && (queue.is_none() || queue == draft.rules.queue)
             {
                 return if draft.name.is_empty() {
-                    "This queue".to_owned()
+                    said.text("This queue")
                 } else {
-                    draft.name.clone()
+                    said.queue(&draft.name)
                 };
             }
-            queue
-                .and_then(|id| library.queue(id))
-                .map_or_else(|| "A deleted queue".to_owned(), |q| q.settings.name.clone())
+            match queue.and_then(|id| library.queue(id)) {
+                Some(queue) => said.queue(&queue.settings.name),
+                None => said.text("A deleted queue"),
+            }
         };
         let mut lines = vec![match &found.matched {
-            Some(matched) => Sentence::new()
-                .text("Queue: ")
-                .queue(&name(matched.queue))
-                .text(&format!(
-                    ". Its rules match {}.",
-                    text::rule_phrase(&matched.rule)
-                )),
+            Some(matched) => named(Sentence::new().text("Queue: "), matched.queue).text(&format!(
+                ". Its rules match {}.",
+                text::rule_phrase(&matched.rule)
+            )),
             None => Sentence::new()
                 .text("Queue: ")
                 .queue(
@@ -151,7 +149,7 @@ impl LinkTrial {
                 .text(". No queue's rules match it."),
         }];
         if let Some(off) = &found.switched_off {
-            lines.push(Sentence::new().queue(&name(off.queue)).text(&format!(
+            lines.push(named(Sentence::new(), off.queue).text(&format!(
                 " would match {}, but its rules are off.",
                 text::rule_phrase(&off.rule)
             )));

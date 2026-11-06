@@ -41,6 +41,32 @@ impl Sentence {
     }
 }
 
+#[cfg(test)]
+impl Sentence {
+    pub fn said(&self) -> &str {
+        &self.text
+    }
+
+    pub fn marked(&self) -> Vec<&str> {
+        self.names.iter().map(|at| &self.text[at.clone()]).collect()
+    }
+}
+
+impl From<&str> for Sentence {
+    fn from(said: &str) -> Self {
+        Self::new().text(said)
+    }
+}
+
+impl From<String> for Sentence {
+    fn from(text: String) -> Self {
+        Self {
+            text,
+            names: Vec::new(),
+        }
+    }
+}
+
 impl RenderOnce for Sentence {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let name = HighlightStyle {
