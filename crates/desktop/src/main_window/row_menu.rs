@@ -19,6 +19,7 @@ use super::applies::{self, Applicable};
 use super::{MainWindow, confirm, details, fixes};
 use crate::backend::act;
 use crate::library::Library;
+use crate::ui::menu::danger_item;
 use crate::{files, text};
 
 impl MainWindow {
@@ -50,7 +51,7 @@ impl MainWindow {
             return;
         };
         let target = Target::of(self, id, cx);
-        let menu = PopupMenu::build(window, cx, move |menu, _, _| fill(menu, target));
+        let menu = PopupMenu::build(window, cx, move |menu, _, cx| fill(menu, target, cx));
         let dismissed = cx.subscribe_in(&menu, window, |this, _, _: &DismissEvent, window, cx| {
             this.keyboard_menu = None;
             this.focus.focus(window, cx);
@@ -135,15 +136,15 @@ pub(super) fn build(
         return menu;
     };
     let target = Target::of(main.read(cx), id, cx);
-    fill(menu, target)
+    fill(menu, target, cx)
 }
 
 /// The menu's items for `target`.
-fn fill(menu: PopupMenu, target: Target) -> PopupMenu {
+fn fill(menu: PopupMenu, target: Target, cx: &App) -> PopupMenu {
     let menu = actions(menu, &target);
     let menu = about_one(menu, &target);
     let menu = moves(menu, &target);
-    ending(menu, target)
+    ending(menu, target, cx)
 }
 
 /// The fix, Open, Pause, Resume, Try again and the details.
@@ -293,8 +294,8 @@ fn moves(menu: PopupMenu, target: &Target) -> PopupMenu {
         .separator()
 }
 
-/// Cancel and Remove, which ask first.
-fn ending(menu: PopupMenu, target: Target) -> PopupMenu {
+/// Cancel and Remove, which ask first, in the danger colour when they delete files (D272).
+fn ending(menu: PopupMenu, target: Target, cx: &App) -> PopupMenu {
     let Target {
         rows,
         ids,
@@ -302,20 +303,32 @@ fn ending(menu: PopupMenu, target: Target) -> PopupMenu {
         library,
         ..
     } = target;
+    let refs: Vec<&DownloadSummary> = rows.iter().collect();
+    let item = |label, icon: Icon, deletes| {
+        if deletes {
+            danger_item(label, icon, cx)
+        } else {
+            PopupMenuItem::new(label).icon(icon)
+        }
+    };
+    let cancel = item(
+        "Cancel",
+        Icon::new(IconName::CircleX),
+        confirm::cancel_deletes(&refs),
+    );
+    let remove = item(
+        "Remove",
+        Icon::new(Lucide::Trash),
+        confirm::removal_deletes(&refs),
+    );
     let cancelled = (library.clone(), ids.clone(), folded.clone());
     menu.when(rows.iter().any(applies::can_cancel), |menu| {
-        menu.item(
-            PopupMenuItem::new("Cancel")
-                .icon(IconName::CircleX)
-                .on_click(move |_, window, cx| {
-                    confirm::cancel(&cancelled.0, &cancelled.1, &cancelled.2, window, cx);
-                }),
-        )
+        menu.item(cancel.on_click(move |_, window, cx| {
+            confirm::cancel(&cancelled.0, &cancelled.1, &cancelled.2, window, cx);
+        }))
     })
     .item(
-        PopupMenuItem::new("Remove")
-            .icon(Icon::new(Lucide::Trash))
-            .on_click(move |_, window, cx| confirm::remove(&library, &ids, &folded, window, cx)),
+        remove.on_click(move |_, window, cx| confirm::remove(&library, &ids, &folded, window, cx)),
     )
 }
 

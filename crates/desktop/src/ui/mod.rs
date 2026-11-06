@@ -11,6 +11,7 @@ pub mod folder_row;
 pub mod icon;
 pub mod layout;
 pub mod mark;
+pub mod menu;
 pub mod path_text;
 pub mod queue_tile;
 pub mod select_circle;

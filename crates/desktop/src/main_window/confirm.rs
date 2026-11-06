@@ -44,6 +44,21 @@ fn cancellable(downloads: &Rows, ids: &[DownloadId]) -> Vec<DownloadId> {
         .collect()
 }
 
+/// Whether cancelling `rows` deletes a partial file, before any question is asked (D272).
+pub(super) fn cancel_deletes(rows: &[&DownloadSummary]) -> bool {
+    let cancelled: Vec<&DownloadSummary> = rows
+        .iter()
+        .copied()
+        .filter(|row| applies::can_cancel(row))
+        .collect();
+    Asked::of(&cancelled).started
+}
+
+/// Whether removing `rows` deletes files whatever the person picks in the question (D272).
+pub(super) fn removal_deletes(rows: &[&DownloadSummary]) -> bool {
+    Asked::of(rows).removal_deletes(false)
+}
+
 impl Asked {
     fn read(library: &Entity<Library>, ids: &[DownloadId], cx: &App) -> Self {
         let ids: HashSet<DownloadId> = ids.iter().copied().collect();
@@ -356,6 +371,23 @@ mod tests {
             ("Remove from list", ButtonVariant::Danger)
         );
         assert_eq!(button(&[&empty], true), keep);
+    }
+
+    #[test]
+    fn the_menu_marks_only_a_cancel_or_removal_that_deletes_files() {
+        let row = |id, status, done| DownloadSummary {
+            status,
+            done,
+            ..download(id)
+        };
+        let finished = row(1, DownloadStatus::Completed, 10);
+        let partial = row(2, DownloadStatus::Downloading, 10);
+        let empty = row(3, DownloadStatus::Queued, 0);
+
+        assert!(cancel_deletes(&[&partial, &empty]));
+        assert!(!cancel_deletes(&[&finished, &empty]));
+        assert!(removal_deletes(&[&finished, &partial]));
+        assert!(!removal_deletes(&[&finished, &empty]));
     }
 
     #[test]
