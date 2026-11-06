@@ -1,5 +1,5 @@
 //! The navigation folded to an icon rail, and the switch between the docked sidebar, the rail,
-//! and the drawer that a narrow window opens over the list (D87.2, D91).
+//! and the drawer that a narrow window opens over the list (D87.2, D91, D266).
 
 use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, v_flex};

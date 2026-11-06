@@ -1682,3 +1682,11 @@ Decided with the maintainer on 2026-11-06. It amends D47.2: the shared status wo
 1. A waiting download's short status names its queue, standing out as D240 says: "Next in Main", "3rd to start in Main". A reason of its own follows the place or names the queue itself: "Next in Main, waiting for a free slot", "Main is paused", "Main starts at 2:00 AM". Rows, the download window and the details say the same (`text::wait_short`, `text::wait_long`).
 2. Only the first in line waits for a free slot, whether the app's limit or its queue's is reached; the others wait for those ahead of them (`wait_reason` in core), so each says its place.
 3. A queue not known yet reads "its queue".
+
+### D266. The sidebar folds by the window's width unless folded by hand
+
+Decided with the maintainer on 2026-11-07. Once the sidebar had been folded and unfolded by hand, it stayed docked at any width, so a narrow window lost its list to the sidebar.
+
+1. Below 1100 pixels wide the sidebar folds to the icon rail by itself, and above it unfolds by itself (`rail::Nav::Auto`).
+2. Folding it with the title bar's button keeps the rail at any width. Unfolding it hands it back to the window's width.
+3. In a narrow window the button opens and closes the full navigation as a drawer over the list instead.
