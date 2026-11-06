@@ -1,4 +1,4 @@
-/** Where the media button goes over a video or next to an audio player: pure geometry, in viewport pixels. */
+/** Where the media button goes on a video or an audio player: pure geometry, in viewport pixels. */
 
 export interface Box {
   top: number;
@@ -14,31 +14,28 @@ export interface Size {
   height: number;
 }
 
+/** Which side of the media's edge the button, a tab of the player, sits on. */
+export type Edge = 'above' | 'below';
+
 export interface Position {
   top: number;
   left: number;
-  /** Sitting on top of the video, its bottom on the video's top edge, drawn as a tab of it. */
-  attached: boolean;
+  edge: Edge;
 }
 
 /** Smaller videos are previews or ads: no button. */
 export const MIN_VIDEO: Size = { width: 160, height: 90 };
-/** Distance from the video's top right corner when the button sits inside it. */
-export const INSET = 8;
-/** Distance from the video's right edge when the button sits on top of it: clear of a player's rounded corner. */
+/** Distance from the media's right edge: clear of a player's rounded corner. */
 const TAB_MARGIN = 12;
 /** Height kept clear above a video's native controls. */
 const CONTROLS_SPACE = 48;
-/** Space between an audio player and the button above or below it. */
-const AUDIO_GAP = 4;
 
 /**
- * Where the button goes, in viewport pixels, or null when it should not show:
- * the element is too small, out of view, or there is no room left above a video's
- * own controls. On a video it sits on top of its top right corner, touching it, as a
- * tab of the player; with no room above it goes inside that corner, away from the
- * native controls at the bottom. An audio player is all controls, so the button sits
- * just above it (or below, when there is no room above).
+ * Where the button goes, in viewport pixels, or null when it should not show: the element is too
+ * small, out of view, or a video's own controls leave no room. The button is always a tab of the
+ * player, 12 pixels in from its right edge: on top of its top edge, touching it, or, with no room
+ * above or a page's fixed bar over the video's top, hanging from that edge (inside a video, under
+ * an audio player).
  */
 export function placeButton(
   target: Box,
@@ -50,10 +47,10 @@ export function placeButton(
   if (!kind.audio && (target.width < MIN_VIDEO.width || target.height < MIN_VIDEO.height)) {
     return null;
   }
-  const place = kind.audio ? besideAudio(target, size) : overVideo(target, kind, viewport, size);
+  const place = kind.audio ? onAudio(target, size) : onVideo(target, kind, viewport, size);
   if (place === null) return null;
   const left = Math.max(0, Math.min(place.left, viewport.width - size.width));
-  return { top: Math.round(place.top), left: Math.round(left), attached: place.attached };
+  return { top: Math.round(place.top), left: Math.round(left), edge: place.edge };
 }
 
 /** True when the element has an area and some of it is inside the viewport. */
@@ -68,33 +65,27 @@ function isVisible(target: Box, viewport: Size): boolean {
   );
 }
 
-/** Just above an audio player, right-aligned with it, or below it when there is no room above. */
-function besideAudio(target: Box, size: Size): Position {
-  const above = target.top - size.height - AUDIO_GAP;
-  return {
-    top: above < 0 ? target.bottom + AUDIO_GAP : above,
-    left: target.right - size.width,
-    attached: false,
-  };
+/** On top of an audio player, or under it when there is no room above: the player is all controls. */
+function onAudio(target: Box, size: Size): Position {
+  const above = target.top - size.height;
+  const left = target.right - size.width - TAB_MARGIN;
+  return above < 0
+    ? { top: target.bottom, left, edge: 'below' }
+    : { top: above, left, edge: 'above' };
 }
 
-/**
- * On top of a video's top right corner, else inside it, or null when its own controls leave no
- * room there. A video whose top a page's fixed bar covers gets the button inside, below the bar.
- */
-function overVideo(
+/** On top of a video's top edge, else hanging from it inside the video, or null when its own controls leave no room there. */
+function onVideo(
   target: Box,
   kind: { controls: boolean; covered?: boolean },
   viewport: Size,
   size: Size,
 ): Position | null {
-  const right = Math.min(target.right, viewport.width);
+  const left = Math.min(target.right, viewport.width) - size.width - TAB_MARGIN;
   const above = target.top - size.height;
-  if (above >= 0 && kind.covered !== true) {
-    return { top: above, left: right - size.width - TAB_MARGIN, attached: true };
-  }
-  const top = Math.max(target.top, 0) + INSET;
-  const room = Math.min(target.bottom, viewport.height) - (kind.controls ? CONTROLS_SPACE : INSET);
+  if (above >= 0 && kind.covered !== true) return { top: above, left, edge: 'above' };
+  const top = Math.max(target.top, 0);
+  const room = Math.min(target.bottom, viewport.height) - (kind.controls ? CONTROLS_SPACE : 0);
   if (top + size.height > room) return null;
-  return { top, left: right - size.width - INSET, attached: false };
+  return { top, left, edge: 'below' };
 }

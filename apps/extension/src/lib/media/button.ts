@@ -11,16 +11,16 @@ import { randomHostName } from './host-name';
 import { LiveMessage } from './live-message';
 import type { DownloadAnswer, ElementInfo } from './messages';
 import {
-  containsDeep,
   elementInfo,
   findMedia,
+  hiddenByFullscreen,
   isUsable,
   mediaAt,
   mediaTitle,
   playerMedia,
 } from './page-media';
-import { INSET, placeButton, type Position } from './placement';
-import { shownPart } from './visible-box';
+import type { Edge, Position } from './placement';
+import { placeOnPage } from './visible-box';
 
 export interface ButtonDeps {
   /** Whether anything downloadable is known for this element (asked before showing). */
@@ -32,12 +32,16 @@ export interface ButtonDeps {
    * Replaceable for tests only: jsdom marks every event as untrusted.
    */
   isTrusted?: (event: Event) => boolean;
+  /** Whether the extension this copy of the script belongs to still runs: a reloaded or updated one leaves the previous copy in open tabs. */
+  alive?: () => boolean;
 }
 
 /** Added to the wait for the button to fade, so the timer fires just after that moment, not before. */
 const WAKE_SLACK_MS = 20;
 /** How long the button stays fully visible after the last pointer movement or play. */
 export const ACTIVE_MS = 3000;
+/** Distance from the window's top right corner of the keyboard shortcut's answer, when no button shows. */
+const ANSWER_INSET = 8;
 
 /** Page-wide listeners capture: media events such as `play` do not bubble, and a page may stop others from bubbling. */
 const CAPTURE = { capture: true };
@@ -57,14 +61,6 @@ const CONTAINED = [
 
 /** `message`: the button is gone but its last message stays readable (and announced) until it expires. */
 export type Shown = 'none' | 'shown' | 'idle' | 'message';
-
-/**
- * A media element shown full screen by itself cannot have anything drawn over it;
- * a player container shown full screen can, if the button moves inside it.
- */
-function hiddenByFullscreen(target: HTMLMediaElement, fullscreen: Element | null): boolean {
-  return fullscreen !== null && (fullscreen === target || !containsDeep(fullscreen, target));
-}
 
 export class MediaButton {
   /** The element the page sees: a bare custom element, named afresh each time, whose content is in a closed shadow root. */
@@ -100,8 +96,8 @@ export class MediaButton {
   #returnTo: HTMLElement | null = null;
   /** The position last written to the host, so an unchanged one is not written again. */
   #style = '';
-  /** Whether the button last sat on top of its video, drawn as a tab of it. */
-  #attached = false;
+  /** The side of the media's edge the button last sat on. */
+  #edge: Edge | null = null;
   #timer: ReturnType<typeof setTimeout> | null = null;
   #state: Shown = 'none';
 
@@ -192,8 +188,8 @@ export class MediaButton {
       const view = this.#doc.defaultView;
       const parent = this.#doc.fullscreenElement ?? this.#doc.documentElement;
       // Where the button would sit over a video filling the window.
-      const left = (view?.innerWidth ?? 0) - TYPICAL_BUTTON_WIDTH - 2 * INSET;
-      this.#position({ top: INSET, left: Math.max(0, left), attached: false });
+      const left = (view?.innerWidth ?? 0) - TYPICAL_BUTTON_WIDTH - 2 * ANSWER_INSET;
+      this.#position({ top: ANSWER_INSET, left: Math.max(0, left), edge: 'below' });
       if (this.host.parentNode !== parent) parent.append(this.host);
       this.#wrap.classList.add('msg');
       this.#state = 'message';
@@ -237,6 +233,7 @@ export class MediaButton {
     if (this.#timer !== null) clearTimeout(this.#timer);
     this.#message.stop();
     this.host.remove();
+    this.#state = 'none';
   }
 
   /** Adds a listener that `#unwatch` removes again; passive and in the bubbling phase unless `options` says otherwise. */
@@ -389,6 +386,10 @@ export class MediaButton {
   }
 
   #update(): void {
+    if (this.#deps.alive?.() === false) {
+      this.destroy();
+      return;
+    }
     // Keep the element the person is acting on while the button has focus or is busy.
     const holding = this.#isFocused() || this.#busy;
     if (!holding) this.#target = this.#hovered ?? this.#playing;
@@ -440,18 +441,11 @@ export class MediaButton {
   }
 
   #place(el: HTMLMediaElement): Position | null {
-    const view = this.#doc.defaultView;
-    const { box, covered } = shownPart(el, this.host);
-    return placeButton(
-      box,
-      { audio: el.tagName === 'AUDIO', controls: el.controls, covered },
-      { width: view?.innerWidth ?? 0, height: view?.innerHeight ?? 0 },
-      // Measured once the button is in the page; a typical size until then.
-      {
-        width: this.button.offsetWidth || TYPICAL_BUTTON_WIDTH,
-        height: this.button.offsetHeight || BUTTON_HEIGHT,
-      },
-    );
+    // Measured once the button is in the page; a typical size until then.
+    return placeOnPage(el, this.host, {
+      width: this.button.offsetWidth || TYPICAL_BUTTON_WIDTH,
+      height: this.button.offsetHeight || BUTTON_HEIGHT,
+    });
   }
 
   #hide(): void {
@@ -482,11 +476,12 @@ export class MediaButton {
   #position(position: Position): void {
     const style = `position:fixed!important;top:${position.top}px!important;left:${position.left}px!important`;
     // Scrolling and pointer moves call this every frame: only touch the page's DOM on a change.
-    if (style === this.#style && position.attached === this.#attached) return;
+    if (style === this.#style && position.edge === this.#edge) return;
     this.#style = style;
-    this.#attached = position.attached;
+    this.#edge = position.edge;
     this.host.style.cssText = style;
-    this.#wrap.classList.toggle('tab', position.attached);
+    this.#wrap.classList.toggle('above', position.edge === 'above');
+    this.#wrap.classList.toggle('below', position.edge === 'below');
   }
 
   async #download(): Promise<void> {
