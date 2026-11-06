@@ -1720,5 +1720,5 @@ Decided with the maintainer on 2026-11-07. It amends D114.4, where the engine re
 
 Decided with the maintainer on 2026-11-06. It amends D87.2: folded, the sidebar hid what needs attention and how much downloads, and a queue's initials ("MA") said nothing about what it was doing.
 
-1. On the rail, Needs attention carries its count in a badge in the danger colour, and Downloading its count in a neutral badge; past 99 a badge says "99+". The other views keep their count in their tooltip.
-2. A queue on the rail is the tile the docked sidebar draws for it: paused, downloading, waiting for its hours or holding, with the badge of its rules (`sidebar::queue_tile`). Its tooltip still names it and says what it is doing.
+1. On the rail, Needs attention carries its count in a badge in the danger colour, and Downloading its count in a neutral grey badge; past 99 a badge says "99+". A badge sits on the item's top right corner, cut out of the colour behind the item. The other views keep their count in their tooltip.
+2. A queue on the rail is the tile the docked sidebar draws for it: paused, downloading, waiting for its hours or holding, with the badge of its rules (`sidebar::queue_tile`). While it downloads, a ring around the tile fills clockwise from the top with how much of its running and waiting downloads is done, as the docked sidebar's progress line does; it stays a bare track while a size is not known. Its tooltip still names it and says what it is doing.

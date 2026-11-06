@@ -570,6 +570,13 @@ fn queue_body(
         )
 }
 
+/// While a queue downloads, how much of what runs and waits is done, from 0 to 1; 0 while a
+/// size is not known.
+pub(super) fn running_done(tally: &Tally) -> Option<f32> {
+    let facts = QueueFacts::of(tally);
+    (facts.running > 0).then(|| facts.per_mille.map_or(0., |done| f32::from(done) / 1000.))
+}
+
 /// What a queue's row tells, counted from its downloads.
 #[derive(Default)]
 struct QueueFacts {

@@ -12,10 +12,12 @@ use gpui_kit::{
 use wirecatch_protocol::app::Queue;
 
 use super::{Group, MainWindow, Screen, View, queue_header, sidebar};
-use crate::ui::{Role, Typed as _, tokens, tooltip};
+use crate::ui::{QueueTile, Role, Typed as _, tokens, tooltip};
 
-/// A count badge's height; it widens for more digits.
-const BADGE: f32 = 16.;
+/// A count badge's height with its cut-out ring; it widens for more digits.
+const BADGE: f32 = 18.;
+/// How far a count badge reaches past its item's corner.
+const BADGE_OUT: f32 = 2.;
 /// The most a badge counts; beyond it, it says `99+`.
 const BADGE_MOST: usize = 99;
 
@@ -163,13 +165,11 @@ impl MainWindow {
         let view_items: Vec<AnyElement> = views
             .into_iter()
             .map(|(id, icon, label, view, badge)| {
-                let icon = icon.with_size(tokens::ICON);
-                let content = div()
-                    .relative()
-                    .child(icon)
-                    .children(badge.map(|badge| count_badge(badge, cx)))
-                    .into_any_element();
-                self.rail_item(id, content, label, view, cx)
+                let icon = icon.with_size(tokens::ICON).into_any_element();
+                let badge = badge.map(|badge| self.count_badge(badge, &id, view, cx));
+                self.rail_item(id, icon, label, view, cx)
+                    .children(badge)
+                    .into_any_element()
             })
             .collect();
         let queue_items = self.rail_queue_items(cx);
@@ -200,11 +200,7 @@ impl MainWindow {
                     ),
                     view: View::Queue(queue.id),
                     rules,
-                    running: library
-                        .downloads
-                        .tally_of(queue.id)
-                        .in_group(Group::Downloading)
-                        > 0,
+                    running: sidebar::running_done(library.downloads.tally_of(queue.id)),
                 }
             })
             .collect();
@@ -221,13 +217,15 @@ impl MainWindow {
                 };
                 let hover =
                     (!current).then(|| (SharedString::from(queue.id.clone()), theme.list_hover));
-                let tile = sidebar::queue_tile(&queue.queue, queue.running, behind, cx)
+                let tile = sidebar::queue_tile(&queue.queue, queue.running.is_some(), behind, cx)
                     .rules(queue.rules)
+                    .when_some(queue.running, QueueTile::ring)
                     .when_some(hover, |tile, (group, color)| {
                         tile.hover_behind(group, color)
                     })
                     .into_any_element();
                 self.rail_item(queue.id, tile, queue.label, queue.view, cx)
+                    .into_any_element()
             })
             .collect()
     }
@@ -239,28 +237,76 @@ impl MainWindow {
         label: String,
         view: View,
         cx: &mut Context<'_, Self>,
-    ) -> AnyElement {
+    ) -> gpui_kit::Stateful<gpui_kit::Div> {
         let theme = cx.theme();
-        let current = self.page.screen == Screen::Downloads && self.view == view;
+        let current = self.current(view);
         rail_button(id.clone(), label, cx)
+            .relative()
             .group(SharedString::from(id))
             .when(current, |item| {
                 item.bg(theme.sidebar_accent).text_color(theme.primary)
             })
             .child(content)
             .on_click(cx.listener(move |this, _, window, cx| this.show(view, window, cx)))
+    }
+
+    fn current(&self, view: View) -> bool {
+        self.page.screen == Screen::Downloads && self.view == view
+    }
+
+    /// A count at the rail item's top right corner, cut out of the colour behind it as the
+    /// queue tile's rules badge is, so it keeps its edge on a hovered or open item.
+    fn count_badge(&self, badge: Badge, group: &str, view: View, cx: &App) -> AnyElement {
+        let theme = cx.theme();
+        let (bg, fg) = if badge.alarming {
+            (theme.danger, theme.danger_foreground)
+        } else {
+            (theme.muted_foreground, theme.sidebar)
+        };
+        let current = self.current(view);
+        let behind = if current {
+            theme.sidebar_accent
+        } else {
+            theme.sidebar
+        };
+        let hover = theme.list_hover;
+        div()
+            .absolute()
+            .top(px(-BADGE_OUT))
+            .right(px(-BADGE_OUT))
+            .min_w(px(BADGE))
+            .h(px(BADGE))
+            .px(px(3.))
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded_full()
+            .bg(bg)
+            .border_2()
+            .border_color(behind)
+            .when(!current, |badge| {
+                badge.group_hover(SharedString::from(group.to_owned()), move |style| {
+                    style.border_color(hover)
+                })
+            })
+            .text_role(Role::Caption, cx)
+            .text_color(fg)
+            .font_weight(FontWeight::BOLD)
+            .child(badge_text(badge.count))
             .into_any_element()
     }
 }
 
-/// A queue's rail button: the tile of what it is doing, and the badge of its rules.
+/// A queue's rail button: the tile of what it is doing, the badge of its rules, and while it
+/// downloads a ring of how far it got.
 struct RailQueue {
     id: String,
     queue: Queue,
     label: String,
     view: View,
     rules: Option<bool>,
-    running: bool,
+    /// How much is done, while it downloads.
+    running: Option<f32>,
 }
 
 /// A square rail button with its name in a tooltip beside it.
@@ -307,32 +353,6 @@ fn badge_text(count: usize) -> String {
     } else {
         count.to_string()
     }
-}
-
-/// A count in the icon's top right corner, over the icon's edge.
-fn count_badge(badge: Badge, cx: &App) -> impl IntoElement {
-    let theme = cx.theme();
-    let (bg, fg) = if badge.alarming {
-        (theme.danger, theme.danger_foreground)
-    } else {
-        (theme.secondary_active, theme.foreground)
-    };
-    div()
-        .absolute()
-        .top(px(-BADGE / 2. - 1.))
-        .left(px(BADGE / 2.))
-        .min_w(px(BADGE))
-        .h(px(BADGE))
-        .px(px(3.))
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded_full()
-        .bg(bg)
-        .text_role(Role::Caption, cx)
-        .text_color(fg)
-        .font_weight(FontWeight::BOLD)
-        .child(badge_text(badge.count))
 }
 
 #[cfg(test)]
