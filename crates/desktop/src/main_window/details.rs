@@ -494,10 +494,12 @@ fn footer(
     };
     let cancelled = library.clone();
     layout::bar(Rule::Above, cx)
-        .child(
-            quiet("details-folder", IconName::FolderOpen, "Show in folder")
-                .on_click(move |_, window, cx| files::show_in_folder(id, window, cx)),
-        )
+        .when(applies::has_file(row), |bar| {
+            bar.child(
+                quiet("details-folder", IconName::FolderOpen, "Show in folder")
+                    .on_click(move |_, window, cx| files::show_in_folder(id, window, cx)),
+            )
+        })
         .child(
             quiet(
                 "details-window",
