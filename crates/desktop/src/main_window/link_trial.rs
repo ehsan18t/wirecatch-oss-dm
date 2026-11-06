@@ -19,7 +19,7 @@ use wirecatch_shell::api;
 use crate::backend::{Backend, said};
 use crate::library::Library;
 use crate::text;
-use crate::ui::{Role, Typed as _};
+use crate::ui::{Role, Sentence, Typed as _};
 
 /// One queue's rules as its editor has them, tried in place of the saved ones, and that queue's
 /// name as typed.
@@ -33,7 +33,7 @@ pub type Drafted = Rc<dyn Fn(&App) -> Option<Draft>>;
 
 /// What Test a link found: where the link goes and why, or why it could not be tried.
 enum Answer {
-    Lines(Vec<String>),
+    Lines(Vec<Sentence>),
     Problem(String),
 }
 
@@ -115,7 +115,7 @@ impl LinkTrial {
     }
 
     /// Where the link goes and why, then the switched-off queue that would have matched it.
-    fn lines(&self, found: &LinkMatch, draft: Option<&Draft>, cx: &App) -> Vec<String> {
+    fn lines(&self, found: &LinkMatch, draft: Option<&Draft>, cx: &App) -> Vec<Sentence> {
         let library = self.library.read(cx);
         let name = |queue: Option<QueueId>| {
             if let Some(draft) = draft
@@ -132,26 +132,29 @@ impl LinkTrial {
                 .map_or_else(|| "A deleted queue".to_owned(), |q| q.settings.name.clone())
         };
         let mut lines = vec![match &found.matched {
-            Some(matched) => format!(
-                "Queue: {}. Its rules match {}.",
-                name(matched.queue),
-                text::rule_phrase(&matched.rule)
-            ),
-            None => format!(
-                "Queue: {}. No queue's rules match it.",
-                library
-                    .queues
-                    .iter()
-                    .find(|queue| queue.is_default)
-                    .map_or("Main", |queue| queue.settings.name.as_str())
-            ),
+            Some(matched) => Sentence::new()
+                .text("Queue: ")
+                .queue(&name(matched.queue))
+                .text(&format!(
+                    ". Its rules match {}.",
+                    text::rule_phrase(&matched.rule)
+                )),
+            None => Sentence::new()
+                .text("Queue: ")
+                .queue(
+                    library
+                        .queues
+                        .iter()
+                        .find(|queue| queue.is_default)
+                        .map_or("Main", |queue| queue.settings.name.as_str()),
+                )
+                .text(". No queue's rules match it."),
         }];
         if let Some(off) = &found.switched_off {
-            lines.push(format!(
-                "{} would match {}, but its rules are off.",
-                name(off.queue),
+            lines.push(Sentence::new().queue(&name(off.queue)).text(&format!(
+                " would match {}, but its rules are off.",
                 text::rule_phrase(&off.rule)
-            ));
+            )));
         }
         lines
     }

@@ -1557,3 +1557,10 @@ Decided with the maintainer on 2026-11-06. Paths were cut at their end, so the p
 
 1. Every path the desktop app shows goes through `ui::PathText`: on one line, cut before its last part when it does not fit (`C:\Users\someone\Ap…\Video`), so the last folder or file name stays in view. The last part is cut in its own middle only when it alone does not fit, which keeps a file name's extension.
 2. The whole path shows on hover, in the piece's own tooltip or in the one of the control it sits in.
+
+### D240. A queue's name stands out in running text
+
+Decided with the maintainer on 2026-11-06. A queue's name is one someone made up, so inside a sentence it read as one of the sentence's words ("All go to Main.").
+
+1. A queue's name inside running text of the desktop app is drawn in the accent colour at medium weight, through `ui::Sentence`, which marks each name it is given. A label or note of a `Field` may be such a sentence.
+2. Menu items, tooltips and window titles keep plain text: they are short and say one thing.

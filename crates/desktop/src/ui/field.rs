@@ -5,30 +5,29 @@ use gpui_kit::prelude::FluentBuilder as _;
 
 use super::{Role, Typed as _};
 use gpui_kit::{
-    AnyElement, App, IntoElement, ParentElement as _, RenderOnce, SharedString, Styled as _,
-    Window, div,
+    AnyElement, App, IntoElement, ParentElement as _, RenderOnce, Styled as _, Window, div,
 };
 
 #[derive(IntoElement)]
 pub struct Field {
-    label: SharedString,
+    label: AnyElement,
     control: AnyElement,
-    note: Option<SharedString>,
+    note: Option<AnyElement>,
     wrong: bool,
 }
 
 impl Field {
-    pub fn new(label: impl Into<SharedString>, control: impl IntoElement) -> Self {
+    pub fn new(label: impl IntoElement, control: impl IntoElement) -> Self {
         Self {
-            label: label.into(),
+            label: label.into_any_element(),
             control: control.into_any_element(),
             note: None,
             wrong: false,
         }
     }
 
-    pub fn note(mut self, note: impl Into<SharedString>) -> Self {
-        self.note = Some(note.into());
+    pub fn note(mut self, note: impl IntoElement) -> Self {
+        self.note = Some(note.into_any_element());
         self
     }
 
