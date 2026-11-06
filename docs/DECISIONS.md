@@ -1715,3 +1715,10 @@ Decided with the maintainer on 2026-11-07. It amends D114.4, where the engine re
 2. A running download then waits with `WaitReason::Reconnecting`, and its speed and time left are empty. The list, the download window and the details read "Reconnecting (try 3 of 6)", and the details say in full that the download keeps what it has.
 3. "Waiting for the server" stays for three seconds with no new bytes while no connection has failed. A video's file parts report reconnecting only while no other part receives data.
 4. The first request of a download is not covered: until the server has answered, the download reads "Connecting".
+
+### D267. The icon rail shows counts and each queue's state
+
+Decided with the maintainer on 2026-11-06. It amends D87.2: folded, the sidebar hid what needs attention and how much downloads, and a queue's initials ("MA") said nothing about what it was doing.
+
+1. On the rail, Needs attention carries its count in a badge in the danger colour, and Downloading its count in a neutral grey badge; past 99 a badge says "99+". A badge sits on the item's top right corner, cut out of the colour behind the item. The other views keep their count in their tooltip.
+2. A queue on the rail is the tile the docked sidebar draws for it: paused, downloading, waiting for its hours or holding, with the badge of its rules (`sidebar::queue_tile`). While it downloads, a ring around the tile fills clockwise from the top with how much of its running and waiting downloads is done, as the docked sidebar's progress line does; it stays a bare track while a size is not known. Its tooltip still names it and says what it is doing.
