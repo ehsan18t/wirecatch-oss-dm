@@ -22,7 +22,8 @@ pub enum Role {
     Meta,
     /// The small label over a group.
     Label,
-    /// The least of a row, under its meta: a folder.
+    /// The least of a row, under its meta: a folder. Smaller, never fainter: it must read on a
+    /// hovered or selected row (theme tests).
     Caption,
 }
 
@@ -65,15 +66,12 @@ pub trait Typed: Styled + Sized {
             Role::Caption => self
                 .text_size(px(11.))
                 .font_weight(FontWeight::NORMAL)
-                .text_color(theme.muted_foreground.opacity(CAPTION_OPACITY)),
+                .text_color(theme.muted_foreground),
         }
     }
 }
 
 impl<T: Styled> Typed for T {}
-
-/// How far a caption steps back from meta text; both schemes keep it at 4.5:1 on the list.
-pub const CAPTION_OPACITY: f32 = 0.8;
 
 /// Icons beside small text: row actions, captions.
 pub const ICON_SMALL: Pixels = px(14.);
