@@ -20,6 +20,7 @@ import {
   playerMedia,
 } from './page-media';
 import { INSET, placeButton, type Position } from './placement';
+import { shownPart } from './visible-box';
 
 export interface ButtonDeps {
   /** Whether anything downloadable is known for this element (asked before showing). */
@@ -99,6 +100,8 @@ export class MediaButton {
   #returnTo: HTMLElement | null = null;
   /** The position last written to the host, so an unchanged one is not written again. */
   #style = '';
+  /** Whether the button last sat on top of its video, drawn as a tab of it. */
+  #attached = false;
   #timer: ReturnType<typeof setTimeout> | null = null;
   #state: Shown = 'none';
 
@@ -190,7 +193,7 @@ export class MediaButton {
       const parent = this.#doc.fullscreenElement ?? this.#doc.documentElement;
       // Where the button would sit over a video filling the window.
       const left = (view?.innerWidth ?? 0) - TYPICAL_BUTTON_WIDTH - 2 * INSET;
-      this.#position({ top: INSET, left: Math.max(0, left) });
+      this.#position({ top: INSET, left: Math.max(0, left), attached: false });
       if (this.host.parentNode !== parent) parent.append(this.host);
       this.#wrap.classList.add('msg');
       this.#state = 'message';
@@ -438,9 +441,10 @@ export class MediaButton {
 
   #place(el: HTMLMediaElement): Position | null {
     const view = this.#doc.defaultView;
+    const { box, covered } = shownPart(el, this.host);
     return placeButton(
-      el.getBoundingClientRect(),
-      { audio: el.tagName === 'AUDIO', controls: el.controls },
+      box,
+      { audio: el.tagName === 'AUDIO', controls: el.controls, covered },
       { width: view?.innerWidth ?? 0, height: view?.innerHeight ?? 0 },
       // Measured once the button is in the page; a typical size until then.
       {
@@ -478,9 +482,11 @@ export class MediaButton {
   #position(position: Position): void {
     const style = `position:fixed!important;top:${position.top}px!important;left:${position.left}px!important`;
     // Scrolling and pointer moves call this every frame: only touch the page's DOM on a change.
-    if (style === this.#style) return;
+    if (style === this.#style && position.attached === this.#attached) return;
     this.#style = style;
+    this.#attached = position.attached;
     this.host.style.cssText = style;
+    this.#wrap.classList.toggle('tab', position.attached);
   }
 
   async #download(): Promise<void> {

@@ -47,6 +47,7 @@ export const SHADOW_CSS = `
 .w{all:initial;position:relative;display:block;pointer-events:none}
 .b{all:initial;box-sizing:border-box;display:inline-flex;align-items:center;gap:6px;height:${String(BUTTON_HEIGHT)}px;padding:0 12px 0 10px;border-radius:16px;background:${surface}e6;color:${ink};font:600 13px/1 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;letter-spacing:.01em;white-space:nowrap;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.35),inset 0 0 0 1px ${ink}33;transition:opacity .15s,background-color .15s;pointer-events:auto}
 .b:hover{background:${accent};color:${surface}}
+.w.tab .b{border-radius:8px 8px 0 0}
 .b:focus-visible{outline:2px solid ${accent};outline-offset:2px}
 .b[aria-busy=true]{cursor:progress}
 .b svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}

@@ -1534,3 +1534,11 @@ Decided with the maintainer on 2026-11-06. It changes D115.1, which left a runni
 1. A running row shows its circle as every other row does: while hovered, and on every row while some are ticked.
 2. A selection bar button that only some of the ticked rows take says how many: "Pause 2", "Resume 1", "Try 2 again", "Start 2 over". When every ticked row takes it, it keeps its plain word.
 3. Pause still covers queued, connecting and processing rows as well as running ones, so a ticked queued row does not start a moment later.
+
+### D225. The video button sits on top of the video, as a tab of it
+
+Decided with the maintainer on 2026-11-06. The button sat inside a video's top right corner, measured from the video element's own box; a player that sizes its video larger than itself and hides the rest (YouTube before playback) put it up by the page header.
+
+1. The button sits on the visible video's top right corner, outside it: its bottom on the video's top edge, its right edge on the video's, its bottom corners square, so it reads as a tab of the player, as Internet Download Manager places its panel.
+2. "Visible" is the video's box cut by every ancestor that hides what overflows it, and below any fixed or sticky bar of the page that covers its top (tested along its right edge).
+3. With no room above, or with a fixed bar over the video's top, it sits inside the corner as before, below the bar.

@@ -20,13 +20,16 @@ function box(left: number, top: number, width: number, height: number): Box {
 }
 
 describe('placeButton', () => {
-  it('puts the button in the top right corner of a video, inside it', () => {
+  it('puts the button on top of a video, touching its top edge, right-aligned with it', () => {
     expect(
       placeButton(box(100, 50, 640, 360), { audio: false, controls: true }, VIEWPORT, SIZE),
-    ).toEqual({
-      top: 58,
-      left: 620,
-    });
+    ).toEqual({ top: 18, left: 628, attached: true });
+  });
+
+  it('puts the button inside the top right corner when there is no room above the video', () => {
+    expect(
+      placeButton(box(100, 10, 640, 360), { audio: false, controls: true }, VIEWPORT, SIZE),
+    ).toEqual({ top: 18, left: 620, attached: false });
   });
 
   it('keeps clear of native controls when the video is scrolled mostly out of view', () => {
@@ -37,25 +40,16 @@ describe('placeButton', () => {
     // Without native controls the same sliver has room.
     expect(
       placeButton(box(100, -290, 640, 360), { audio: false, controls: false }, VIEWPORT, SIZE),
-    ).toEqual({
-      top: 8,
-      left: 620,
-    });
+    ).toEqual({ top: 8, left: 620, attached: false });
   });
 
   it('puts the button just above an audio player, or below it at the top of the page', () => {
     expect(
       placeButton(box(40, 200, 300, 54), { audio: true, controls: true }, VIEWPORT, SIZE),
-    ).toEqual({
-      top: 164,
-      left: 228,
-    });
+    ).toEqual({ top: 164, left: 228, attached: false });
     expect(
       placeButton(box(40, 10, 300, 54), { audio: true, controls: true }, VIEWPORT, SIZE),
-    ).toEqual({
-      top: 68,
-      left: 228,
-    });
+    ).toEqual({ top: 68, left: 228, attached: false });
   });
 
   it('shows nothing for small, hidden or off-screen elements, and stays inside the viewport', () => {
@@ -73,10 +67,7 @@ describe('placeButton', () => {
     ).toBeNull();
     expect(
       placeButton(box(600, 100, 800, 400), { audio: false, controls: false }, VIEWPORT, SIZE),
-    ).toEqual({
-      top: 108,
-      left: 904,
-    });
+    ).toEqual({ top: 68, left: 912, attached: true });
   });
 });
 
@@ -190,8 +181,51 @@ describe('MediaButton', () => {
     expect(b.state).toBe('shown');
     expect(b.host.parentNode).toBe(document.documentElement);
     expect(b.host.shadowRoot).toBeNull();
-    expect(b.host.style.getPropertyValue('top')).toBe('58px');
+    expect(b.host.style.getPropertyValue('top')).toBe('18px');
+    expect(b.host.style.getPropertyValue('left')).toBe('628px');
+  });
+
+  // Scrolled under a page's fixed header, the video's top corner was behind the header, and the button sat on the header's search field.
+  it('sits below a fixed header that covers the top of the video', async () => {
+    const fake = fakeDeps();
+    const header = document.createElement('header');
+    header.style.position = 'fixed';
+    document.body.append(header);
+    const video = media('video', box(100, -40, 640, 360), { src: 'https://cdn.example.com/a.mp4' });
+    // jsdom does no layout, so it has no hit test: the header covers the top 56 pixels.
+    Object.defineProperty(document, 'elementFromPoint', {
+      value: (_x: number, y: number) => (y < 56 ? header : video),
+      configurable: true,
+    });
+    const b = start(fake);
+    video.dispatchEvent(new Event('play'));
+    await settle();
+    Reflect.deleteProperty(document, 'elementFromPoint');
+    expect(b.state).toBe('shown');
+    expect(Number.parseInt(b.host.style.getPropertyValue('top'), 10)).toBeGreaterThanOrEqual(56);
     expect(b.host.style.getPropertyValue('left')).toBe('620px');
+  });
+
+  // A player that makes its video taller than itself and hides the rest (YouTube before playback) put the button up by the page header, over what the person never sees.
+  it('sits on the top edge of the part of the video its player shows', async () => {
+    const fake = fakeDeps();
+    const player = document.createElement('div');
+    player.style.overflow = 'hidden';
+    player.getBoundingClientRect = () => {
+      const rect = box(100, 80, 640, 360);
+      return { ...rect, x: rect.left, y: rect.top, toJSON: () => rect };
+    };
+    document.body.append(player);
+    const video = media('video', box(100, -100, 640, 720), {
+      src: 'https://cdn.example.com/a.mp4',
+    });
+    player.append(video);
+    const b = start(fake);
+    video.dispatchEvent(new Event('play'));
+    await settle();
+    expect(b.state).toBe('shown');
+    expect(b.host.style.getPropertyValue('top')).toBe('48px');
+    expect(b.host.style.getPropertyValue('left')).toBe('628px');
   });
 
   it('stays hidden where nothing downloadable was detected, and asks again a little later', async () => {
@@ -499,7 +533,7 @@ describe('MediaButton', () => {
     await settle();
     observer.disconnect();
     expect(writes).toHaveLength(1);
-    expect(b.host.style.getPropertyValue('top')).toBe('108px');
+    expect(b.host.style.getPropertyValue('top')).toBe('68px');
   });
 
   describe('keyboard order', () => {
