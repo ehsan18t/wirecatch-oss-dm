@@ -18,7 +18,7 @@ use gpui_kit::{
 };
 use wirecatch_core::{ActivityEvent, Happened};
 use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, FixAction, PER_MILLE_DONE};
-use wirecatch_protocol::{DownloadId, QueueId};
+use wirecatch_protocol::{DownloadId, QueueId, UnixMillis};
 use wirecatch_shell::api;
 
 use super::applies::RowAction;
@@ -517,6 +517,17 @@ fn place(
 
 /// What happened to it.
 fn activity(row: &DownloadSummary, happened: &[Happened], cx: &App) -> impl IntoElement {
+    let lines = activity_lines(row, happened);
+    layout::section(Rule::Above, cx)
+        .gap_2()
+        .child(div().text_role(Role::Label, cx).child("Activity"))
+        .children(lines.into_iter().map(|(at, what)| {
+            layout::label_row(ACTIVITY_LABEL_WIDTH, text::date(at), what, cx).items_start()
+        }))
+}
+
+/// The activity's lines in time order, from its adding to its finish.
+fn activity_lines(row: &DownloadSummary, happened: &[Happened]) -> Vec<(UnixMillis, String)> {
     // The host it was added from is the one before its first new link.
     let first_host = happened
         .iter()
@@ -531,12 +542,7 @@ fn activity(row: &DownloadSummary, happened: &[Happened], cx: &App) -> impl Into
         lines.push((finished, "Finished".to_owned()));
     }
     lines.sort_by_key(|(at, _)| *at);
-    layout::section(Rule::Above, cx)
-        .gap_2()
-        .child(div().text_role(Role::Label, cx).child("Activity"))
-        .children(lines.into_iter().map(|(at, what)| {
-            layout::label_row(ACTIVITY_LABEL_WIDTH, text::date(at), what, cx).items_start()
-        }))
+    lines
 }
 
 /// One line of the activity, as the person reads it.
@@ -615,5 +621,34 @@ mod tests {
         assert!(!offered_here(FixAction::ChangeQueue));
         assert!(!offered_here(FixAction::Retry));
         assert!(offered_here(FixAction::ChooseFolder));
+    }
+
+    #[test]
+    fn the_activity_names_the_host_it_was_added_from_after_a_new_link() {
+        let row = DownloadSummary {
+            url: "https://files.example.org/a.bin".into(),
+            added_at: UnixMillis(1),
+            completed_at: Some(UnixMillis(9)),
+            ..wirecatch_test_support::downloads::download(1)
+        };
+        let happened = [Happened {
+            at: UnixMillis(5),
+            event: ActivityEvent::LinkChanged {
+                from: "example.com".into(),
+                to: "files.example.org".into(),
+            },
+        }];
+        let lines: Vec<String> = activity_lines(&row, &happened)
+            .into_iter()
+            .map(|(_, line)| line)
+            .collect();
+        assert_eq!(
+            lines,
+            [
+                "Added from example.com",
+                "Link changed to files.example.org",
+                "Finished"
+            ]
+        );
     }
 }
