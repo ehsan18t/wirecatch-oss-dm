@@ -968,13 +968,7 @@ impl DownloadWindow {
             .map(|bytes| ("Average", text::speed(bytes)));
         let ran = self.record.ran().map(|ran| ran.as_secs());
         let facts: Vec<(&str, String)> = match row.status {
-            DownloadStatus::Completed => vec![
-                Some(("Size", format_bytes(row.total.unwrap_or(row.done)))),
-                ran.map(|secs| ("Took", text::eta(secs))),
-                average,
-                row.completed_at
-                    .map(|at| ("Finished at", text::clock_to_second(at))),
-            ],
+            DownloadStatus::Completed => finished_facts(row, ran, average),
             DownloadStatus::Paused => vec![
                 Some(("Downloaded", format_bytes(row.done))),
                 row.total
@@ -1010,6 +1004,21 @@ impl DownloadWindow {
                 .into_any_element(),
         )
     }
+}
+
+/// What the finished window says of a download, with its average speed and how long it `ran`.
+fn finished_facts(
+    row: &DownloadSummary,
+    ran: Option<u64>,
+    average: Option<(&'static str, String)>,
+) -> Vec<Option<(&'static str, String)>> {
+    vec![
+        Some(("Size", format_bytes(row.total.unwrap_or(row.done)))),
+        ran.map(|secs| ("Took", text::eta(secs))),
+        average,
+        row.completed_at
+            .map(|at| ("Finished at", text::clock_to_second(at))),
+    ]
 }
 
 /// The queue a file joins, styled like the queue's badge: a bolt while Automatic picks it. Its menu
@@ -1578,6 +1587,21 @@ mod tests {
         row.url = url.to_owned();
         row.status = status;
         row
+    }
+
+    #[test]
+    fn the_finish_time_is_shown_to_the_second() {
+        let mut finished = row(1, "https://example.com/a.zip", DownloadStatus::Completed);
+        let at = wirecatch_protocol::UnixMillis(1_780_000_000_000);
+        finished.completed_at = Some(at);
+        let facts = super::finished_facts(&finished, None, None);
+        let shown = facts
+            .into_iter()
+            .flatten()
+            .find(|(label, _)| *label == "Finished at")
+            .map(|(_, value)| value);
+        assert_eq!(shown, Some(crate::text::clock_to_second(at)));
+        assert_ne!(shown, Some(crate::text::clock(at)));
     }
 
     #[test]

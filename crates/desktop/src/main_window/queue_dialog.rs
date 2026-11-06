@@ -735,11 +735,7 @@ fn number_field(
     })
 }
 
-fn time_field(
-    at: TimeOfDay,
-    window: &mut Window,
-    cx: &mut Context<'_, QueueForm>,
-) -> Entity<TimeFieldState> {
+fn time_field(at: TimeOfDay, window: &mut Window, cx: &mut App) -> Entity<TimeFieldState> {
     let time =
         NaiveTime::from_hms_opt(u32::from(at.hour), u32::from(at.minute), 0).unwrap_or_default();
     cx.new(|cx| {
@@ -847,7 +843,32 @@ fn saved_days(pressed: &[Weekday]) -> Vec<Weekday> {
 
 #[cfg(test)]
 mod tests {
+    use gpui_kit::TestAppContext;
+    use wirecatch_protocol::app::ClockFormat;
+
     use super::*;
+
+    struct Clock(Entity<TimeFieldState>);
+
+    impl Render for Clock {
+        fn render(&mut self, _: &mut Window, _: &mut Context<'_, Self>) -> impl IntoElement {
+            TimeField::new(&self.0)
+        }
+    }
+
+    #[gpui_kit::test]
+    fn a_schedule_time_is_typed_on_the_chosen_clock(cx: &mut TestAppContext) {
+        cx.update(gpui_kit::component::init);
+        text::set_clock(ClockFormat::TwelveHour);
+        let (clock, cx) =
+            cx.add_window_view(|window, cx| Clock(time_field(FIRST_START, window, cx)));
+        let field = clock.read_with(cx, |clock, _| clock.0.clone());
+        cx.update(|window, cx| field.update(cx, |field, cx| field.focus(window, cx)));
+        cx.run_until_parked();
+        cx.simulate_keystrokes("1 3");
+        let typed = field.read_with(cx, |field, _| field.time());
+        assert_eq!(typed.hour(), 3, "13 is no hour on a 12-hour clock");
+    }
 
     #[test]
     fn a_limit_left_as_shown_is_saved_unchanged() {
