@@ -41,7 +41,9 @@ pub fn to_trash(paths: &[PathBuf]) -> usize {
     }
     #[cfg(any(test, feature = "testing"))]
     if !test_trash::REAL.load(std::sync::atomic::Ordering::Acquire) {
-        files.iter().for_each(|path| test_trash::take(path));
+        for path in &files {
+            test_trash::take(path);
+        }
         return left;
     }
     // A thread of its own: `trash` panics when its thread is already in COM's multithreaded apartment.
@@ -138,15 +140,12 @@ fn mount_points(table: &str) -> Vec<PathBuf> {
                 let code = rest
                     .get(at + 1..at + 4)
                     .and_then(|digits| u8::from_str_radix(digits, 8).ok());
-                match code {
-                    Some(byte) => {
-                        point.push(char::from(byte));
-                        rest = &rest[at + 4..];
-                    }
-                    None => {
-                        point.push('\\');
-                        rest = &rest[at + 1..];
-                    }
+                if let Some(byte) = code {
+                    point.push(char::from(byte));
+                    rest = &rest[at + 4..];
+                } else {
+                    point.push('\\');
+                    rest = &rest[at + 1..];
                 }
             }
             point.push_str(rest);
