@@ -144,7 +144,7 @@ pub fn apply(setting: ThemeSetting, accent: Accent, cx: &mut App) {
         theme.list_active_border = tone.opacity(0.6);
         theme.table_active = tone.opacity(SELECTED_ROW_TINT);
         theme.table_active_border = tone.opacity(0.6);
-        theme.sidebar_accent = tone.opacity(0.12);
+        theme.sidebar_accent = tone.opacity(SIDEBAR_CURRENT_TINT);
         theme.sidebar_accent_foreground = tone;
         theme.sidebar_primary = tone;
         theme.sidebar_primary_foreground = on_tone;
@@ -155,6 +155,8 @@ const MIN_CONTRAST: f32 = 4.5;
 const LIGHTNESS_STEP: f32 = 0.005;
 /// How strongly the accent tints a selected row.
 const SELECTED_ROW_TINT: f32 = 0.14;
+/// How strongly the accent tints the current item in the sidebar.
+const SIDEBAR_CURRENT_TINT: f32 = 0.12;
 
 /// The accent in this scheme and the text that goes on it, each pair at 4.5:1 contrast or more.
 /// The system accent takes the hue and saturation of the colour chosen in Windows, at Wirecatch's
@@ -305,13 +307,28 @@ mod tests {
             let selected = accents
                 .iter()
                 .map(|tone| list.blend(tone.opacity(SELECTED_ROW_TINT)));
-            let tiles = accents
+            let tiles: Vec<Hsla> = accents
                 .iter()
-                .map(|tone| sidebar.blend(tone.opacity(queue_tile::TINT)));
+                .map(|tone| queue_tile::tinted(sidebar, *tone))
+                .collect();
+            // Over the current queue's highlight or a hovered item, the tile looks the same.
+            let hovered = sidebar.blend(color("list.hover.background"));
+            for (tone, tile) in accents.iter().zip(&tiles) {
+                let current = sidebar.blend(tone.opacity(SIDEBAR_CURRENT_TINT));
+                for behind in [current, hovered] {
+                    let shown = behind.blend(*tile);
+                    assert!(
+                        contrast(muted, shown) >= MIN_CONTRAST,
+                        "{} tile over {behind:?}: {}",
+                        scheme["name"],
+                        contrast(muted, shown)
+                    );
+                }
+            }
             let rows = [list, list.blend(color("list.hover.background"))]
                 .into_iter()
                 .chain(selected)
-                .chain(tiles);
+                .chain(tiles.iter().copied());
             for row in rows {
                 let said = contrast(muted, row);
                 assert!(
