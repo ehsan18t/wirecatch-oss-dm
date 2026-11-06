@@ -60,6 +60,11 @@ impl Batch {
         self.drop_due_if_empty();
     }
 
+    fn keep(&mut self, kept: impl FnMut(&DownloadSummary) -> bool) {
+        self.rows.retain(kept);
+        self.drop_due_if_empty();
+    }
+
     fn reload(&mut self, list: &[DownloadSummary]) {
         self.rows
             .retain_mut(|told| match list.iter().find(|r| r.id == told.id) {
@@ -100,6 +105,16 @@ pub struct Teller {
     modes: HashMap<QueueId, QueueNotify>,
     finished: Batch,
     failed: Batch,
+    added: Added,
+}
+
+/// Browser downloads that started without a window (D63, D269): the first is told at once, and those
+/// that follow within [`NOTIFY_BATCH`] of the last notice share the next one.
+#[derive(Debug, Default)]
+struct Added {
+    waiting: Batch,
+    /// Until when a new download joins the next notice instead of being told at once.
+    gathering_until: Option<Instant>,
 }
 
 impl Teller {
@@ -128,12 +143,18 @@ impl Teller {
     pub fn follow(&mut self, event: &UiEvent) {
         self.finished.follow(event);
         self.failed.follow(event);
+        if let UiEvent::DownloadsRemoved(ids) = event {
+            self.added.waiting.keep(|told| !ids.contains(&told.id));
+        }
     }
 
     /// Corrects what waits to be told by the whole list, after missing events.
     pub fn reload(&mut self, list: &[DownloadSummary]) {
         self.finished.reload(list);
         self.failed.reload(list);
+        self.added
+            .waiting
+            .keep(|told| list.iter().any(|r| r.id == told.id));
     }
 
     /// A queue is done: told now when it tells once it is done.
@@ -142,13 +163,33 @@ impl Teller {
         (!self.tells_each(report.queue)).then(|| Tell::Queue(report.clone()))
     }
 
+    /// A browser download started without a window `now`: the downloads to tell as added now, or
+    /// `None` when it waits for the next notice ([`Self::take_added`]).
+    pub fn added(&mut self, row: DownloadSummary, now: Instant) -> Option<Vec<DownloadSummary>> {
+        let added = &mut self.added;
+        if let Some(until) = added.gathering_until.filter(|until| now < *until) {
+            added.waiting.rows.push(row);
+            added.waiting.due.get_or_insert(until);
+            return None;
+        }
+        added.gathering_until = Some(now + NOTIFY_BATCH);
+        Some(vec![row])
+    }
+
+    /// The browser downloads added since the last notice, once their notice is due by `now`.
+    pub fn take_added(&mut self, now: Instant) -> Option<Vec<DownloadSummary>> {
+        let rows = self.added.waiting.take_due(now)?;
+        self.added.gathering_until = Some(now + NOTIFY_BATCH);
+        Some(rows)
+    }
+
     /// When the next notification is due, if any waits.
     #[must_use]
     pub fn due(&self) -> Option<Instant> {
-        match (self.finished.due, self.failed.due) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (a, b) => a.or(b),
-        }
+        [self.finished.due, self.failed.due, self.added.waiting.due]
+            .into_iter()
+            .flatten()
+            .min()
     }
 
     /// The notifications due by `now`.
@@ -304,6 +345,53 @@ mod tests {
         assert_eq!(watch.teller.take_due(first), [], "not due yet");
         assert_eq!(told_finished(&watch.teller.take_due(due)), [1, 2]);
         assert_eq!(watch.teller.due(), None);
+    }
+
+    fn ids(rows: &[DownloadSummary]) -> Vec<i64> {
+        rows.iter().map(|r| r.id.0).collect()
+    }
+
+    #[test]
+    fn browser_downloads_added_close_together_share_one_notice_after_the_first() {
+        let mut teller = Teller::default();
+        let first = Instant::now();
+        let told = teller.added(row(1, "downloads", Queued), first);
+        assert_eq!(told.as_deref().map(ids), Some(vec![1]), "the first at once");
+        for id in 2..=500 {
+            assert_eq!(teller.added(row(id, "downloads", Queued), first), None);
+        }
+        let due = first + NOTIFY_BATCH;
+        assert_eq!(teller.due(), Some(due));
+        assert_eq!(teller.take_added(first), None, "not due yet");
+        let batch = teller.take_added(due).unwrap();
+        assert_eq!(batch.len(), 499);
+        assert_eq!(teller.due(), None);
+        // Adds that keep coming share the next notice too; a quiet spell ends the batching.
+        assert_eq!(teller.added(row(501, "downloads", Queued), due), None);
+        let later = due + NOTIFY_BATCH;
+        assert_eq!(
+            teller.take_added(later).as_deref().map(ids),
+            Some(vec![501])
+        );
+        let quiet = later + NOTIFY_BATCH;
+        let alone = teller.added(row(502, "downloads", Queued), quiet);
+        assert_eq!(alone.as_deref().map(ids), Some(vec![502]));
+    }
+
+    #[test]
+    fn a_browser_download_removed_before_its_notice_is_left_out() {
+        let mut teller = Teller::default();
+        let first = Instant::now();
+        teller.added(row(1, "downloads", Queued), first);
+        teller.added(row(2, "downloads", Queued), first);
+        teller.added(row(3, "downloads", Queued), first);
+        teller.follow(&UiEvent::DownloadsRemoved(vec![DownloadId(2)]));
+        let due = first + NOTIFY_BATCH;
+        assert_eq!(teller.take_added(due).as_deref().map(ids), Some(vec![3]));
+
+        teller.added(row(4, "downloads", Queued), due);
+        teller.follow(&UiEvent::DownloadsRemoved(vec![DownloadId(4)]));
+        assert_eq!(teller.due(), None, "nothing left to tell");
     }
 
     #[test]
