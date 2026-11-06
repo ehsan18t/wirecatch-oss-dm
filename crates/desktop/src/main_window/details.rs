@@ -425,7 +425,10 @@ fn places(
         .child(place(
             IconName::Globe,
             "From",
-            div().truncate().child(link).into_any_element(),
+            div()
+                .truncate()
+                .child(text::readable_link(&link))
+                .into_any_element(),
             Some(
                 Button::new("details-copy-link")
                     .small()

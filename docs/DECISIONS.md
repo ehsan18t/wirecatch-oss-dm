@@ -1715,3 +1715,11 @@ Decided with the maintainer on 2026-11-07. It amends D114.4, where the engine re
 2. A running download then waits with `WaitReason::Reconnecting`, and its speed and time left are empty. The list, the download window and the details read "Reconnecting (try 3 of 6)", and the details say in full that the download keeps what it has.
 3. "Waiting for the server" stays for three seconds with no new bytes while no connection has failed. A video's file parts report reconnecting only while no other part receives data.
 4. The first request of a download is not covered: until the server has answered, the download reads "Connecting".
+
+### D247. A link is shown decoded, as an address bar shows it
+
+Decided with the maintainer on 2026-11-06. Rows and the details showed links as sent, so a name in another script read as a run of escapes (`%E6%97%A5…`).
+
+1. A row's link and its hover, and From in the details, show the link through `text::readable_link`: its path, query and fragment each decoded on its own. The scheme and host are never decoded, and the escapes of `/ ? # @ % : & = + ; , $ \` stay, since decoded they would change where the link seems to point or how its query splits. A space stays `%20` beside another escaped space or at the end of a part or segment, where spaces could push a file's real extension out of view.
+2. A part stays as sent when decoding gives no UTF-8, a space other than the plain one (a no-break or ideographic space could stretch a name), or a character that is not drawn as itself: a control, a format mark such as a direction override, a line or paragraph separator, a private or unassigned one, another default-ignorable, or a blank symbol such as the empty Braille pattern.
+3. Copy link and every other use of the link keep it exactly as sent.

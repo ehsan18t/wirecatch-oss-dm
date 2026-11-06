@@ -31,6 +31,7 @@ tokio = { workspace = true, features = ["rt-multi-thread", "sync", "time", "macr
 tracing = { workspace = true }
 regex.workspace = true
 url.workspace = true
+unicode-properties = { version = "0.1.4", default-features = false, features = ["general-category"] }
 png = "0.18.1"
 serde.workspace = true
 serde_json.workspace = true
