@@ -9,8 +9,8 @@ use gpui_kit::{
     Pixels, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, px,
 };
 
-use super::{Group, MainWindow, Screen, View, sidebar};
-use crate::ui::{Role, Typed as _, tokens, tooltip};
+use super::{Group, MainWindow, Screen, View, queue_header, sidebar};
+use crate::ui::{QueueTile, tokens, tooltip};
 
 /// The rail's width: an icon and its padding.
 pub(super) const WIDTH: f32 = 52.;
@@ -139,18 +139,6 @@ impl MainWindow {
                 View::Group(group),
             )
         }));
-        let queues: Vec<(String, String, String, View)> = library
-            .queues
-            .iter()
-            .map(|queue| {
-                (
-                    format!("rail-queue-{}", queue.id.0),
-                    initials(&queue.settings.name),
-                    format!("{}: {}", queue.settings.name, self.describe(queue, cx)),
-                    View::Queue(queue.id),
-                )
-            })
-            .collect();
         let view_items: Vec<AnyElement> = views
             .into_iter()
             .map(|(id, icon, label, view)| {
@@ -158,18 +146,63 @@ impl MainWindow {
                 self.rail_item(id, icon, label, view, cx)
             })
             .collect();
-        let queue_items: Vec<AnyElement> = queues
-            .into_iter()
-            .map(|(id, letters, label, view)| {
-                let tile = div()
-                    .text_role(Role::Meta, cx)
-                    .font_weight(gpui_kit::FontWeight::SEMIBOLD)
-                    .child(letters)
-                    .into_any_element();
-                self.rail_item(id, tile, label, view, cx)
+        let queue_items = self.rail_queue_items(cx);
+        (view_items, queue_items)
+    }
+
+    /// The rail's queue buttons: initials, tinted while the queue downloads, with the badge of its rules.
+    fn rail_queue_items(&self, cx: &mut Context<'_, Self>) -> Vec<AnyElement> {
+        let library = self.library.read(cx);
+        let queues: Vec<RailQueue> = library
+            .queues
+            .iter()
+            .map(|queue| {
+                let rules = queue_header::rules_on(queue);
+                let rules_said = match rules {
+                    Some(true) => ", adds downloads by its rules",
+                    Some(false) => ", rules off",
+                    None => "",
+                };
+                RailQueue {
+                    id: format!("rail-queue-{}", queue.id.0),
+                    letters: initials(&queue.settings.name),
+                    label: format!(
+                        "{}: {}{rules_said}",
+                        queue.settings.name,
+                        self.describe(queue, cx)
+                    ),
+                    view: View::Queue(queue.id),
+                    rules,
+                    running: library
+                        .downloads
+                        .tally_of(queue.id)
+                        .in_group(Group::Downloading)
+                        > 0,
+                }
             })
             .collect();
-        (view_items, queue_items)
+        queues
+            .into_iter()
+            .map(|queue| {
+                let theme = cx.theme();
+                let current = self.page.screen == Screen::Downloads && self.view == queue.view;
+                let behind = if current {
+                    theme.sidebar_accent
+                } else {
+                    theme.sidebar
+                };
+                let hover =
+                    (!current).then(|| (SharedString::from(queue.id.clone()), theme.list_hover));
+                let tile = QueueTile::letters(queue.letters, behind)
+                    .rules(queue.rules)
+                    .when(queue.running, |tile| tile.tone(theme.primary))
+                    .when_some(hover, |tile, (group, color)| {
+                        tile.hover_behind(group, color)
+                    })
+                    .into_any_element();
+                self.rail_item(queue.id, tile, queue.label, queue.view, cx)
+            })
+            .collect()
     }
 
     fn rail_item(
@@ -182,7 +215,8 @@ impl MainWindow {
     ) -> AnyElement {
         let theme = cx.theme();
         let current = self.page.screen == Screen::Downloads && self.view == view;
-        rail_button(id, label, cx)
+        rail_button(id.clone(), label, cx)
+            .group(SharedString::from(id))
             .when(current, |item| {
                 item.bg(theme.sidebar_accent).text_color(theme.primary)
             })
@@ -194,6 +228,16 @@ impl MainWindow {
             }))
             .into_any_element()
     }
+}
+
+/// A queue's rail button: its initials, tinted while it downloads, and the badge of its rules.
+struct RailQueue {
+    id: String,
+    letters: String,
+    label: String,
+    view: View,
+    rules: Option<bool>,
+    running: bool,
 }
 
 /// A square rail button with its name in a tooltip beside it.
