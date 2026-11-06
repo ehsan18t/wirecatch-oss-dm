@@ -12,6 +12,8 @@ use super::{Role, Typed as _, tokens};
 
 const SIZE: f32 = 30.;
 const BADGE: f32 = 16.;
+/// How strongly a tile's tone tints it; its letters stay muted text, which reads on the tint.
+pub const TINT: f32 = 0.15;
 
 #[derive(IntoElement)]
 pub struct QueueTile {
@@ -110,7 +112,6 @@ impl RenderOnce for QueueTile {
                 .bottom(px(-5.))
         });
         let tone = self.tone;
-        let ink = tone.unwrap_or(theme.muted_foreground);
         div()
             .relative()
             .size(px(SIZE))
@@ -119,13 +120,12 @@ impl RenderOnce for QueueTile {
             .items_center()
             .justify_center()
             .rounded(theme.radius)
-            .bg(tone.map_or(theme.secondary, |tone| tone.opacity(0.15)))
-            .text_color(ink)
+            .bg(tone.map_or(theme.secondary, |tone| tone.opacity(TINT)))
+            .text_color(tone.unwrap_or(theme.muted_foreground))
             .child(match self.face {
                 Face::Icon(icon) => icon.with_size(tokens::ICON).into_any_element(),
                 Face::Letters(letters) => div()
                     .text_role(Role::Caption, cx)
-                    .text_color(ink)
                     .font_weight(gpui_kit::FontWeight::SEMIBOLD)
                     .child(letters)
                     .into_any_element(),

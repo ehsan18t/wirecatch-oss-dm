@@ -242,6 +242,8 @@ mod tests {
     use gpui_kit::rgba;
     use wirecatch_protocol::app::ACCENTS;
 
+    use crate::ui::queue_tile;
+
     #[test]
     fn every_system_colour_keeps_its_text_readable_in_both_schemes() {
         for dark in [false, true] {
@@ -284,7 +286,7 @@ mod tests {
     }
 
     #[test]
-    fn muted_text_reads_on_plain_hovered_and_selected_rows_in_both_schemes() {
+    fn muted_text_reads_on_rows_and_queue_tiles_in_both_schemes() {
         let file: serde_json::Value = serde_json::from_str(THEMES).unwrap();
         for scheme in file["themes"].as_array().unwrap() {
             let color = |name: &str| -> Hsla {
@@ -297,15 +299,19 @@ mod tests {
                 }
                 .into()
             };
-            let list = color("list.background");
+            let (list, sidebar) = (color("list.background"), color("sidebar.background"));
             let muted = color("muted.foreground");
+            let accents = every_accent(scheme["mode"] == "dark");
+            let selected = accents
+                .iter()
+                .map(|tone| list.blend(tone.opacity(SELECTED_ROW_TINT)));
+            let tiles = accents
+                .iter()
+                .map(|tone| sidebar.blend(tone.opacity(queue_tile::TINT)));
             let rows = [list, list.blend(color("list.hover.background"))]
                 .into_iter()
-                .chain(
-                    every_accent(scheme["mode"] == "dark")
-                        .into_iter()
-                        .map(|tone| list.blend(tone.opacity(SELECTED_ROW_TINT))),
-                );
+                .chain(selected)
+                .chain(tiles);
             for row in rows {
                 let said = contrast(muted, row);
                 assert!(
