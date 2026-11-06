@@ -8,9 +8,7 @@ mod tabs;
 use chrono::{NaiveTime, Timelike as _};
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::time_field::TimeFieldState;
-use gpui_kit::{
-    App, AppContext as _, Context, Entity, SharedString, Subscription, WeakEntity, Window,
-};
+use gpui_kit::{App, AppContext as _, Context, Entity, Subscription, WeakEntity, Window};
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{
     MAX_CONCURRENT_DOWNLOADS, MAX_CONNECTIONS_PER_DOWNLOAD, PortablePath, Queue, QueueNotify,
@@ -134,8 +132,6 @@ pub struct QueueForm {
     main: WeakEntity<MainWindow>,
     /// The queue as it was when the page opened; `None` for a new one.
     original: Option<Queue>,
-    /// What the way back says: the queue, or the view the page was opened from.
-    back: SharedString,
     section: Section,
     name: Entity<InputState>,
     description: Entity<InputState>,
@@ -190,7 +186,6 @@ impl QueueForm {
     pub(super) fn new(
         library: Entity<Library>,
         opening: Opening,
-        back: SharedString,
         main: WeakEntity<MainWindow>,
         window: &mut Window,
         cx: &mut Context<'_, Self>,
@@ -266,7 +261,6 @@ impl QueueForm {
             problem: None,
             stage: Stage::Editing,
             original,
-            back,
             section: Section::General,
             _subscriptions: edited.into(),
         }
@@ -424,8 +418,8 @@ impl QueueForm {
         .detach();
     }
 
-    /// Back to the downloads, unsaved changes left behind.
-    fn go_back(&self, window: &mut Window, cx: &mut App) {
+    /// Back to the downloads, asking first when something is not saved.
+    fn cancel(&self, window: &mut Window, cx: &mut App) {
         let main = self.main.clone();
         // Deferred: leaving reads this form, which is being updated now.
         window.defer(cx, move |window, cx| {

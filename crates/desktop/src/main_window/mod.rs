@@ -658,11 +658,13 @@ impl MainWindow {
     }
 
     /// Escape outside a field goes back to the downloads, else clears the selection; a dialog
-    /// closes on its own Escape first.
+    /// closes on its own Escape first. On the queue page it is Cancel.
     fn dismiss(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
         if self.page.screen == Screen::Downloads {
             self.clear_selection();
             cx.notify();
+        } else if self.page.screen == Screen::QueuePage {
+            self.close_queue_page(window, cx);
         } else {
             self.open_screen(Screen::Downloads, window, cx);
         }
@@ -713,7 +715,7 @@ impl MainWindow {
         }
     }
 
-    /// Shows the queue page, its way back leading to the view shown now.
+    /// Shows the queue page; Cancel leads back to the view shown now.
     fn open_queue_page(
         &mut self,
         opening: queue_editor::Opening,
@@ -721,13 +723,8 @@ impl MainWindow {
         cx: &mut Context<'_, Self>,
     ) {
         let new = matches!(opening, queue_editor::Opening::New(_));
-        let (library, main, back) = (
-            self.library.clone(),
-            cx.entity().downgrade(),
-            self.title(cx),
-        );
-        let form =
-            cx.new(|cx| queue_editor::QueueForm::new(library, opening, back, main, window, cx));
+        let (library, main) = (self.library.clone(), cx.entity().downgrade());
+        let form = cx.new(|cx| queue_editor::QueueForm::new(library, opening, main, window, cx));
         if new {
             queue_editor::QueueForm::focus_name(&form, window, cx);
         }

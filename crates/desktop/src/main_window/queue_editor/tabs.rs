@@ -1,15 +1,14 @@
 //! The queue page drawn: its header with the tabs, and each tab's fields.
 
-use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Input, NumberInput};
 use gpui_kit::component::tab::{Tab, TabBar};
 use gpui_kit::component::time_field::TimeField;
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _, h_flex, v_flex};
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, Context, Div, InteractiveElement as _, IntoElement, ParentElement as _,
-    Render, StatefulInteractiveElement as _, Styled as _, Window, div, px, relative,
+    Render, StatefulInteractiveElement as _, Styled as _, Window, div, px,
 };
 use wirecatch_protocol::app::{QueueNotify, Setting};
 
@@ -23,8 +22,6 @@ const CONTENT_WIDTH: f32 = 720.;
 /// The dot on a tab whose subject has something switched on.
 const DOT: f32 = 6.;
 const NUMBER_WIDTH: f32 = 132.;
-/// The most of the header the way back takes, as a queue's name does in the queue's header.
-const BACK_MAX_SHARE: f32 = 0.4;
 const SCHEDULE_LABEL_WIDTH: f32 = 72.;
 
 impl Render for QueueForm {
@@ -56,8 +53,8 @@ impl Render for QueueForm {
 }
 
 impl QueueForm {
-    /// The way back, the page's title and Save on one line, as a queue's own header has them,
-    /// with the tabs under it.
+    /// The page's title, then Cancel and Save on the right, as a queue's own header places its
+    /// actions, with the tabs under it.
     fn header(&self, cx: &mut Context<'_, Self>) -> impl IntoElement {
         let theme = cx.theme();
         let (danger, border) = (theme.danger, theme.border);
@@ -71,23 +68,6 @@ impl QueueForm {
             .child(
                 h_flex()
                     .gap_3()
-                    .child(
-                        div()
-                            .min_w_0()
-                            .max_w(relative(BACK_MAX_SHARE))
-                            .truncate()
-                            .child(
-                                Button::new("queue-page-back")
-                                    .ghost()
-                                    .small()
-                                    .icon(Icon::new(Lucide::ArrowLeft))
-                                    .label(self.back.clone())
-                                    .tooltip(self.back.clone())
-                                    .on_click(
-                                        cx.listener(|form, _, window, cx| form.go_back(window, cx)),
-                                    ),
-                            ),
-                    )
                     .child(div().flex_shrink_0().text_role(Role::PageTitle, cx).child(
                         if self.original.is_some() {
                             "Edit queue"
@@ -104,6 +84,12 @@ impl QueueForm {
                             .text_role(Role::Secondary, cx)
                             .text_color(danger)
                             .children(self.problem.clone()),
+                    )
+                    .child(
+                        Button::new("queue-page-cancel")
+                            .small()
+                            .label("Cancel")
+                            .on_click(cx.listener(|form, _, window, cx| form.cancel(window, cx))),
                     )
                     .child(
                         Button::new("queue-page-save")
