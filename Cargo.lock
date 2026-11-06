@@ -10000,7 +10000,6 @@ dependencies = [
  "embed-resource",
  "gpui-kit",
  "gpui-pre",
- "percent-encoding",
  "png 0.18.1",
  "regex",
  "serde",

@@ -696,8 +696,10 @@ fn split_seconds(time: &str) -> (String, String) {
 }
 
 /// The escapes a shown link keeps, as address bars do: decoded, each would change where the link
-/// seems to point (`example.com%2F@evil.test`).
-const KEPT_ESCAPES: [u8; 6] = [b'/', b'?', b'#', b'@', b'%', b':'];
+/// seems to point (`example.com%2F@evil.test`) or how its query splits (`a%26token%3Dx`).
+const KEPT_ESCAPES: [u8; 13] = [
+    b'/', b'?', b'#', b'@', b'%', b':', b'&', b'=', b'+', b';', b',', b'$', b'\\',
+];
 
 /// `url` as a browser's address bar shows it, its path, query and fragment each decoded on its own;
 /// the scheme and host never are. Copying keeps `url`.
@@ -730,7 +732,7 @@ fn readable_part(part: &str) -> std::borrow::Cow<'_, str> {
             .flatten()
             .and_then(|hex| u8::from_str_radix(hex, 16).ok());
         match escaped {
-            Some(byte) if !KEPT_ESCAPES.contains(&byte) => {
+            Some(byte) if !KEPT_ESCAPES.contains(&byte) && !hides_spaces(part, at, byte) => {
                 decoded.push(byte);
                 at += 3;
             }
@@ -744,6 +746,20 @@ fn readable_part(part: &str) -> std::borrow::Cow<'_, str> {
         Ok(shown) if !shown.chars().any(misleads) => shown.into(),
         _ => part.into(),
     }
+}
+
+/// Whether the escape at `at`, decoding to `byte`, is a space beside another escaped space or at the
+/// end of a part or segment: decoded, such spaces could push a file's real extension out of view.
+fn hides_spaces(part: &str, at: usize, byte: u8) -> bool {
+    const SPACE: &str = "%20";
+    if byte != b' ' {
+        return false;
+    }
+    let before = at
+        .checked_sub(SPACE.len())
+        .and_then(|from| part.get(from..at));
+    let after = &part[at + SPACE.len()..];
+    before == Some(SPACE) || after.is_empty() || after.starts_with(SPACE) || after.starts_with('/')
 }
 
 /// A character that is not drawn as itself: a control, a format mark such as a direction
@@ -1329,6 +1345,20 @@ mod tests {
         assert_eq!(
             readable_link("https://example.com/a%2F..%2Fb%3Fc%23d%40e%3Af%25g%20h"),
             "https://example.com/a%2F..%2Fb%3Fc%23d%40e%3Af%25g h"
+        );
+    }
+
+    #[test]
+    fn a_link_keeps_the_escapes_that_change_how_its_query_splits() {
+        let kept = "https://example.com/f?file=a%26token%3Dx&q=a%2Bb%3B%2C%24%5C";
+        assert_eq!(readable_link(kept), kept);
+    }
+
+    #[test]
+    fn a_link_keeps_spaces_that_could_hide_its_extension() {
+        assert_eq!(
+            readable_link("https://example.com/a%20b%20%20%20%20.pdf%20/c.exe%20"),
+            "https://example.com/a b%20%20%20%20.pdf%20/c.exe%20"
         );
     }
 

@@ -1720,6 +1720,6 @@ Decided with the maintainer on 2026-11-07. It amends D114.4, where the engine re
 
 Decided with the maintainer on 2026-11-06. Rows and the details showed links as sent, so a name in another script read as a run of escapes (`%E6%97%A5…`).
 
-1. A row's link and its hover, and From in the details, show the link through `text::readable_link`: its path, query and fragment each decoded on its own. The scheme and host are never decoded, and `%2F`, `%3F`, `%23`, `%40`, `%25` and `%3A` stay escaped, since decoded they would change where the link seems to point.
+1. A row's link and its hover, and From in the details, show the link through `text::readable_link`: its path, query and fragment each decoded on its own. The scheme and host are never decoded, and the escapes of `/ ? # @ % : & = + ; , $ \` stay, since decoded they would change where the link seems to point or how its query splits. A space stays `%20` beside another escaped space or at the end of a part or segment, where spaces could push a file's real extension out of view.
 2. A part stays as sent when decoding gives no UTF-8, or a character that is not drawn as itself: a control, a format mark such as a direction override, a line or paragraph separator, a private or unassigned one, or another default-ignorable.
 3. Copy link and every other use of the link keep it exactly as sent.
