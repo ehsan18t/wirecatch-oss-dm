@@ -75,6 +75,30 @@ impl Default for Scroll {
     }
 }
 
+/// Where line `index` sits in view of a list whose top is `top`.
+#[derive(Clone, Copy)]
+struct InView {
+    index: usize,
+    top: ListOffset,
+}
+
+/// The id of a part of row `id` holding tooltips, from where the row sits in view. GPUI hides a
+/// tooltip on a wheel scroll, a pointer move or keyboard input, not when lines move otherwise, so
+/// a row that moved takes new ids, which drops its tooltip; a row that stays keeps them.
+fn tip_id(part: &'static str, id: DownloadId, at: InView) -> ElementId {
+    let (below, lines) = (
+        at.index >= at.top.item_ix,
+        at.index.abs_diff(at.top.item_ix),
+    );
+    ElementId::Name(
+        format!(
+            "{part}-{}-{below}-{lines}-{:?}",
+            id.0, at.top.offset_in_item
+        )
+        .into(),
+    )
+}
+
 /// What a heading's button does to every download.
 #[derive(Clone, Copy)]
 pub(super) enum GroupCommand {
@@ -167,6 +191,7 @@ impl MainWindow {
             return self.empty(cx).into_any_element();
         }
         self.sync_scroll(&laid, cx);
+        let top = self.scroll.state.logical_scroll_top();
         list(
             self.scroll.state.clone(),
             cx.processor(move |this, index: usize, _, cx| {
@@ -179,7 +204,9 @@ impl MainWindow {
                         Some(facts) => this.day_heading(day, facts, cx),
                         None => div().into_any_element(),
                     },
-                    Some(Line::Row(row, place, dated)) => this.row(row, place, dated, shown, cx),
+                    Some(Line::Row(row, place, dated)) => {
+                        this.row(row, place, dated, shown, InView { index, top }, cx)
+                    }
                     None => div().into_any_element(),
                 }
             }),
@@ -407,6 +434,7 @@ impl MainWindow {
         place: Option<usize>,
         dated: bool,
         shown: ListLines,
+        at: InView,
         cx: &mut Context<'_, Self>,
     ) -> AnyElement {
         let height = line_height(shown);
@@ -448,8 +476,13 @@ impl MainWindow {
             }))
             .child(time_cell(&row, place, dated || compact, cx))
             .child(tile(&row, compact, tone))
-            .child(text_column(&row, shown, tone, cx))
-            .child(row_end(&row, shows_actions, tone, cx))
+            .child(text_column(&row, shown, tone, cx).id(tip_id("text", id, at)))
+            .child(
+                div()
+                    .id(tip_id("end", id, at))
+                    .flex_shrink_0()
+                    .child(row_end(&row, shows_actions, tone, cx)),
+            )
             .when_some(progress_line(&row, tone, cx), |line, progress| {
                 line.child(progress)
             })
@@ -600,7 +633,7 @@ fn time_cell(row: &DownloadSummary, place: Option<usize>, dated: bool, cx: &App)
 
 /// The name over what the row says under it: its state while that matters, then the link and the
 /// folder the View menu keeps, as many lines as the settings give.
-fn text_column(row: &DownloadSummary, shown: ListLines, tone: Hsla, cx: &App) -> impl IntoElement {
+fn text_column(row: &DownloadSummary, shown: ListLines, tone: Hsla, cx: &App) -> gpui_kit::Div {
     let danger = cx.theme().danger;
     let failed = row.status == DownloadStatus::Failed;
     let room = usize::from(shown.link) + usize::from(shown.folder);
@@ -911,6 +944,181 @@ fn row_id(part: &'static str, id: DownloadId) -> ElementId {
 mod tests {
     use super::*;
     use wirecatch_test_support::downloads::download;
+
+    /// A tooltip that counts how often it is drawn.
+    struct Tip(Rc<std::cell::Cell<usize>>);
+
+    impl gpui_kit::Render for Tip {
+        fn render(&mut self, _: &mut Window, _: &mut Context<'_, Self>) -> impl IntoElement {
+            self.0.set(self.0.get() + 1);
+            div().child("tip")
+        }
+    }
+
+    /// A list of downloads' lines with tooltips, holding them as the download list's rows do.
+    struct Lines {
+        state: ListState,
+        ids: Vec<i64>,
+        drawn: Rc<std::cell::Cell<usize>>,
+        clicks: Rc<std::cell::Cell<usize>>,
+    }
+
+    impl Lines {
+        /// Adds downloads `ids` at line `at`.
+        fn add(&mut self, at: usize, ids: std::ops::Range<i64>, cx: &mut Context<'_, Self>) {
+            let count = ids.clone().count();
+            self.ids.splice(at..at, ids);
+            self.state.splice(at..at, count);
+            cx.notify();
+        }
+    }
+
+    impl gpui_kit::Render for Lines {
+        fn render(&mut self, _: &mut Window, _: &mut Context<'_, Self>) -> impl IntoElement {
+            let (drawn, clicks) = (self.drawn.clone(), self.clicks.clone());
+            let (ids, top) = (self.ids.clone(), self.state.logical_scroll_top());
+            list(self.state.clone(), move |index, _, _| {
+                let (drawn, clicks) = (drawn.clone(), clicks.clone());
+                let id = DownloadId(ids.get(index).copied().unwrap_or_default());
+                div()
+                    .id(tip_id("text", id, InView { index, top }))
+                    .child(
+                        div()
+                            .id("line")
+                            .h(px(20.))
+                            .w_full()
+                            .on_click(move |_, _, _| clicks.set(clicks.get() + 1))
+                            .tooltip(move |_, cx| {
+                                let drawn = drawn.clone();
+                                gpui_kit::AppContext::new(cx, |_| Tip(drawn)).into()
+                            }),
+                    )
+                    .into_any_element()
+            })
+            .size_full()
+        }
+    }
+
+    const POINTER: gpui_kit::Point<gpui_kit::Pixels> = gpui_kit::point(px(5.), px(45.));
+
+    /// How many times something happened, shared with the views that count it.
+    type Count = Rc<std::cell::Cell<usize>>;
+
+    /// A window with a list of 50 downloads' lines, and what it counts.
+    fn lines_window(
+        cx: &mut gpui_kit::TestAppContext,
+    ) -> (
+        gpui_kit::Entity<Lines>,
+        &mut gpui_kit::VisualTestContext,
+        Count,
+        Count,
+    ) {
+        cx.update(gpui_kit::component::init);
+        let drawn = Rc::new(std::cell::Cell::new(0));
+        let clicks = Rc::new(std::cell::Cell::new(0));
+        let (window, lines) = cx
+            .update(|cx| {
+                let (drawn, clicks) = (drawn.clone(), clicks.clone());
+                gpui_kit::open_window(gpui_kit::WindowOptions::default(), cx, |_, cx| {
+                    gpui_kit::AppContext::new(cx, |_| Lines {
+                        state: ListState::new(50, ListAlignment::Top, px(OVERDRAW)),
+                        ids: (1..=50).collect(),
+                        drawn,
+                        clicks,
+                    })
+                })
+            })
+            .unwrap();
+        let cx = gpui_kit::VisualTestContext::from_window(window, cx).into_mut();
+        cx.run_until_parked();
+        (lines, cx, drawn, clicks)
+    }
+
+    /// Whether a tooltip shown over a line is still drawn after `moved` changes the list.
+    fn tooltip_survives(
+        moved: impl FnOnce(&gpui_kit::Entity<Lines>, &mut gpui_kit::VisualTestContext),
+        cx: &mut gpui_kit::TestAppContext,
+    ) -> bool {
+        let (lines, cx, drawn, _) = lines_window(cx);
+        cx.simulate_mouse_move(POINTER, None, gpui_kit::Modifiers::none());
+        cx.executor().advance_clock(TOOLTIP_DELAY_PASSED);
+        cx.run_until_parked();
+        assert!(drawn.get() > 0, "the tooltip never showed");
+        moved(&lines, cx);
+        cx.run_until_parked();
+        drawn.set(0);
+        cx.update(|window, _| window.refresh());
+        cx.run_until_parked();
+        drawn.get() > 0
+    }
+
+    /// Longer than GPUI waits before it shows a tooltip.
+    const TOOLTIP_DELAY_PASSED: std::time::Duration = std::time::Duration::from_secs(2);
+
+    #[gpui_kit::test]
+    fn a_wheel_scroll_closes_a_row_tooltip(cx: &mut gpui_kit::TestAppContext) {
+        assert!(!tooltip_survives(
+            |_, cx| {
+                cx.simulate_event(gpui_kit::ScrollEvent {
+                    position: gpui_kit::point(px(5.), px(45.)),
+                    delta: gpui_kit::ScrollDelta::Pixels(gpui_kit::point(px(0.), px(-100.))),
+                    ..Default::default()
+                });
+            },
+            cx
+        ));
+    }
+
+    #[gpui_kit::test]
+    fn a_scroll_to_another_row_closes_a_row_tooltip(cx: &mut gpui_kit::TestAppContext) {
+        assert!(!tooltip_survives(
+            |lines, cx| {
+                lines.update(cx, |lines, cx| {
+                    lines.state.scroll_to(ListOffset {
+                        item_ix: 10,
+                        offset_in_item: px(0.),
+                    });
+                    cx.notify();
+                });
+            },
+            cx
+        ));
+    }
+
+    #[gpui_kit::test]
+    fn rows_added_above_close_a_row_tooltip(cx: &mut gpui_kit::TestAppContext) {
+        assert!(!tooltip_survives(
+            |lines, cx| {
+                lines.update(cx, |lines, cx| lines.add(0, 100..105, cx));
+            },
+            cx
+        ));
+    }
+
+    #[gpui_kit::test]
+    fn rows_added_below_keep_a_row_tooltip(cx: &mut gpui_kit::TestAppContext) {
+        assert!(tooltip_survives(
+            |lines, cx| {
+                lines.update(cx, |lines, cx| lines.add(10, 100..105, cx));
+            },
+            cx
+        ));
+    }
+
+    #[gpui_kit::test]
+    fn a_press_on_a_row_that_stays_still_clicks_when_lines_change_below(
+        cx: &mut gpui_kit::TestAppContext,
+    ) {
+        let (lines, cx, _, clicks) = lines_window(cx);
+        let none = gpui_kit::Modifiers::none();
+        cx.simulate_mouse_move(POINTER, None, none);
+        cx.simulate_mouse_down(POINTER, MouseButton::Left, none);
+        lines.update(cx, |lines, cx| lines.add(10, 100..105, cx));
+        cx.run_until_parked();
+        cx.simulate_mouse_up(POINTER, MouseButton::Left, none);
+
+        assert_eq!(clicks.get(), 1);
+    }
 
     #[test]
     fn a_group_without_downloads_offers_no_command() {
