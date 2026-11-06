@@ -60,6 +60,26 @@ impl Kind {
             Self::File { .. } | Self::Media(_) => None,
         }
     }
+
+    /// Its handover, what the browser saw, its media, and whether a web page the server answers with is read for its video.
+    pub fn into_parts(
+        self,
+    ) -> (
+        Option<String>,
+        Option<Expectation>,
+        Option<StoredMedia>,
+        bool,
+    ) {
+        match self {
+            Self::File { video_check } => (None, None, None, video_check),
+            Self::Captured {
+                handover,
+                expect,
+                media,
+            } => (handover, Some(expect), media, false),
+            Self::Media(media) => (None, None, Some(media), false),
+        }
+    }
 }
 
 pub(super) struct NewEntry {

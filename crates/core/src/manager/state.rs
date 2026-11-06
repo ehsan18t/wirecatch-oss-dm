@@ -22,6 +22,7 @@ use wirecatch_protocol::extension::NewDownload;
 use wirecatch_protocol::proxy::{ProxyServer, ProxyUse};
 use wirecatch_protocol::wire::QueueSummary;
 use wirecatch_protocol::{DownloadId, ProxyServerId, QuestionId, QueueId};
+use wirecatch_records::activity::{Activity, Event};
 use wirecatch_records::answers::Answers;
 pub(super) use wirecatch_records::answers::{Expectation, NextRun, OnExisting};
 use wirecatch_records::files::{DownloadFiles, PendingDeletion};
@@ -261,6 +262,25 @@ pub(super) struct Entry {
     pub video_check: bool,
     /// See [`Answers::next_run`].
     pub next_run: NextRun,
+    pub activity: Activity,
+    /// The row as its last save left it.
+    pub seen: Seen,
+}
+
+/// What [`Entry::note_changes`] compares a row with (D236).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct Seen {
+    status: DownloadStatus,
+    url: String,
+}
+
+impl Seen {
+    pub fn of(row: &DownloadSummary) -> Self {
+        Self {
+            status: row.status,
+            url: row.url.clone(),
+        }
+    }
 }
 
 /// A [`FileExistsQuestion`] and the file it is about, whose path its words may not hold exactly
@@ -770,6 +790,49 @@ impl Entry {
         std::path::Path::new(&self.row.path)
     }
 
+    /// Records in its activity what changed since the last save, which every change goes through (D236).
+    pub fn note_changes(&mut self, now: UnixMillis) {
+        use DownloadStatus::{
+            Cancelled, Connecting, Downloading, Failed, Paused, Processing, Queued,
+        };
+        if self.row.url != self.seen.url {
+            let host = |link: &str| {
+                Url::parse(link)
+                    .ok()
+                    .and_then(|url| url.host_str().map(str::to_owned))
+                    .unwrap_or_default()
+            };
+            let (from, to) = (host(&self.seen.url), host(&self.row.url));
+            self.activity.record(now, Event::LinkChanged { from, to });
+        }
+        let event = match (self.seen.status, self.row.status) {
+            (before, after) if before == after => None,
+            (_, Failed) => Some(Event::Failed {
+                message: self.row.error.as_ref().map_or_else(String::new, |e| {
+                    wirecatch_logging::redact::text_for_display(&e.message)
+                }),
+            }),
+            (_, Paused) => Some(Event::Paused),
+            (_, Cancelled) => Some(Event::Cancelled),
+            // One added paused has no pause on record: its first start is not a resume.
+            (Paused, Queued | Connecting | Downloading | Processing) => {
+                Some(if self.activity.paused_last() {
+                    Event::Resumed
+                } else {
+                    Event::Started
+                })
+            }
+            (Failed | Cancelled, Queued | Connecting | Downloading | Processing) => {
+                Some(Event::Retried)
+            }
+            _ => None,
+        };
+        if let Some(event) = event {
+            self.activity.record(now, event);
+        }
+        self.seen = Seen::of(&self.row);
+    }
+
     pub fn is_running(&self) -> bool {
         self.run.is_some()
     }
@@ -800,6 +863,7 @@ impl Entry {
                 next_run: self.next_run,
             },
             files: self.files.clone(),
+            activity: self.activity.clone(),
         }
     }
 
@@ -875,11 +939,13 @@ impl Entry {
 /// for tests of what a run is given.
 #[cfg(test)]
 pub(super) fn idle_entry(url: &str, chosen_by: ChosenBy) -> Entry {
+    let row = DownloadSummary {
+        url: url.into(),
+        ..wirecatch_test_support::downloads::download(1)
+    };
     Entry {
-        row: DownloadSummary {
-            url: url.into(),
-            ..wirecatch_test_support::downloads::download(1)
-        },
+        seen: Seen::of(&row),
+        row,
         position: 1,
         origin: Origin::default(),
         chosen_by,
@@ -899,6 +965,7 @@ pub(super) fn idle_entry(url: &str, chosen_by: ChosenBy) -> Entry {
         files: DownloadFiles::default(),
         media_job: None,
         video_check: false,
+        activity: Activity::default(),
     }
 }
 
@@ -944,6 +1011,11 @@ mod tests {
             files: DownloadFiles::default(),
             media_job: None,
             video_check: false,
+            activity: Activity::default(),
+            seen: Seen {
+                status: DownloadStatus::Downloading,
+                url: wirecatch_test_support::downloads::download(1).url,
+            },
         }
     }
 

@@ -24,7 +24,7 @@ use super::relocate::{
     discard_staged, files_that_arrived, finish_interrupted_move, finish_removed_move,
 };
 use super::run::mark_completed;
-use super::state::{Counters, Entry, Hold, Partial, QueueSlot, State};
+use super::state::{Counters, Entry, Hold, Partial, QueueSlot, Seen, State};
 use super::suffix_list::SuffixCheck;
 use crate::batches::Batches;
 use crate::naming::Claimed;
@@ -342,6 +342,7 @@ fn restore_entry(
             && !stored.naming.settled
             && stored.chosen_by == ChosenBy::Person,
         media_job,
+        seen: Seen::of(&stored.summary),
         row: stored.summary,
         position: stored.position,
         origin: stored.origin,
@@ -360,6 +361,7 @@ fn restore_entry(
         offered_file: false,
         stranded: stored.stranded,
         files: stored.files,
+        activity: stored.activity,
     };
     if let Some(plain) = &entry.plain_name {
         entry.row.file_name.clone_from(plain);
@@ -808,6 +810,7 @@ mod tests {
             stranded: None,
             answers: wirecatch_records::answers::Answers::default(),
             files: DownloadFiles::default(),
+            activity: wirecatch_records::activity::Activity::default(),
         }
     }
 

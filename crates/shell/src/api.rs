@@ -565,6 +565,12 @@ pub fn question(m: &Manager, id: QuestionId) -> Option<Question> {
         .map(Question::Reading)
 }
 
+/// What happened to download `id` after it was added, oldest first; nothing for one that is gone.
+#[must_use]
+pub fn activity(m: &Manager, id: DownloadId) -> Vec<wirecatch_core::Happened> {
+    m.activity(id).unwrap_or_default()
+}
+
 /// The newest download in the list that question `id` is about again, so its window can say
 /// so without blocking anything.
 #[must_use]

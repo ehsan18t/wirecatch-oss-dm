@@ -10,6 +10,7 @@ use wirecatch_engine::CancellationToken;
 use wirecatch_files::FileError;
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, PortablePath, UserError};
+use wirecatch_records::activity::Event;
 use wirecatch_records::files::{MoveUnderWay, MovedFile};
 
 use super::Manager;
@@ -107,6 +108,7 @@ impl Manager {
         old_path: &Path,
         moved: Result<PathBuf>,
     ) -> Result<()> {
+        let now = self.inner.clock.unix_millis();
         let mut state = self.lock();
         let Some(entry) = state.downloads.get_mut(&id) else {
             if let Ok(new_path) = &moved {
@@ -123,6 +125,10 @@ impl Manager {
                 let files = record.map_or_else(Vec::new, |record| record.files);
                 take_moved_path(entry, dir, &new_path);
                 entry.files.follow(&files);
+                if new_path != old_path {
+                    let folder = dir.display().to_string();
+                    entry.activity.record(now, Event::Moved { folder });
+                }
                 // The new path was reserved while moving and is the download's
                 // own now; the old one is free.
                 if new_path != old_path {

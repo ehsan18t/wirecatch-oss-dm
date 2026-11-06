@@ -1848,3 +1848,105 @@ async fn a_placed_video_is_on_record_before_it_moves() {
     let placing = manager.clone();
     record_is_on_disk_first(&manager, dir.path(), id, move || placing.begin_placing(id)).await;
 }
+
+/// Every run stops at once as a stalled transfer.
+fn stalls(_run: FakeRun) -> EngineFuture {
+    Box::pin(async {
+        Err(EngineError::Stalled {
+            after: Duration::from_secs(30),
+        })
+    })
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn failures_retries_and_new_links_are_in_the_activity() {
+    use crate::ActivityEvent::{Failed, LinkChanged, Retried};
+    let (manager, _dir) = manager_with(stalls, PATIENCE, DEFAULT_CAPTURE_TIMEOUT).await;
+    let id = manager
+        .add_download(add_request("https://example.com/a.bin"))
+        .await
+        .unwrap();
+    let failed = |m: &Manager| m.get_download(id).unwrap().status == DownloadStatus::Failed;
+    wait_until("the first run to fail", || failed(&manager)).await;
+    manager.retry(id).unwrap();
+    wait_until("the retry to fail", || {
+        failed(&manager) && manager.activity(id).unwrap().len() >= 3
+    })
+    .await;
+    manager
+        .refresh_link(id, "https://files.example.org/a.bin", LinkFrom::Person)
+        .unwrap();
+    wait_until("the new link's run to fail", || {
+        failed(&manager) && manager.activity(id).unwrap().len() >= 6
+    })
+    .await;
+
+    let events: Vec<_> = manager
+        .activity(id)
+        .unwrap()
+        .into_iter()
+        .map(|h| h.event)
+        .collect();
+    let message = manager.get_download(id).unwrap().error.unwrap().message;
+    assert!(message.contains("stopped sending data"), "{message}");
+    let failure = Failed { message };
+    assert_eq!(
+        events,
+        [
+            failure.clone(),
+            Retried,
+            failure.clone(),
+            LinkChanged {
+                from: "example.com".into(),
+                to: "files.example.org".into()
+            },
+            Retried,
+            failure,
+        ]
+    );
+}
+
+#[test]
+fn a_pause_resume_and_cancel_are_in_the_activity() {
+    use crate::ActivityEvent::{Cancelled, Paused, Resumed};
+    let mut entry = super::state::idle_entry(
+        "https://example.com/a.bin",
+        wirecatch_sites::local_network::ChosenBy::Person,
+    );
+    for (status, at) in [
+        (DownloadStatus::Paused, 1),
+        (DownloadStatus::Queued, 2),
+        (DownloadStatus::Downloading, 3),
+        (DownloadStatus::Cancelled, 4),
+    ] {
+        entry.row.status = status;
+        entry.note_changes(wirecatch_protocol::UnixMillis(at));
+    }
+    let events: Vec<_> = entry
+        .activity
+        .events()
+        .iter()
+        .map(|h| h.event.clone())
+        .collect();
+    assert_eq!(events, [Paused, Resumed, Cancelled]);
+}
+
+#[test]
+fn a_download_added_paused_starts_rather_than_resumes() {
+    use crate::ActivityEvent::Started;
+    let mut entry = super::state::idle_entry(
+        "https://example.com/a.bin",
+        wirecatch_sites::local_network::ChosenBy::Person,
+    );
+    entry.row.status = DownloadStatus::Paused;
+    entry.seen = super::state::Seen::of(&entry.row);
+    entry.row.status = DownloadStatus::Queued;
+    entry.note_changes(wirecatch_protocol::UnixMillis(1));
+    let events: Vec<_> = entry
+        .activity
+        .events()
+        .iter()
+        .map(|h| h.event.clone())
+        .collect();
+    assert_eq!(events, [Started]);
+}

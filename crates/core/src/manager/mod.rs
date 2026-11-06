@@ -728,7 +728,13 @@ impl Manager {
     /// Saves one download and queues its row for the next event.
     fn save(&self, state: &mut State, id: DownloadId) {
         // One being removed is already off the saved list and must stay off it.
-        if let Some(entry) = state.downloads.get(&id).filter(|e| !e.hold.is_removing()) {
+        let now = self.inner.clock.unix_millis();
+        if let Some(entry) = state
+            .downloads
+            .get_mut(&id)
+            .filter(|e| !e.hold.is_removing())
+        {
+            entry.note_changes(now);
             self.inner.store.save_downloads(vec![entry.stored()]);
             state.touch(id);
             self.inner.rows_changed.notify_one();
