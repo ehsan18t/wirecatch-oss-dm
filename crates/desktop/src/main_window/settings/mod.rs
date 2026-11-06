@@ -144,7 +144,7 @@ impl Page {
             Self::Notifications => "Notifications",
             Self::Browser => "Browser",
             Self::Media => "Media",
-            Self::Speed => "Speed and queues",
+            Self::Speed => "Speed and limits",
             Self::Network => "Network",
         }
     }

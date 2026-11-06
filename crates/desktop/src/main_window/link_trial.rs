@@ -39,8 +39,7 @@ enum Answer {
 
 pub struct LinkTrial {
     library: Entity<Library>,
-    /// `None` tries the saved rules.
-    draft: Option<Drafted>,
+    draft: Drafted,
     link: Entity<InputState>,
     answer: Option<Answer>,
     trying: bool,
@@ -50,7 +49,7 @@ pub struct LinkTrial {
 impl LinkTrial {
     pub fn new(
         library: Entity<Library>,
-        draft: Option<Drafted>,
+        draft: Drafted,
         window: &mut Window,
         cx: &mut Context<'_, Self>,
     ) -> Self {
@@ -87,7 +86,7 @@ impl LinkTrial {
         if url.is_empty() || self.trying {
             return;
         }
-        let draft = self.draft.as_ref().and_then(|draft| draft(cx));
+        let draft = (self.draft)(cx);
         let trial = Trial {
             url,
             draft: draft.as_ref().map(|draft| draft.rules.clone()),

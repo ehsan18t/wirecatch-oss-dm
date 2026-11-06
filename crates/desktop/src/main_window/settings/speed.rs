@@ -1,32 +1,22 @@
-//! Speed and queues: a limit on all downloads together, how many run at once across the queues,
+//! Speed and limits: a limit on all downloads together, how many run at once across the queues,
 //! and how many connections each opens, each naming the queues with a value of their own; then
-//! every queue with when it runs, its own limits and its rules, and Test a link on the saved
-//! rules.
+//! where the queues themselves are managed, in the sidebar (D256).
 
-use gpui_kit::assets::IconName as Lucide;
+use gpui_kit::component::Sizable as _;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::setting::{
     NumberFieldOptions, SettingField, SettingGroup, SettingItem, SettingPage,
 };
-use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex, v_flex};
-use gpui_kit::prelude::FluentBuilder as _;
-use gpui_kit::{
-    AnyElement, App, Axis, ElementId, Entity, IntoElement as _, ParentElement as _, Styled as _,
-    WeakEntity, Window, div,
-};
+use gpui_kit::{App, Entity, IntoElement as _, WeakEntity};
 use wirecatch_engine::numeric::{approx_f64, f64_to_u64};
 use wirecatch_engine::units::MIB;
 use wirecatch_protocol::app::{
-    AppSettingsPatch, MAX_CONCURRENT_DOWNLOADS, MAX_CONNECTIONS_PER_DOWNLOAD, Queue, QueueNotify,
-    Update,
+    AppSettingsPatch, MAX_CONCURRENT_DOWNLOADS, MAX_CONNECTIONS_PER_DOWNLOAD, Queue, Update,
 };
 
-use super::super::MainWindow;
-use super::super::link_trial::LinkTrial;
+use super::super::{MainWindow, Screen};
 use super::{change, current};
 use crate::library::Library;
-use crate::text;
-use crate::ui::{Role, Typed as _};
 
 /// What the total limit starts at when switched on.
 const FIRST_TOTAL_LIMIT: u64 = 5 * MIB;
@@ -38,7 +28,28 @@ pub(super) fn page(
 ) -> SettingPage {
     SettingPage::new(super::Page::Speed.title())
         .resettable(false)
-        .groups([limits(library, cx), queues(library, main)])
+        .groups([limits(library, cx), queues(main)])
+}
+
+/// Where a queue's own limits, rules and schedule are: its page, from the sidebar.
+fn queues(main: &WeakEntity<MainWindow>) -> SettingGroup {
+    let main = main.clone();
+    let show = SettingField::render(move |_, _, _| {
+        let main = main.clone();
+        Button::new("show-queues")
+            .small()
+            .outline()
+            .label("Show queues")
+            .on_click(move |_, _, cx| {
+                _ = main.update(cx, |main, cx| main.open_screen(Screen::Downloads, cx));
+            })
+            .into_any_element()
+    });
+    SettingGroup::new().item(
+        SettingItem::new("Queues", show)
+            .description("Queues are managed in the sidebar. Each has its own page for its limits, rules and schedule: right-click it and choose Edit queue.")
+            .keywords(["queue", "new queue", "schedule", "rules", "test a link"]),
+    )
 }
 
 fn limits(library: &Entity<Library>, cx: &App) -> SettingGroup {
@@ -99,31 +110,6 @@ fn limits(library: &Entity<Library>, cx: &App) -> SettingGroup {
                 own(|q| q.settings.connections.own().is_some()),
             ))
             .keywords(["threads", "segments", "parts", "parallel"]),
-        )
-}
-
-fn queues(library: &Entity<Library>, main: &WeakEntity<MainWindow>) -> SettingGroup {
-    let list = {
-        let (library, main) = (library.clone(), main.clone());
-        SettingField::render(move |_, _, cx| queue_list(&library, &main, cx))
-    };
-    let trial = {
-        let library = library.clone();
-        SettingField::render(move |_, window, cx| link_trial(&library, window, cx))
-    };
-    SettingGroup::new()
-        .title("Queues")
-        .item(
-            SettingItem::new("Your queues", list)
-                .layout(Axis::Vertical)
-                .description("Edit a queue to change its limits, rules, schedule or notifications.")
-                .keywords(["queue", "schedule", "rules", "limits", "new queue"]),
-        )
-        .item(
-            SettingItem::new("Test a link", trial)
-                .layout(Axis::Vertical)
-                .description("Shows which queue a link would go to, and why.")
-                .keywords(["try", "link", "url", "rules", "match"]),
         )
 }
 
@@ -216,184 +202,5 @@ fn with_note(help: &str, note: Option<String>) -> String {
     match note {
         Some(note) => format!("{help} {note}"),
         None => help.to_owned(),
-    }
-}
-
-/// Every queue, with New queue above them.
-fn queue_list(
-    library: &Entity<Library>,
-    main: &WeakEntity<MainWindow>,
-    cx: &mut App,
-) -> AnyElement {
-    let queues = library.read(cx).queues.clone();
-    let theme = cx.theme();
-    let (border, radius) = (theme.border, theme.radius);
-    let adding = main.clone();
-    let rows: Vec<AnyElement> = queues
-        .iter()
-        .enumerate()
-        .map(|(index, queue)| queue_row(queue, index, main, cx))
-        .collect();
-    v_flex()
-        .w_full()
-        .gap_2()
-        .child(
-            h_flex().child(
-                Button::new("settings-new-queue")
-                    .small()
-                    .primary()
-                    .icon(IconName::Plus)
-                    .label("New queue")
-                    .on_click(move |_, window, cx| {
-                        crate::closing::may_have_closed(
-                            adding.update(cx, |main, cx| main.edit_queue(None, window, cx)),
-                        );
-                    }),
-            ),
-        )
-        .child(
-            v_flex()
-                .rounded(radius)
-                .border_1()
-                .border_color(border)
-                .children(rows),
-        )
-        .into_any_element()
-}
-
-fn queue_row(queue: &Queue, index: usize, main: &WeakEntity<MainWindow>, cx: &App) -> AnyElement {
-    let border = cx.theme().border;
-    let id = queue.id;
-    let editing = main.clone();
-    h_flex()
-        .px_3()
-        .py_2p5()
-        .gap_3()
-        .when(index > 0, |row| row.border_t_1().border_color(border))
-        .child(
-            v_flex()
-                .flex_1()
-                .min_w_0()
-                .gap_0p5()
-                .child(
-                    h_flex()
-                        .gap_2()
-                        .child(
-                            div()
-                                .text_role(Role::Strong, cx)
-                                .child(queue.settings.name.clone()),
-                        )
-                        .when(queue.is_default, |line| {
-                            line.child(div().text_role(Role::Meta, cx).child("Default"))
-                        }),
-                )
-                .when(!queue.settings.description.is_empty(), |text| {
-                    text.child(
-                        div()
-                            .truncate()
-                            .text_role(Role::Secondary, cx)
-                            .child(queue.settings.description.clone()),
-                    )
-                })
-                .child(
-                    div()
-                        .text_role(Role::Meta, cx)
-                        .child(queue_facts(queue).join(" · ")),
-                ),
-        )
-        .child(
-            Button::new(ElementId::NamedInteger(
-                "edit-queue".into(),
-                id.0.unsigned_abs(),
-            ))
-            .small()
-            .ghost()
-            .icon(Icon::new(Lucide::Pencil))
-            .tooltip(format!("Edit {}", queue.settings.name))
-            .on_click(move |_, window, cx| {
-                crate::closing::may_have_closed(
-                    editing.update(cx, |main, cx| main.edit_queue(Some(id), window, cx)),
-                );
-            }),
-        )
-        .into_any_element()
-}
-
-/// When a queue runs, how it notifies, its own limits and its rules, in a few words each.
-fn queue_facts(queue: &Queue) -> Vec<String> {
-    let settings = &queue.settings;
-    let mut facts = vec![if queue.status.paused {
-        "Paused".to_owned()
-    } else {
-        text::schedule(settings.schedule.as_ref())
-    }];
-    if settings.notify == QueueNotify::WhenDone {
-        facts.push("Notifies you when the queue is done".to_owned());
-    }
-    let own = text::own_limits(settings);
-    let follows = own.iter().any(Option::is_none);
-    let own: Vec<String> = own.into_iter().flatten().collect();
-    if own.is_empty() {
-        facts.push("Uses global limits".to_owned());
-    } else {
-        facts.extend(own);
-        if follows {
-            facts.push("Other limits are global".to_owned());
-        }
-    }
-    facts.extend(text::rules_fact(&settings.add_downloads));
-    facts
-}
-
-/// Test a link against the saved rules, kept while the page shows.
-fn link_trial(library: &Entity<Library>, window: &mut Window, cx: &mut App) -> AnyElement {
-    let library = library.clone();
-    window
-        .use_keyed_state("settings-link-trial", cx, |window, cx| {
-            LinkTrial::new(library, None, window, cx)
-        })
-        .into_any_element()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use wirecatch_protocol::app::{QueueSettings, Setting};
-    use wirecatch_protocol::rules::{AddDownloads, QueueRules};
-
-    #[test]
-    fn an_auto_queue_names_its_first_rule_and_counts_the_rest() {
-        let rules = |enabled| {
-            AddDownloads::Auto(QueueRules {
-                enabled,
-                sites: vec!["youtube.com".into(), "vimeo.com".into()],
-                file_types: vec!["iso".into()],
-                ..QueueRules::default()
-            })
-        };
-        assert_eq!(
-            text::rules_fact(&rules(true)).as_deref(),
-            Some("Adds youtube.com and 2 more")
-        );
-        assert_eq!(
-            text::rules_fact(&rules(false)).as_deref(),
-            Some("Rules off")
-        );
-        assert_eq!(text::rules_fact(&AddDownloads::Manual), None);
-    }
-
-    #[test]
-    fn a_queue_with_some_limits_of_its_own_says_the_rest_are_global() {
-        let mut settings = QueueSettings::new("Night");
-        settings.max_concurrent = Setting::Own(2);
-        let queue = Queue {
-            id: wirecatch_protocol::QueueId(1),
-            is_default: false,
-            settings,
-            status: wirecatch_protocol::app::QueueStatus::default(),
-        };
-        let facts = queue_facts(&queue);
-        assert!(facts.contains(&"2 at once".to_owned()));
-        assert!(facts.contains(&"Other limits are global".to_owned()));
     }
 }

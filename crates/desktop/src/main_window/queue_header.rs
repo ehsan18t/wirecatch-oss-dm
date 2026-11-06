@@ -249,3 +249,20 @@ fn count(n: usize) -> String {
         n => format!("{n} downloads"),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use wirecatch_protocol::app::Setting;
+
+    use super::*;
+
+    #[test]
+    fn a_queue_with_some_limits_of_its_own_says_the_rest_are_global() {
+        let mut settings = QueueSettings::new("Night");
+        assert_eq!(limits(&settings), ["Uses global limits"]);
+        settings.max_concurrent = Setting::Own(2);
+        let facts = limits(&settings);
+        assert!(facts.contains(&"2 at once".to_owned()));
+        assert!(facts.contains(&"Other limits are global".to_owned()));
+    }
+}

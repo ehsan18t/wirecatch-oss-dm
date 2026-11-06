@@ -153,7 +153,7 @@ impl RulesForm {
         let file_types = tags(FILE_TYPES, &rules.file_types, window, cx);
         let me = cx.entity().downgrade();
         let drafted: Drafted = Rc::new(move |cx| me.upgrade().map(|form| form.read(cx).draft(cx)));
-        let trial = cx.new(|cx| LinkTrial::new(library.clone(), Some(drafted), window, cx));
+        let trial = cx.new(|cx| LinkTrial::new(library.clone(), drafted, window, cx));
         let mut rows: Vec<Kind> = [
             (Kind::Sites, !rules.sites.is_empty()),
             (Kind::FileNames, !rules.file_names.is_empty()),
