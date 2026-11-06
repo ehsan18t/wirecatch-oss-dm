@@ -188,9 +188,9 @@ fn queue_actions(queue: &Queue, cx: &mut Context<'_, MainWindow>) -> impl IntoEl
                     IconName::Pause
                 })
                 .label(if paused {
-                    "Resume queue"
+                    text::RESUME_QUEUE
                 } else {
-                    "Pause queue"
+                    text::PAUSE_QUEUE
                 })
                 .on_click(move |_, window, cx| {
                     act(window.window_handle(), cx, move |manager| {

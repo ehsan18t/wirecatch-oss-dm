@@ -6,6 +6,11 @@ use wirecatch_protocol::wire::{ErrorCode, ProtocolError};
 
 use crate::api::{self, CommandResult};
 
+/// Pauses every download: the tray menu, and the desktop app's list and command palette.
+pub const PAUSE_ALL: &str = "Pause all";
+/// Resumes every paused download, wherever Pause all is offered.
+pub const RESUME_ALL: &str = "Resume all";
+
 /// Something the tray menu can do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrayAction {
@@ -54,8 +59,8 @@ impl TrayAction {
             Self::Open => format!("Open {}", crate::host::CHANNEL.name()),
             Self::NewDownload => "New download...".to_owned(),
             Self::OpenFolder => "Open downloads folder".to_owned(),
-            Self::PauseAll => "Pause all".to_owned(),
-            Self::ResumeAll => "Resume all".to_owned(),
+            Self::PauseAll => PAUSE_ALL.to_owned(),
+            Self::ResumeAll => RESUME_ALL.to_owned(),
             Self::Quit => "Quit".to_owned(),
         }
     }

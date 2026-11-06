@@ -8,6 +8,8 @@ use gpui_kit::{
     StatefulInteractiveElement as _, Styled as _, div, px,
 };
 
+use wirecatch_protocol::app::DownloadStatus;
+
 use super::{Group, MainWindow};
 use crate::text;
 use crate::ui::mark::mark;
@@ -72,7 +74,7 @@ impl MainWindow {
         } else if joining == active {
             "Finishing videos".to_owned()
         } else {
-            "Starting".to_owned()
+            text::status_label(DownloadStatus::Connecting).to_owned()
         };
         let downloading = active - joining;
         let summary: Vec<String> = [

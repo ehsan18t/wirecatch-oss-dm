@@ -13,7 +13,7 @@ use wirecatch_shell::api;
 use super::applies::{self, Applicable};
 use super::{Group, MainWindow, Screen, View, confirm, details, settings};
 use crate::backend::act;
-use crate::files;
+use crate::{files, text};
 
 const WIDTH: f32 = 560.;
 
@@ -264,12 +264,16 @@ fn general() -> Vec<Entry> {
             main.page.screen = Screen::Downloads;
             main.focus_search(w, cx);
         }),
-        entry("Pause every download", "stop all", |_, w, cx| {
+        entry(text::PAUSE_ALL, "stop every download", |_, w, cx| {
             act(w.window_handle(), cx, api::pause_all);
         }),
-        entry("Resume every download", "start all continue", |_, w, cx| {
-            act(w.window_handle(), cx, api::resume_all);
-        }),
+        entry(
+            text::RESUME_ALL,
+            "start every download continue",
+            |_, w, cx| {
+                act(w.window_handle(), cx, api::resume_all);
+            },
+        ),
         entry("Keyboard shortcuts", "keys help", |main, _, cx| {
             main.open_screen(Screen::Shortcuts, cx);
         }),

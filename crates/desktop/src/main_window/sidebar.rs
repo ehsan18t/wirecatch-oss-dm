@@ -635,12 +635,14 @@ fn summary(queue: &Queue, facts: &QueueFacts, proxy: Option<&str>) -> (Option<St
         return (None, line);
     }
     if facts.running > 0 {
-        let of = format!("{} of {}", facts.running, facts.running + facts.waiting);
         let left = facts
             .left
             .filter(|_| facts.speed > 0)
-            .map(|left| format!(" · {} left", text::eta(left / facts.speed)));
-        return (None, format!("{of}{}", left.unwrap_or_default()));
+            .map(|left| left / facts.speed);
+        return (
+            None,
+            text::queue_running(facts.running, facts.waiting, left),
+        );
     }
     if let Some(start) = outside_schedule(queue) {
         let line = marked(format!("Starts {}", text::time(start)));
@@ -718,9 +720,9 @@ fn queue_menu(
     })
     .item(
         PopupMenuItem::new(if paused {
-            "Resume the queue"
+            text::RESUME_QUEUE
         } else {
-            "Pause the queue"
+            text::PAUSE_QUEUE
         })
         .icon(if paused {
             IconName::Play
@@ -846,7 +848,15 @@ mod tests {
         };
         assert_eq!(
             summary(&queue(false), &facts, None),
-            (None, "2 of 5 · 4 min left".to_owned())
+            (None, "2 running · 3 waiting".to_owned())
+        );
+        let last = QueueFacts {
+            waiting: 0,
+            ..facts
+        };
+        assert_eq!(
+            summary(&queue(false), &last, None),
+            (None, "2 running · 4 min left".to_owned())
         );
     }
 
