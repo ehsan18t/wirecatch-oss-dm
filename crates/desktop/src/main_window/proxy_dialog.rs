@@ -25,7 +25,7 @@ use wirecatch_shell::api;
 
 use crate::backend::{Backend, act, said};
 use crate::library::Library;
-use crate::ui::{Field, Role, Typed as _, choice};
+use crate::ui::{Field, Role, Sentence, Typed as _, choice};
 
 const WIDTH: f32 = 520.;
 const KINDS: [(ProxyKind, &str); 3] = [
@@ -551,23 +551,24 @@ impl Users {
     }
 
     /// `Used by the global setting (Main) and Videos`, or `Not used yet`.
-    pub(super) fn line(&self) -> String {
-        let mut parts = Vec::new();
+    pub(super) fn line(&self) -> Sentence {
+        if self.is_empty() {
+            return "Not used yet".into();
+        }
+        let mut said = Sentence::new().text("Used by ");
         if self.app {
-            parts.push(if self.following.is_empty() {
-                "the global setting".to_owned()
-            } else {
-                format!("the global setting ({})", self.following.join(", "))
-            });
+            said = said.text("the global setting");
+            if !self.following.is_empty() {
+                said = said
+                    .text(" (")
+                    .queues(self.following.iter().map(String::as_str))
+                    .text(")");
+            }
+            if !self.queues.is_empty() {
+                said = said.text(" and ");
+            }
         }
-        if !self.queues.is_empty() {
-            parts.push(self.queues.join(", "));
-        }
-        if parts.is_empty() {
-            "Not used yet".to_owned()
-        } else {
-            format!("Used by {}", parts.join(" and "))
-        }
+        said.queues(self.queues.iter().map(String::as_str))
     }
 }
 
@@ -636,9 +637,9 @@ pub(super) fn ask_delete(
                     .gap_4()
                     .text_sm()
                     .child(div().text_role(Role::Secondary, cx).child(if in_use {
-                        format!("{line}. They switch to the proxy you pick.")
+                        line.clone().text(". They switch to the proxy you pick.")
                     } else {
-                        "Nothing uses it.".to_owned()
+                        "Nothing uses it.".into()
                     }))
                     .when(in_use, |body| {
                         body.child(Field::new("Switch to", Select::new(&replacement)))
@@ -677,6 +678,27 @@ pub(super) fn ask_delete(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_queues_using_a_proxy_stand_out() {
+        let users = Users {
+            app: true,
+            following: vec!["Main".to_owned()],
+            queues: vec!["Videos".to_owned(), "Music".to_owned()],
+        };
+        let line = users.line();
+        assert_eq!(
+            line.said(),
+            "Used by the global setting (Main) and Videos, Music"
+        );
+        assert_eq!(line.marked(), ["Main", "Videos", "Music"]);
+        let unused = Users {
+            app: false,
+            following: Vec::new(),
+            queues: Vec::new(),
+        };
+        assert_eq!(unused.line().said(), "Not used yet");
+    }
 
     #[test]
     fn an_impossible_port_is_refused() {

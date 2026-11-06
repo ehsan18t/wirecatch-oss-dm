@@ -19,7 +19,7 @@ use wirecatch_shell::api;
 use super::{MainWindow, View};
 use crate::backend::command;
 use crate::library::Library;
-use crate::ui::{Field, Role, Typed as _};
+use crate::ui::{Field, Role, Sentence, Typed as _};
 
 const WIDTH: f32 = 440.;
 
@@ -49,14 +49,15 @@ impl DeleteForm {
         self.typed.read(cx).value() == self.name.as_str()
     }
 
-    fn what_happens(&self) -> String {
+    fn what_happens(&self) -> Sentence {
         let count = self.downloads.len();
+        let said = Sentence::new();
         match (count, self.remove_downloads) {
-            (0, _) => "It holds no downloads.".to_owned(),
-            (1, false) => format!("Its download moves to {}.", self.fallback),
-            (n, false) => format!("Its {n} downloads move to {}.", self.fallback),
-            (1, true) => "Its download is removed from the list; unfinished, it stops and its partial file is deleted.".to_owned(),
-            (n, true) => format!("Its {n} downloads are removed from the list; unfinished ones stop and their partial files are deleted."),
+            (0, _) => said.text("It holds no downloads."),
+            (1, false) => said.text("Its download moves to ").queue(&self.fallback).text("."),
+            (n, false) => said.text(&format!("Its {n} downloads move to ")).queue(&self.fallback).text("."),
+            (1, true) => said.text("Its download is removed from the list; unfinished, it stops and its partial file is deleted."),
+            (n, true) => said.text(&format!("Its {n} downloads are removed from the list; unfinished ones stop and their partial files are deleted.")),
         }
     }
 }
@@ -107,7 +108,10 @@ impl Render for DeleteForm {
                 )
             })
             .child(Field::new(
-                format!("Type {} to confirm", self.name),
+                Sentence::new()
+                    .text("Type ")
+                    .queue(&self.name)
+                    .text(" to confirm"),
                 Input::new(&self.typed),
             ))
     }

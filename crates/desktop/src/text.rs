@@ -15,6 +15,8 @@ use wirecatch_protocol::rules::{AddDownloads, LinkProtocol, Rule};
 use wirecatch_shell::activity::format_bytes;
 use wirecatch_shell::host;
 
+use crate::ui::Sentence;
+
 const SECONDS_PER_MINUTE: u64 = 60;
 const MINUTES_PER_HOUR: u64 = 60;
 const HOURS_PER_DAY: u64 = 24;
@@ -303,34 +305,43 @@ pub fn processing_detail(step: ProcessingStep) -> String {
 }
 
 /// Why a download waits, in a full sentence for its details.
-pub fn wait_long(wait: &WaitReason, queue: &str) -> String {
+pub fn wait_long(wait: &WaitReason, queue: &str) -> Sentence {
+    let said = Sentence::new();
     match wait {
-        WaitReason::QueuePaused => format!("{queue} is paused. Resume the queue to start it."),
+        WaitReason::QueuePaused => said
+            .queue(queue)
+            .text(" is paused. Resume the queue to start it."),
         WaitReason::QueueSchedule {
             starts_at: Some(at),
-        } => {
-            format!("Waiting for {queue}, which starts at {}.", time(*at))
-        }
+        } => said
+            .text("Waiting for ")
+            .queue(queue)
+            .text(&format!(", which starts at {}.", time(*at))),
         WaitReason::QueueSchedule { starts_at: None } => {
-            format!("{queue} is outside its schedule.")
+            said.queue(queue).text(" is outside its schedule.")
         }
-        WaitReason::QueueFull { running, limit } => format!(
-            "{queue} is running {running} of {limit}. This starts when one of them finishes."
-        ),
+        WaitReason::QueueFull { running, limit } => said.queue(queue).text(&format!(
+            " is running {running} of {limit}. This starts when one of them finishes."
+        )),
         WaitReason::GlobalLimit { running, limit } => format!(
             "Global limit: {running} of {limit} downloads are running. This starts when one of them finishes."
-        ),
-        WaitReason::InLine { position } => format!("{} in line in {queue}.", ordinal(*position)),
+        )
+        .into(),
+        WaitReason::InLine { position } => said
+            .text(&format!("{} in line in ", ordinal(*position)))
+            .queue(queue)
+            .text("."),
         WaitReason::ServerRefused { retry_at } => format!(
             "The video's server refused it for now, which sites sometimes do for a few minutes. {} tries again automatically at {} and keeps what was already downloaded.",
             host::CHANNEL.name(),
             clock(*retry_at)
-        ),
+        )
+        .into(),
     }
 }
 
 /// What a download is doing in a sentence, when there is more to say than its status.
-pub fn status_detail(row: &DownloadSummary, queue: &str) -> Option<String> {
+pub fn status_detail(row: &DownloadSummary, queue: &str) -> Option<Sentence> {
     if let Some(wait) = shown_wait(row) {
         return Some(wait_long(wait, queue));
     }
@@ -340,6 +351,7 @@ pub fn status_detail(row: &DownloadSummary, queue: &str) -> Option<String> {
                 .as_ref()
                 .map_or(ProcessingStep::Joining, |p| p.step),
         )
+        .into()
     })
 }
 
@@ -828,6 +840,17 @@ mod tests {
             let said = clock_in(at, true, format);
             assert_eq!(said.matches(':').count(), 2, "{said}");
         }
+    }
+
+    #[test]
+    fn a_wait_names_its_queue_so_it_stands_out() {
+        let said = wait_long(&WaitReason::InLine { position: 2 }, "Videos");
+        assert_eq!(said.said(), "2nd in line in Videos.");
+        assert_eq!(said.marked(), ["Videos"]);
+        assert_eq!(
+            wait_long(&WaitReason::QueuePaused, "Main").marked(),
+            ["Main"]
+        );
     }
 
     #[test]

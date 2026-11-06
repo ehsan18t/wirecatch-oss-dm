@@ -21,7 +21,7 @@ use wirecatch_sites::video_sites::video_site_for;
 
 use crate::backend::Backend;
 use crate::library::Library;
-use crate::ui::{Callout, Field, FolderRow};
+use crate::ui::{Callout, Field, FolderRow, Sentence};
 use crate::{files, links, text};
 
 /// Said when the box holds no link to send.
@@ -277,16 +277,19 @@ impl AddForm {
     }
 
     /// Under Automatic: where the links go.
-    fn automatic_hint(&self, cx: &App) -> String {
+    fn automatic_hint(&self, cx: &App) -> Sentence {
         let tried = self.routes.as_slice();
         let all_tried = self.found(cx).urls.len() <= MAX_TRIED;
         match if all_tried { tried } else { &[] } {
-            [] => "Each link goes to the queue whose rules it matches, or the default queue."
-                .to_owned(),
-            [only] => match &only.rule {
-                Some(rule) => format!("Goes to {}: {rule}.", only.queue),
-                None => format!("Goes to {}, the default queue.", only.queue),
-            },
+            [] => Sentence::new()
+                .text("Each link goes to the queue whose rules it matches, or the default queue."),
+            [only] => {
+                let goes = Sentence::new().text("Goes to ").queue(&only.queue);
+                match &only.rule {
+                    Some(rule) => goes.text(&format!(": {rule}.")),
+                    None => goes.text(", the default queue."),
+                }
+            }
             routes => {
                 let mut queues: Vec<&str> = Vec::new();
                 for route in routes {
@@ -295,8 +298,11 @@ impl AddForm {
                     }
                 }
                 match queues.as_slice() {
-                    [one] => format!("All go to {one}."),
-                    many => format!("They go to {} queues: {}.", many.len(), many.join(", ")),
+                    [one] => Sentence::new().text("All go to ").queue(one).text("."),
+                    many => Sentence::new()
+                        .text(&format!("They go to {} queues: ", many.len()))
+                        .queues(many.iter().copied())
+                        .text("."),
                 }
             }
         }
@@ -464,7 +470,7 @@ impl Render for AddForm {
         let queue_hint = if self.picked_queue(cx).is_none() {
             self.automatic_hint(cx)
         } else {
-            "For this add only.".to_owned()
+            Sentence::new().text("For this add only.")
         };
         v_flex()
             .gap_4()
