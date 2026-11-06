@@ -425,11 +425,16 @@ fn localize_folders(profile: &mut SettingsFile, folders: &KnownFolders) -> Vec<I
     );
     let default_folder = settings.default_folder.clone();
     for rule in &mut settings.categories {
+        let requested = crate::in_download_folder(&rule.folder, &default_folder);
+        let mut used = requested.clone();
         place(
             category_folder_name(rule.category).into(),
-            &mut rule.folder,
+            &mut used,
             &default_folder,
         );
+        if used != requested {
+            rule.folder = PortablePath(String::new());
+        }
     }
     for queue in &mut profile.queues {
         if let Setting::Own(folder) = &mut queue.settings.folder {
@@ -817,9 +822,10 @@ mod tests {
         };
         let imported = merge(profile, &[default_queue()], &folders(), || QueueId(2)).unwrap();
         let downloads = PortablePath("{Downloads}".into());
+        let in_download_folder = PortablePath(String::new());
         assert_eq!(imported.settings.default_folder, downloads);
         for rule in &imported.settings.categories[..special.len()] {
-            assert_eq!(rule.folder, downloads, "{:?}", rule.category);
+            assert_eq!(rule.folder, in_download_folder, "{:?}", rule.category);
         }
         let report = &imported.folders;
         assert_eq!(
@@ -868,7 +874,7 @@ mod tests {
         assert_eq!(imported.folders[1].setting, "Video folder");
         assert_eq!(
             imported.settings.categories[0].folder,
-            PortablePath("{Downloads}".into())
+            PortablePath(String::new())
         );
     }
 
@@ -941,7 +947,10 @@ mod tests {
         let imported = merge(profile, &[default_queue()], &folders(), || QueueId(2)).unwrap();
         let downloads = PortablePath("{Downloads}".into());
         assert_eq!(imported.settings.default_folder, downloads);
-        assert_eq!(imported.settings.categories[0].folder, downloads);
+        assert_eq!(
+            imported.settings.categories[0].folder,
+            PortablePath(String::new())
+        );
         let report = &imported.folders;
         for entry in &report[..2] {
             assert_eq!(entry.used, downloads);

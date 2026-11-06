@@ -50,7 +50,7 @@ pub enum PathError {
 
 /// Whether `segment` is one ordinary folder name, the same on every system: no
 /// drive, root, `.` or `..`, and no `:` (which Windows reads as a drive or stream).
-fn is_plain_name(segment: &str) -> bool {
+pub(crate) fn is_plain_name(segment: &str) -> bool {
     let mut parts = Path::new(segment).components();
     !segment.contains(':')
         && matches!(parts.next(), Some(Component::Normal(_)))
