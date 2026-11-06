@@ -140,10 +140,14 @@ pub(super) fn ask_each_download(library: &Entity<Library>) -> SettingItem {
 pub(super) fn show_progress(library: &Entity<Library>) -> SettingItem {
     SettingItem::new(
         "Show progress while downloading",
-        switch(library, |s| s.show_progress_windows, |on| AppSettingsPatch {
-            show_progress_windows: Some(on),
-            ..AppSettingsPatch::default()
-        }),
+        switch(
+            library,
+            |s| s.show_progress_windows,
+            |on| AppSettingsPatch {
+                show_progress_windows: Some(on),
+                ..AppSettingsPatch::default()
+            },
+        ),
     )
     .description(
         "After you click Download, a window stays open and shows how the download is going.",

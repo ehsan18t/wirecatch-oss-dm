@@ -104,7 +104,7 @@ fn started(library: &Entity<Library>, cx: &App) -> SettingGroup {
     SettingGroup::new()
         .title("Starting")
         .item(super::browser::ask_each_download(library))
-        .item(super::media::ask_each_video(library))
+        .item(super::media::ask_each_video(library, cx))
         .item(super::browser::show_progress(library))
         .item(
             SettingItem::new(

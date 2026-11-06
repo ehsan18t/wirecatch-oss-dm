@@ -155,7 +155,9 @@ fn quality_field(library: &Entity<Library>, cx: &App) -> SettingField<SharedStri
 }
 
 /// "Ask before each video", for the page about what happens when downloads start (D262).
-pub(super) fn ask_each_video(library: &Entity<Library>) -> SettingItem {
+/// Dimmed like the other video settings while the media add-on does not work (D259.1).
+pub(super) fn ask_each_video(library: &Entity<Library>, cx: &App) -> SettingItem {
+    let ready = addon_ready(&library.read(cx).addons);
     SettingItem::new(
         ASK_EACH_VIDEO,
         switch(library, |s| s.media.ask_each_time, |on| {
@@ -165,7 +167,12 @@ pub(super) fn ask_each_video(library: &Entity<Library>) -> SettingItem {
             })
         }),
     )
-    .description("Opens the quality window for each video, to pick its quality and format. Off, videos start at once with the choices in Settings, Media.")
+    .description(if ready {
+        "Opens the quality window for each video, to pick its quality and format. Off, videos start at once with the choices in Settings, Media."
+    } else {
+        "Used once the media add-on is installed, from Settings, Media."
+    })
+    .disabled(!ready)
     .keywords(["ask", "quality window", "prompt", "video"])
 }
 
