@@ -1107,8 +1107,8 @@ async fn a_page_is_read_with_yt_dlp_and_video_and_audio_are_joined() -> TestResu
         assert_eq!(seen.headers.get("user-agent").unwrap(), "yt-dlp-agent");
         assert!(seen.headers.get("cookie").is_none());
     }
-    // The page was read again when the download started (addresses expire).
-    assert_eq!(ytdlp_calls(&h)?.len(), 2);
+    // Read for the choice only: the start takes that reading.
+    assert_eq!(ytdlp_calls(&h)?.len(), 1);
     Ok(())
 }
 
@@ -1242,8 +1242,8 @@ async fn a_refused_format_address_is_read_again_and_the_download_goes_on() -> Te
     let done = h.wait_status(id, DownloadStatus::Completed).await;
 
     assert!(Path::new(&done.path).is_file());
-    // Read for the choice, at the start, and once more after the refusal.
-    assert_eq!(ytdlp_calls(&h)?.len(), 3);
+    // Read for the choice, which the start takes, and once more after the refusal.
+    assert_eq!(ytdlp_calls(&h)?.len(), 2);
     let statuses: Vec<u16> = server
         .seen_at("fmt/video.mp4")
         .iter()
@@ -1274,8 +1274,8 @@ async fn a_format_address_refused_every_time_ends_with_a_plain_error() -> TestRe
     let id = start_page_video(&h, &server, 21).await?;
     let failed = h.wait_status(id, DownloadStatus::Failed).await;
 
-    // The choice, the first attempt and three more, each with a fresh read.
-    assert_eq!(ytdlp_calls(&h)?.len(), 1 + 1 + QUICK.len());
+    // The choice, which the first attempt takes, and three more, each with a fresh read.
+    assert_eq!(ytdlp_calls(&h)?.len(), 1 + QUICK.len());
     assert_eq!(server.requests("fmt/video.mp4"), 1 + QUICK.len());
     assert_eq!(server.requests("fmt/audio.m4a"), 1);
     let error = failed.error.unwrap();
@@ -1314,8 +1314,8 @@ async fn a_web_page_in_place_of_a_single_format_is_not_a_finished_video() -> Tes
 
     let failed = h.wait_status(id, DownloadStatus::Failed).await;
 
-    // The choice, the first attempt and three more, each with a fresh read.
-    assert_eq!(ytdlp_calls(&h)?.len(), 1 + 1 + QUICK.len());
+    // The choice, which the first attempt takes, and three more, each with a fresh read.
+    assert_eq!(ytdlp_calls(&h)?.len(), 1 + QUICK.len());
     assert!(!Path::new(&failed.path).exists(), "{}", failed.path);
     assert_eq!(failed.error.unwrap().fix, Some(FixAction::Retry));
     Ok(())
@@ -1346,7 +1346,7 @@ async fn pausing_while_waiting_to_read_the_page_again_stops_it() -> TestResult {
     .await;
     assert_eq!(waiting.status, DownloadStatus::Connecting);
     assert_eq!(waiting.error, None);
-    assert_eq!(ytdlp_calls(&h)?.len(), 2);
+    assert_eq!(ytdlp_calls(&h)?.len(), 1);
     // It also says when the next try is: two minutes after the refusal, by the
     // manager's clock (a manual one here, so exactly two minutes from now).
     let now = wirecatch_core::Clock::unix_millis(h.clock.as_ref());
@@ -1364,7 +1364,7 @@ async fn pausing_while_waiting_to_read_the_page_again_stops_it() -> TestResult {
     tokio::time::sleep(QUIET).await;
     assert_eq!(
         ytdlp_calls(&h)?.len(),
-        2,
+        1,
         "the page was read again after the pause"
     );
 
@@ -1374,6 +1374,29 @@ async fn pausing_while_waiting_to_read_the_page_again_stops_it() -> TestResult {
     h.manager.resume(id).unwrap();
     h.wait_status(id, DownloadStatus::Completed).await;
     assert_eq!(server.requests("fmt/audio.m4a"), 1);
+    Ok(())
+}
+
+/// Each reading of a page is a request to the site, and many in a short time get the app refused as a bot: the reading made for the choice serves the start, and a pause and resume soon after read nothing again.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_page_video_paused_and_resumed_reads_the_page_once() -> TestResult {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    let (video, audio) = (mp4_data(300 * KIB_USIZE), mp4_data(20 * KIB_USIZE));
+    tell_tool(&h, "info.json", &page_info(&server, &video, &audio))?;
+    server.hold_after("fmt/video.mp4", 100 * KIB);
+
+    let id = start_page_video(&h, &server, 24).await?;
+    h.wait_for(id, "part of the video", |r| r.done >= 100 * KIB)
+        .await;
+    h.manager.pause(id)?;
+    h.wait_status(id, DownloadStatus::Paused).await;
+    server.release("fmt/video.mp4");
+    h.manager.resume(id)?;
+    h.wait_status(id, DownloadStatus::Completed).await;
+
+    assert_eq!(ytdlp_calls(&h)?.len(), 1, "the page was read again");
     Ok(())
 }
 
@@ -1431,8 +1454,8 @@ async fn page_media_is_read_again_after_a_restart_and_continues() -> TestResult 
     server.release("fmt/video.mp4");
     let done = h.wait_status(id, DownloadStatus::Completed).await;
     assert!(Path::new(&done.path).is_file());
-    // Read at the choice, at the first start and again after the restart.
-    assert!(ytdlp_calls(&h)?.len() >= 3, "{}", ytdlp_calls(&h)?.len());
+    // Read at the choice and again after the restart, which keeps no reading.
+    assert!(ytdlp_calls(&h)?.len() >= 2, "{}", ytdlp_calls(&h)?.len());
     // The video continued where it stopped instead of starting over.
     let resumed = server
         .seen_at("fmt/video.mp4")
@@ -1932,8 +1955,8 @@ async fn a_format_with_cookies_on_a_websites_page_cannot_name_the_local_network(
 
     let message = failed.error.ok_or("no error")?.message;
     assert!(message.contains("your own network"), "{message}");
-    // Read for the choice and at the start; never run to download.
-    assert_eq!(ytdlp_calls(&h)?.len(), 2);
+    // Read for the choice only, which the start takes; never run to download.
+    assert_eq!(ytdlp_calls(&h)?.len(), 1);
     Ok(())
 }
 
@@ -2372,6 +2395,8 @@ async fn failed_then_page_changes(
         ))
         .await?;
     let choice = choice_requested(&mut ui).await;
+    // Chosen once the choice's reading is too old to serve the start.
+    h.clock.advance(chrono::TimeDelta::minutes(31));
     tell_tool(h, "fail.txt", "this page cannot be read right now")?;
     let id = h.manager.choose_media(choice.id, select("137+140")).await?;
     h.wait_status(id, DownloadStatus::Failed).await;

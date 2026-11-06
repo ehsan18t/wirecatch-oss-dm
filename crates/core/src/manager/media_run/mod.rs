@@ -1,5 +1,5 @@
 //! Running a media download: a stream through `wirecatch-streams`, or a page's
-//! formats found again with yt-dlp (their addresses expire) and downloaded by
+//! formats, from a recent reading or found again with yt-dlp (their addresses expire), downloaded by
 //! the engine or `wirecatch-streams`, then joined with ffmpeg. Formats neither
 //! can download are left to yt-dlp itself.
 //!
@@ -37,6 +37,7 @@ use self::page::run_page;
 use self::placement::{Reserve, Taken, finish, waiting_to_place};
 use super::Manager;
 use super::media::media_options;
+use super::page_readings::PageReadings;
 use super::policy::RunPolicy;
 use super::run::{MediaDone, RunEnd};
 use super::state::{Gauge, State};
@@ -63,6 +64,8 @@ struct Job {
     refresh_delays: Arc<[Duration]>,
     /// Tells the time of the next try, shown while waiting for it.
     clock: Arc<dyn Clock>,
+    /// Recent readings of pages, so a start soon after the last one does not read the page again.
+    readings: Arc<PageReadings>,
     /// Reserves a path for the finished file among the paths other downloads
     /// hold; `false` if one of them holds it already.
     reserve: Reserve,
@@ -121,6 +124,7 @@ impl Manager {
             timeout: self.inner.media_timeout,
             refresh_delays: self.inner.media_refresh_delays.clone(),
             clock: self.inner.clock.clone(),
+            readings: self.inner.page_readings.clone(),
             reserve: {
                 let manager = Arc::downgrade(&self.inner);
                 Arc::new(move |path: &Path, take: bool| {

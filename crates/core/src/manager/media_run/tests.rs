@@ -32,6 +32,7 @@ fn job() -> Job {
         timeout: Duration::from_secs(1),
         refresh_delays: Arc::new([]),
         clock: Arc::new(crate::clock::SystemClock),
+        readings: Arc::default(),
         work_owner: String::new(),
         quality: String::new(),
         reserve: Arc::new(|_: &Path, _| true),
