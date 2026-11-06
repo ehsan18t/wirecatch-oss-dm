@@ -256,6 +256,8 @@ impl MediaProgress {
         };
         let mut stream_joining = false;
         let mut total = Some(0u64);
+        // Answered once every part says what it holds: a finished part alone would show less than a resume keeps, for a moment.
+        let (mut every_part_answered, mut working) = (true, false);
         let parts = &state.parts;
         for part in parts {
             let (done, part_total, connections, answered, joining) = match part {
@@ -285,7 +287,8 @@ impl MediaProgress {
             };
             reading.done = reading.done.saturating_add(done);
             reading.connections += connections;
-            reading.answered |= answered;
+            every_part_answered &= answered;
+            working |= !matches!(part, Part::Done(_));
             stream_joining |= joining;
             total = total.zip(part_total).map(|(a, b)| a.saturating_add(b));
         }
@@ -295,6 +298,8 @@ impl MediaProgress {
                 per_mille: None,
             });
         }
+        reading.answered =
+            !parts.is_empty() && every_part_answered && (working || reading.processing.is_some());
         if parts.is_empty() {
             total = None;
         }
@@ -437,7 +442,7 @@ mod tests {
         progress.add_file(Arc::new(Progress::default()), Some(30));
         let reading = progress.read();
         assert_eq!((reading.done, reading.total), (10, Some(40)));
-        assert!(reading.answered);
+        assert!(!reading.answered, "the file has not said what it kept");
         assert_eq!(reading.retry_at, None);
 
         // Waiting to try again keeps what is shown until the next attempt
@@ -451,6 +456,30 @@ mod tests {
         let again = progress.read();
         assert_eq!(again.retry_at, None);
         assert_eq!((again.done, again.total), (10, Some(10)));
+    }
+
+    // A resume showed the finished audio alone for a moment, before the video said how much of it was kept, so the size fell and came back.
+    #[test]
+    fn a_resume_answers_only_once_every_part_says_what_it_kept() {
+        let progress = MediaProgress::default();
+        progress.add_done(10);
+        assert!(
+            !progress.read().answered,
+            "only the finished audio is known"
+        );
+        progress.add_file(Arc::new(Progress::default()), Some(100));
+        assert!(
+            !progress.read().answered,
+            "the video has not said what it kept"
+        );
+
+        // Every part finished: joining them is the work now.
+        let finished = MediaProgress::default();
+        finished.add_done(10);
+        finished.add_done(100);
+        assert!(!finished.read().answered);
+        finished.set_step(Some(ProcessingStep::Joining));
+        assert!(finished.read().answered);
     }
 
     #[test]
