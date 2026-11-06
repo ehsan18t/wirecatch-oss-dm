@@ -228,6 +228,7 @@ fn delete(
     window.close_dialog(cx);
     crate::closing::may_have_closed(main.update(cx, |main, cx| {
         if main.view == View::Queue(id) {
+            main.queue_page = None;
             main.show(View::All, window, cx);
         }
     }));

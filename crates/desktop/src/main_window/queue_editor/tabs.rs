@@ -9,7 +9,7 @@ use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, Context, Div, InteractiveElement as _, IntoElement, ParentElement as _,
-    Render, StatefulInteractiveElement as _, Styled as _, Window, div, px,
+    Render, StatefulInteractiveElement as _, Styled as _, Window, div, px, relative,
 };
 use wirecatch_protocol::app::{QueueNotify, Setting};
 
@@ -23,6 +23,8 @@ const CONTENT_WIDTH: f32 = 720.;
 /// The dot on a tab whose subject has something switched on.
 const DOT: f32 = 6.;
 const NUMBER_WIDTH: f32 = 132.;
+/// The most of the header the way back takes, as a queue's name does in the queue's header.
+const BACK_MAX_SHARE: f32 = 0.4;
 const SCHEDULE_LABEL_WIDTH: f32 = 72.;
 
 impl Render for QueueForm {
@@ -60,20 +62,6 @@ impl QueueForm {
         let theme = cx.theme();
         let (danger, border) = (theme.danger, theme.border);
         let saving = self.stage == Stage::Saving;
-        let tabs = Section::ALL.map(|section| {
-            let tab = Tab::new().label(section.label());
-            if self.is_switched_on(section, cx) {
-                tab.suffix(
-                    div()
-                        .ml_1p5()
-                        .size(px(DOT))
-                        .rounded_full()
-                        .bg(cx.theme().primary),
-                )
-            } else {
-                tab
-            }
-        });
         v_flex()
             .px_5()
             .pt_3()
@@ -84,12 +72,21 @@ impl QueueForm {
                 h_flex()
                     .gap_3()
                     .child(
-                        Button::new("queue-page-back")
-                            .ghost()
-                            .small()
-                            .icon(Icon::new(Lucide::ArrowLeft))
-                            .label(self.back.clone())
-                            .on_click(cx.listener(|form, _, window, cx| form.go_back(window, cx))),
+                        div()
+                            .min_w_0()
+                            .max_w(relative(BACK_MAX_SHARE))
+                            .truncate()
+                            .child(
+                                Button::new("queue-page-back")
+                                    .ghost()
+                                    .small()
+                                    .icon(Icon::new(Lucide::ArrowLeft))
+                                    .label(self.back.clone())
+                                    .tooltip(self.back.clone())
+                                    .on_click(
+                                        cx.listener(|form, _, window, cx| form.go_back(window, cx)),
+                                    ),
+                            ),
                     )
                     .child(div().flex_shrink_0().text_role(Role::PageTitle, cx).child(
                         if self.original.is_some() {
@@ -122,18 +119,35 @@ impl QueueForm {
                             .on_click(cx.listener(|form, _, window, cx| form.save(window, cx))),
                     ),
             )
-            .child(
-                TabBar::new("queue-tabs")
-                    .underline()
-                    .selected_index(self.section.index())
-                    .on_click(cx.listener(|form, index: &usize, _, cx| {
-                        if let Some(section) = Section::ALL.get(*index) {
-                            form.section = *section;
-                            cx.notify();
-                        }
-                    }))
-                    .children(tabs),
-            )
+            .child(self.tab_bar(cx))
+    }
+
+    /// The tabs, a dot on each whose subject has something switched on.
+    fn tab_bar(&self, cx: &mut Context<'_, Self>) -> TabBar {
+        let tabs = Section::ALL.map(|section| {
+            let tab = Tab::new().label(section.label());
+            if self.is_switched_on(section, cx) {
+                tab.suffix(
+                    div()
+                        .ml_1p5()
+                        .size(px(DOT))
+                        .rounded_full()
+                        .bg(cx.theme().primary),
+                )
+            } else {
+                tab
+            }
+        });
+        TabBar::new("queue-tabs")
+            .underline()
+            .selected_index(self.section.index())
+            .on_click(cx.listener(|form, index: &usize, _, cx| {
+                if let Some(section) = Section::ALL.get(*index) {
+                    form.section = *section;
+                    cx.notify();
+                }
+            }))
+            .children(tabs)
     }
 
     /// Whether a tab's subject has something switched on, which its dot shows.

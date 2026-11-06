@@ -55,7 +55,9 @@ impl MainWindow {
             .hover(|item| item.bg(theme.list_hover))
             .child(Icon::new(Lucide::ArrowLeft).with_size(tokens::ICON))
             .child("Back to downloads")
-            .on_click(cx.listener(|this, _, _, cx| this.open_screen(Screen::Downloads, cx)));
+            .on_click(
+                cx.listener(|this, _, window, cx| this.open_screen(Screen::Downloads, window, cx)),
+            );
         div()
             .relative()
             .flex_1()

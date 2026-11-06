@@ -117,7 +117,7 @@ impl MainWindow {
                         .bg(theme.primary),
                 )
             })
-            .on_click(cx.listener(move |this, _, _, cx| this.open_screen(screen, cx)))
+            .on_click(cx.listener(move |this, _, window, cx| this.open_screen(screen, window, cx)))
             .into_any_element()
     }
 
@@ -222,11 +222,7 @@ impl MainWindow {
                 item.bg(theme.sidebar_accent).text_color(theme.primary)
             })
             .child(content)
-            .on_click(cx.listener(move |this, _, window, cx| {
-                this.page.screen = Screen::Downloads;
-                this.page.drawer = false;
-                this.show(view, window, cx);
-            }))
+            .on_click(cx.listener(move |this, _, window, cx| this.show(view, window, cx)))
             .into_any_element()
     }
 }

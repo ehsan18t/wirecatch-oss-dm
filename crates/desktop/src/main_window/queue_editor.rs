@@ -278,11 +278,27 @@ impl QueueForm {
         name.update(cx, |name, cx| name.focus(window, cx));
     }
 
+    /// Whether leaving would lose something: an edit to the queue, or anything typed for a new
+    /// one, the New queue dialog's name and rules included.
+    pub(super) fn has_changes(&self, cx: &App) -> bool {
+        let before = self
+            .original
+            .as_ref()
+            .map_or_else(|| QueueSettings::new(""), |queue| queue.settings.clone());
+        !self.typed(cx).is_ok_and(|typed| typed == before)
+    }
+
     fn read(&self, cx: &App) -> Result<QueueSettings, Problem> {
-        let name = self.name.read(cx).value().trim().to_owned();
-        if name.is_empty() {
+        let settings = self.typed(cx)?;
+        if settings.name.is_empty() {
             return Err((Section::General, "Give the queue a name.".to_owned()));
         }
+        Ok(settings)
+    }
+
+    /// The queue as the form has it, its name maybe empty.
+    fn typed(&self, cx: &App) -> Result<QueueSettings, Problem> {
+        let name = self.name.read(cx).value().trim().to_owned();
         let mut settings = self
             .original
             .as_ref()
@@ -406,9 +422,12 @@ impl QueueForm {
     /// Back to the downloads, unsaved changes left behind.
     fn go_back(&self, window: &mut Window, cx: &mut App) {
         let main = self.main.clone();
-        crate::closing::may_have_closed(
-            main.update(cx, |main, cx| main.close_queue_page(window, cx)),
-        );
+        // Deferred: leaving reads this form, which is being updated now.
+        window.defer(cx, move |window, cx| {
+            crate::closing::may_have_closed(
+                main.update(cx, |main, cx| main.close_queue_page(window, cx)),
+            );
+        });
     }
 
     /// Asks before deleting the queue; the page closes once it is deleted.
