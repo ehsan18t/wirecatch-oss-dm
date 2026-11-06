@@ -903,6 +903,7 @@ impl Render for MainWindow {
                         .min_h_0()
                         .children(self.banner_stack(cx))
                         .children(self.queue_header(cx))
+                        .child(list::forget_cursor_place(self.cursor_bounds.clone()))
                         .child(self.list(cx)),
                 ),
                 Screen::QueuePage => layout::body(

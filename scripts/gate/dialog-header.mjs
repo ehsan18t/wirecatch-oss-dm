@@ -27,7 +27,7 @@ export function dialogsHeadedElsewhere(text, headless) {
       found.push({ line: line(code, match.index), why: 'opens a dialog without its header' });
     }
   }
-  for (const match of code.matchAll(/\bdialog::open\s*\(/g)) {
+  for (const match of code.matchAll(/\bdialog::open(?:_beside)?\s*\(/g)) {
     const open = match.index + match[0].length - 1;
     const call = code.slice(open, closingBracket(code, open));
     const title = call.search(/\.\s*title\s*\(/);

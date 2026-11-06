@@ -882,7 +882,16 @@ fn progress_bar(row: &DownloadSummary, tone: Hsla, cx: &App) -> Option<impl Into
     )
 }
 
-/// Records where the cursor's row is drawn, for the menu the keyboard opens.
+/// Forgets where the cursor's row was, ahead of the rows in each frame: a row scrolled out of view
+/// is not drawn, so only a row drawn this frame may say where it is.
+pub(super) fn forget_cursor_place(
+    bounds: std::rc::Rc<std::cell::Cell<Option<gpui_kit::Bounds<gpui_kit::Pixels>>>>,
+) -> impl IntoElement {
+    canvas(move |_, _, _| bounds.set(None), |_, (), _, _| {}).absolute()
+}
+
+/// Records where the cursor's row is drawn, for the menu the keyboard opens and the questions
+/// asked about it.
 fn marker(
     bounds: std::rc::Rc<std::cell::Cell<Option<gpui_kit::Bounds<gpui_kit::Pixels>>>>,
 ) -> impl IntoElement {

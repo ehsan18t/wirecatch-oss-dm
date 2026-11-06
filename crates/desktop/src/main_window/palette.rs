@@ -145,7 +145,8 @@ impl MainWindow {
             "delete clear",
             move |main, w, cx| {
                 let folded = super::selection::folded_among(&removed, &main.shown_ids(cx));
-                confirm::remove(&main.library, &removed, &folded, w, cx);
+                let near = main.cursor_among(&removed).bounds();
+                confirm::remove(&main.library, &removed, &folded, near, w, cx);
             },
         ));
         entries.push(entry("Clear the selection", "deselect", |main, _, cx| {

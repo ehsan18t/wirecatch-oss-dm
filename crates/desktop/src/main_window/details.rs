@@ -566,7 +566,7 @@ fn footer(
                             PopupMenuItem::new("Cancel")
                                 .icon(IconName::CircleX)
                                 .on_click(move |_, window, cx| {
-                                    confirm::cancel(&cancelled, &[id], &[], window, cx);
+                                    confirm::cancel(&cancelled, &[id], &[], None, window, cx);
                                 }),
                         )
                     })
@@ -574,7 +574,7 @@ fn footer(
                         PopupMenuItem::new("Remove")
                             .icon(Icon::new(Lucide::Trash))
                             .on_click(move |_, window, cx| {
-                                confirm::remove(&removed, &[id], &[], window, cx);
+                                confirm::remove(&removed, &[id], &[], None, window, cx);
                             }),
                     )
                 }),

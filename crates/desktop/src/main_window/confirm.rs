@@ -7,8 +7,8 @@ use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::{WindowExt as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    App, AppContext as _, Context, Entity, IntoElement, ParentElement as _, Render, Styled as _,
-    Window, div, px,
+    App, AppContext as _, Bounds, Context, Div, Entity, IntoElement, ParentElement as _, Pixels,
+    Render, Styled as _, Window, div, px,
 };
 use wirecatch_core::RemoveFiles;
 use wirecatch_protocol::DownloadId;
@@ -31,8 +31,8 @@ struct Asked {
     one: Option<String>,
     finished: usize,
     started: bool,
-    /// Some unfinished one has a partial file.
-    partial: bool,
+    /// How many unfinished ones have a partial file.
+    parts: usize,
     running: bool,
 }
 
@@ -80,9 +80,10 @@ impl Asked {
                 .filter(|row| row.status == DownloadStatus::Completed)
                 .count(),
             started: rows.iter().any(|row| row.done > 0),
-            partial: rows
+            parts: rows
                 .iter()
-                .any(|row| row.status != DownloadStatus::Completed && row.done > 0),
+                .filter(|row| row.status != DownloadStatus::Completed && row.done > 0)
+                .count(),
             running: rows.iter().any(|row| {
                 matches!(
                     row.status,
@@ -99,7 +100,7 @@ impl Asked {
     /// Whether removing them deletes files: an unfinished one's partial file always goes, the
     /// finished files when the person asks.
     fn removal_deletes(&self, delete_finished: bool) -> bool {
-        self.partial || (delete_finished && self.finished > 0)
+        self.parts > 0 || (delete_finished && self.finished > 0)
     }
 }
 
@@ -121,23 +122,27 @@ fn folded_note(count: usize, folded: usize) -> Option<String> {
     }
 }
 
+/// What removing does to the partial files: said only of downloads that have one.
+fn parts_deleted(asked: &Asked) -> Option<String> {
+    match asked.parts {
+        0 => None,
+        parts if parts == asked.count() && parts == 1 => {
+            Some("It stops, and the part already downloaded is deleted.".to_owned())
+        }
+        parts if parts == asked.count() => {
+            Some("They stop, and the parts already downloaded are deleted.".to_owned())
+        }
+        1 => Some("1 of them has a partial file, which is deleted.".to_owned()),
+        parts => Some(format!(
+            "{parts} of them have partial files, which are deleted."
+        )),
+    }
+}
+
 impl Render for RemoveForm {
     fn render(&mut self, _: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
         let asked = &self.asked;
-        let unfinished = asked.count() - asked.finished;
-        let consequence = if unfinished == 0 {
-            None
-        } else if unfinished == asked.count() {
-            Some(if asked.count() == 1 {
-                "It stops, and the part already downloaded is deleted.".to_owned()
-            } else {
-                "They stop, and the parts already downloaded are deleted.".to_owned()
-            })
-        } else {
-            Some(format!(
-                "{unfinished} of them are unfinished: they stop, and their partial files are deleted."
-            ))
-        };
+        let consequence = parts_deleted(asked);
         v_flex()
             .gap_4()
             .text_sm()
@@ -184,11 +189,13 @@ fn remove_button(asked: &Asked, delete_finished: bool) -> (&'static str, ButtonV
     (label, variant)
 }
 
-/// Asks before removing `ids` from the list; `folded` are the ones the list does not show.
+/// Asks before removing `ids` from the list, beside the row `near` when given; `folded` are the
+/// ones the list does not show.
 pub(super) fn remove(
     library: &Entity<Library>,
     ids: &[DownloadId],
     folded: &[DownloadId],
+    near: Option<Bounds<Pixels>>,
     window: &mut Window,
     cx: &mut App,
 ) {
@@ -207,7 +214,8 @@ pub(super) fn remove(
         folded,
         delete_files: false,
     });
-    crate::ui::dialog::open(
+    crate::ui::dialog::open_beside(
+        near,
         window,
         cx,
         move |_| title.clone().into(),
@@ -222,25 +230,29 @@ pub(super) fn remove(
                 variant,
                 move |window, cx| remove_now(&entered, window, cx),
             )
-            .footer(
-                h_flex()
-                    .w_full()
-                    .gap_2()
-                    .justify_end()
-                    .child(
-                        Button::new("keep")
-                            .label("Keep")
-                            .on_click(|_, window, cx| window.close_dialog(cx)),
-                    )
-                    .child(
-                        Button::new("remove")
-                            .with_variant(variant)
-                            .label(label)
-                            .on_click(move |_, window, cx| remove_now(&removing, window, cx)),
-                    ),
-            )
+            .footer(answers(
+                "Keep",
+                Button::new("remove")
+                    .with_variant(variant)
+                    .label(label)
+                    .on_click(move |_, window, cx| remove_now(&removing, window, cx)),
+            ))
         },
     );
+}
+
+/// Keep, labelled `keep`, then the question's main answer.
+fn answers(keep: &'static str, main: Button) -> Div {
+    h_flex()
+        .w_full()
+        .gap_2()
+        .justify_end()
+        .child(
+            Button::new("keep")
+                .label(keep)
+                .on_click(|_, window, cx| window.close_dialog(cx)),
+        )
+        .child(main)
 }
 
 /// Removes what `form` asked about, as its answer says, and closes the question.
@@ -265,12 +277,39 @@ fn remove_now(form: &Entity<RemoveForm>, window: &mut Window, cx: &mut App) {
     );
 }
 
+/// What cancelling does, by whether there is one download and whether any has a part.
+fn cancel_said(one: bool, started: bool) -> &'static str {
+    match (one, started) {
+        (true, true) => {
+            "It stops, and the part already downloaded is deleted. It stays in the list, so you can start it over later."
+        }
+        (true, false) => "It will not start. It stays in the list, so you can start it over later.",
+        (false, true) => {
+            "They stop, and the parts already downloaded are deleted. They stay in the list, so you can start them over later."
+        }
+        (false, false) => {
+            "They will not start. They stay in the list, so you can start them over later."
+        }
+    }
+}
+
+/// Cancel is a danger answer only when it deletes a part already downloaded (D272.1).
+fn cancel_variant(asked: &Asked) -> ButtonVariant {
+    if asked.started {
+        ButtonVariant::Danger
+    } else {
+        ButtonVariant::Primary
+    }
+}
+
 /// Asks before cancelling `ids`: they stop and lose what was downloaded, but stay in the list.
-/// `folded` are the ones the list does not show.
+/// `folded` are the ones the list does not show; the question opens beside the row `near` when
+/// given.
 pub fn cancel(
     library: &Entity<Library>,
     ids: &[DownloadId],
     folded: &[DownloadId],
+    near: Option<Bounds<Pixels>>,
     window: &mut Window,
     cx: &mut App,
 ) {
@@ -284,18 +323,7 @@ pub fn cancel(
     } else {
         format!("Cancel {} downloads?", asked.count())
     };
-    let said = match (one, asked.started) {
-        (true, true) => {
-            "It stops, and the part already downloaded is deleted. It stays in the list, so you can start it over later."
-        }
-        (true, false) => "It will not start. It stays in the list, so you can start it over later.",
-        (false, true) => {
-            "They stop, and the parts already downloaded are deleted. They stay in the list, so you can start them over later."
-        }
-        (false, false) => {
-            "They will not start. They stay in the list, so you can start them over later."
-        }
-    };
+    let said = cancel_said(one, asked.started);
     let keep = if asked.running {
         "Keep downloading"
     } else if one {
@@ -303,50 +331,46 @@ pub fn cancel(
     } else {
         "Keep them"
     };
-    let folded = asked.ids.iter().filter(|id| folded.contains(id)).count();
-    let note = folded_note(asked.count(), folded);
-    let name = asked.one.clone();
+    let note = folded_note(
+        asked.count(),
+        asked.ids.iter().filter(|id| folded.contains(id)).count(),
+    );
+    let (name, variant) = (asked.one.clone(), cancel_variant(&asked));
     let ids = asked.ids;
-    crate::ui::dialog::open(
+    crate::ui::dialog::open_beside(
+        near,
         window,
         cx,
         move |_| title.clone().into(),
         move |dialog, _, cx| {
-            let ids = ids.clone();
-            crate::ui::dialog::enter_answers(dialog, ButtonVariant::Danger, |_, _| {})
-                .w(px(WIDTH))
-                .child(
-                    v_flex()
-                        .gap_4()
-                        .text_sm()
-                        .when_some(name.clone(), |body, name| {
-                            body.child(div().text_role(Role::Strong, cx).child(name))
-                        })
-                        .when_some(note.clone(), |body, note| {
-                            body.child(div().text_role(Role::Secondary, cx).child(note))
-                        })
-                        .child(div().text_role(Role::Secondary, cx).child(said)),
-                )
-                .footer(
-                    h_flex()
-                        .w_full()
-                        .gap_2()
-                        .justify_end()
-                        .child(
-                            Button::new("keep")
-                                .label(keep)
-                                .on_click(|_, window, cx| window.close_dialog(cx)),
-                        )
-                        .child(
-                            Button::new("cancel-download")
-                                .danger()
-                                .label("Cancel download")
-                                .on_click(move |_, window, cx| {
-                                    window.close_dialog(cx);
-                                    selection::each_id(ids.clone(), api::cancel, window, cx);
-                                }),
-                        ),
-                )
+            let (cancelled, entered) = (ids.clone(), ids.clone());
+            crate::ui::dialog::enter_answers(dialog, variant, move |window, cx| {
+                window.close_dialog(cx);
+                selection::each_id(entered.clone(), api::cancel, window, cx);
+            })
+            .w(px(WIDTH))
+            .child(
+                v_flex()
+                    .gap_4()
+                    .text_sm()
+                    .when_some(name.clone(), |body, name| {
+                        body.child(div().text_role(Role::Strong, cx).child(name))
+                    })
+                    .when_some(note.clone(), |body, note| {
+                        body.child(div().text_role(Role::Secondary, cx).child(note))
+                    })
+                    .child(div().text_role(Role::Secondary, cx).child(said)),
+            )
+            .footer(answers(
+                keep,
+                Button::new("cancel-download")
+                    .with_variant(variant)
+                    .label("Cancel download")
+                    .on_click(move |_, window, cx| {
+                        window.close_dialog(cx);
+                        selection::each_id(cancelled.clone(), api::cancel, window, cx);
+                    }),
+            ))
         },
     );
 }
@@ -399,6 +423,46 @@ mod tests {
         assert!(!cancel_deletes(&[&finished, &empty]));
         assert!(removal_deletes(&[&finished, &partial]));
         assert!(!removal_deletes(&[&finished, &empty]));
+    }
+
+    #[test]
+    fn only_a_cancel_that_deletes_a_part_is_a_danger_answer() {
+        let row = |id, done| DownloadSummary {
+            status: DownloadStatus::Paused,
+            done,
+            ..download(id)
+        };
+        let (partial, empty) = (row(1, 10), row(2, 0));
+        let variant = |rows: &[&DownloadSummary]| cancel_variant(&Asked::of(rows));
+        assert_eq!(variant(&[&empty]), ButtonVariant::Primary);
+        assert_eq!(variant(&[&empty, &partial]), ButtonVariant::Danger);
+    }
+
+    #[test]
+    fn removing_speaks_of_partial_files_only_where_there_are_some() {
+        let row = |id, status, done| DownloadSummary {
+            status,
+            done,
+            ..download(id)
+        };
+        let empty = row(1, DownloadStatus::Paused, 0);
+        let partial = row(2, DownloadStatus::Paused, 10);
+        let other = row(3, DownloadStatus::Downloading, 5);
+        let finished = row(4, DownloadStatus::Completed, 10);
+        let said = |rows: &[&DownloadSummary]| parts_deleted(&Asked::of(rows));
+        assert_eq!(said(&[&empty]), None);
+        assert_eq!(
+            said(&[&partial]).as_deref(),
+            Some("It stops, and the part already downloaded is deleted.")
+        );
+        assert_eq!(
+            said(&[&partial, &other]).as_deref(),
+            Some("They stop, and the parts already downloaded are deleted.")
+        );
+        assert_eq!(
+            said(&[&partial, &empty, &finished]).as_deref(),
+            Some("1 of them has a partial file, which is deleted.")
+        );
     }
 
     #[test]

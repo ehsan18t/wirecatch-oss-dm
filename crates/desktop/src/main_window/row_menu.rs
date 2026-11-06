@@ -16,6 +16,7 @@ use wirecatch_protocol::{DownloadId, QueueId};
 use wirecatch_shell::api;
 
 use super::applies::{self, Applicable};
+use super::selection::CursorRow;
 use super::{MainWindow, confirm, details, fixes};
 use crate::backend::act;
 use crate::library::Library;
@@ -84,6 +85,7 @@ struct Target {
     /// The one download, when the menu acts on one.
     only: Option<DownloadSummary>,
     library: Entity<Library>,
+    cursor: CursorRow,
     /// The queues the downloads can move to, with more than one queue.
     moves: Vec<(QueueId, String)>,
 }
@@ -106,6 +108,7 @@ impl Target {
         let ids: Vec<DownloadId> = rows.iter().map(|row| row.id).collect();
         Self {
             folded: super::selection::folded_among(&ids, &main.shown_ids(cx)),
+            cursor: main.cursor_among(&ids),
             ids,
             only: match rows.as_slice() {
                 [only] => Some(only.clone()),
@@ -301,6 +304,7 @@ fn ending(menu: PopupMenu, target: Target, cx: &App) -> PopupMenu {
         ids,
         folded,
         library,
+        cursor,
         ..
     } = target;
     let refs: Vec<&DownloadSummary> = rows.iter().collect();
@@ -321,15 +325,16 @@ fn ending(menu: PopupMenu, target: Target, cx: &App) -> PopupMenu {
         Icon::new(Lucide::Trash),
         confirm::removal_deletes(&refs),
     );
-    let cancelled = (library.clone(), ids.clone(), folded.clone());
+    let cancelled = (library.clone(), ids.clone(), folded.clone(), cursor.clone());
     menu.when(rows.iter().any(applies::can_cancel), |menu| {
         menu.item(cancel.on_click(move |_, window, cx| {
-            confirm::cancel(&cancelled.0, &cancelled.1, &cancelled.2, window, cx);
+            let (library, ids, folded, cursor) = &cancelled;
+            confirm::cancel(library, ids, folded, cursor.bounds(), window, cx);
         }))
     })
-    .item(
-        remove.on_click(move |_, window, cx| confirm::remove(&library, &ids, &folded, window, cx)),
-    )
+    .item(remove.on_click(move |_, window, cx| {
+        confirm::remove(&library, &ids, &folded, cursor.bounds(), window, cx);
+    }))
 }
 
 /// An item that runs `command` on each of `rows` that `takes` it.
