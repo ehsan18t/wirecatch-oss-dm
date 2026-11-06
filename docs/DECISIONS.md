@@ -1604,7 +1604,6 @@ Decided on 2026-11-06. "Remove and delete" erased finished files for good, so on
 5. A folder that took a finished file's name is never moved, as it was never deleted.
 6. Tests never touch the trash, which is the person's own: with `wirecatch-files/testing` the move deletes the file and notes it (`discard::test_trash::took`), and only the files crate's own test uses the real trash, removing what it put there.
 
-<<<<<<< HEAD
 ### D269. Browser downloads that start close together share one notice
 
 Decided with the maintainer on 2026-11-06. It amends D63.3, where each download that started without a window had its own notice, so handing 500 links over from the browser sent 500 notices.
