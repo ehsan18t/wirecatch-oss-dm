@@ -1611,3 +1611,11 @@ Decided with the maintainer on 2026-11-06. It amends D63.3, where each download 
 1. The first browser download that starts without a window is told at once, as before. One that starts within three seconds (`NOTIFY_BATCH`) of the last notice, or while a notice still waits, waits for the next one, which comes three seconds after that notice and tells every download that waited: "4 downloads added", with the first names and "and 2 more". A run of adds is told every three seconds while it lasts, and the first add after a quiet spell is told at once again (`Teller::added`).
 2. A download removed before its notice is left out of it, and a notice with nothing left is not sent.
 3. A video read without a window is still told on its own as soon as it is handed over (D67.3): it is told by its title, which a shared notice could not show.
+
+### D272. Only what deletes files is drawn in the danger colour
+
+Decided with the maintainer on 2026-11-06. Red on every Remove made a removal from the list, which keeps the files, look as risky as losing them, so red stopped saying anything.
+
+1. The Remove question's button takes the danger colour only when files go: the finished files when the person ticks that, or the partial file of an unfinished download that has bytes written. Otherwise it is the plain primary button.
+2. In a download's menu, Cancel's icon is drawn in the danger colour when one of the downloads it cancels has bytes written, since its partial file goes, and Remove's when one of them is unfinished with bytes written. A removal of finished downloads, or of ones with nothing written, stays plain: the question shows what goes before anything does.
+3. Only the icon turns red; the label keeps the menu's own colour. gpui-component's menu cannot colour a labelled item's text, and an item drawn as a custom element loses its accessible name, so a red label would cost screen readers and tests the item's name. Danger menu items go through `ui::menu::danger_item`.
