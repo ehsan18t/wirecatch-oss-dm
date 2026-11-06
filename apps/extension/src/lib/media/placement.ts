@@ -23,7 +23,7 @@ export interface Position {
 
 /** Smaller videos are previews or ads: no button. */
 export const MIN_VIDEO: Size = { width: 160, height: 90 };
-/** Distance from the video's top corner, when the button sits inside it. */
+/** Distance from the video's right edge, and from its top when the button sits inside it. */
 export const INSET = 8;
 /** Height kept clear above a video's native controls. */
 const CONTROLS_SPACE = 48;
@@ -89,7 +89,7 @@ function overVideo(
   const right = Math.min(target.right, viewport.width);
   const above = target.top - size.height;
   if (above >= 0 && kind.covered !== true) {
-    return { top: above, left: right - size.width, attached: true };
+    return { top: above, left: right - size.width - INSET, attached: true };
   }
   const top = Math.max(target.top, 0) + INSET;
   const room = Math.min(target.bottom, viewport.height) - (kind.controls ? CONTROLS_SPACE : INSET);
