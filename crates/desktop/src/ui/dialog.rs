@@ -5,10 +5,10 @@ use std::rc::Rc;
 use gpui_kit::component::button::{Button, ButtonVariant, ButtonVariants as _};
 use gpui_kit::component::dialog::{Dialog, DialogEntrance};
 use gpui_kit::component::input::InputState;
-use gpui_kit::component::{ActiveTheme as _, WindowExt as _, h_flex, v_flex};
+use gpui_kit::component::{ActiveTheme as _, WindowExt as _, h_flex, v_flex, window_paddings};
 use gpui_kit::{
     App, AppContext as _, Bounds, Entity, IntoElement, ParentElement as _, Pixels, RenderOnce,
-    SharedString, Styled as _, Window, div, px,
+    SharedString, Styled as _, Window, div, point, px,
 };
 
 use crate::ui::{Role, Typed as _};
@@ -60,7 +60,15 @@ pub fn open_beside(
     title: impl Fn(&App) -> SharedString + 'static,
     build: impl Fn(Dialog, &mut Window, &mut App) -> Dialog + 'static,
 ) {
-    let top = row.and_then(|row| top_beside(row, window.viewport_size().height));
+    // gpui-kit places a dialog inside the window's client-drawn frame on Linux, so its top counts
+    // from below that inset, and only the room inside it is the dialog's.
+    let inset = window_paddings(window);
+    let viewport = window.viewport_size();
+    let area = Bounds::from_corners(
+        point(inset.left, inset.top),
+        point(viewport.width - inset.right, viewport.height - inset.bottom),
+    );
+    let top = row.and_then(|row| top_beside(row, area));
     open(window, cx, title, move |dialog, window, cx| {
         let dialog = build(dialog, window, cx);
         match top {
@@ -70,20 +78,21 @@ pub fn open_beside(
     });
 }
 
-/// The room a question about downloads is given, so one placed above its row ends before it.
-const QUESTION_HEIGHT: f32 = 280.;
+/// The room a question about downloads is given, so one placed above its row ends before it:
+/// the tallest, Remove with a folded note, a partial file and the trash box, with a line spare.
+const QUESTION_HEIGHT: f32 = 320.;
 /// Between a row and the question beside it.
 const ROW_GAP: f32 = 8.;
 
-/// Where a question's top goes in a window `height` tall: under `row` when it fits there, else
-/// above it; `None` leaves the usual place, when neither fits.
-fn top_beside(row: Bounds<Pixels>, height: Pixels) -> Option<Pixels> {
+/// Where a question's top goes, counted from the top of `area`, the room dialogs take: under
+/// `row` when it fits there, else above it; `None` leaves the usual place, when neither fits.
+fn top_beside(row: Bounds<Pixels>, area: Bounds<Pixels>) -> Option<Pixels> {
     let below = row.bottom() + px(ROW_GAP);
-    if below + px(QUESTION_HEIGHT) <= height {
-        return Some(below);
+    if below + px(QUESTION_HEIGHT) <= area.bottom() {
+        return Some(below - area.top());
     }
     let above = row.top() - px(ROW_GAP + QUESTION_HEIGHT);
-    (above >= px(0.)).then_some(above)
+    (above >= area.top()).then(|| above - area.top())
 }
 
 /// Opens a dialog with no header, for one that is a single field, such as the command palette.
@@ -196,7 +205,7 @@ pub fn text_field(
 
 #[cfg(test)]
 mod tests {
-    use gpui_kit::{point, size};
+    use gpui_kit::size;
 
     use super::*;
 
@@ -204,18 +213,31 @@ mod tests {
         Bounds::new(point(px(0.), px(top)), size(px(900.), px(40.)))
     }
 
+    fn window(height: f32, inset: f32) -> Bounds<Pixels> {
+        Bounds::from_corners(
+            point(px(inset), px(inset)),
+            point(px(1000.), px(height - inset)),
+        )
+    }
+
     #[test]
     fn a_question_opens_under_its_row_when_it_fits() {
-        assert_eq!(top_beside(row_at(100.), px(800.)), Some(px(148.)));
+        assert_eq!(top_beside(row_at(100.), window(800., 0.)), Some(px(148.)));
     }
 
     #[test]
     fn a_question_opens_above_a_row_low_in_the_window() {
-        assert_eq!(top_beside(row_at(700.), px(800.)), Some(px(412.)));
+        assert_eq!(top_beside(row_at(700.), window(800., 0.)), Some(px(372.)));
     }
 
     #[test]
     fn a_window_too_short_for_either_keeps_the_usual_place() {
-        assert_eq!(top_beside(row_at(200.), px(400.)), None);
+        assert_eq!(top_beside(row_at(200.), window(400., 0.)), None);
+    }
+
+    #[test]
+    fn a_client_drawn_frame_is_left_out_of_the_room() {
+        assert_eq!(top_beside(row_at(100.), window(800., 20.)), Some(px(128.)));
+        assert_eq!(top_beside(row_at(440.), window(800., 20.)), Some(px(92.)));
     }
 }

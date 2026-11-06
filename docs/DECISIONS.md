@@ -1680,7 +1680,7 @@ Decided with the maintainer on 2026-11-06. A dialog's title sat as close to its 
 Decided with the maintainer on 2026-11-06. It amends D87.1, which hung every dialog from a fixed space at the top of the window: a question about a row near the top covered the row it asked about.
 
 1. Remove and Cancel, asked from a row's menu, the selection bar, Delete or the command palette, open beside the cursor's row when it is one of the downloads asked about and was drawn: under it when the question fits there, else above it, and at D87.1's place when neither fits (`ui::dialog::open_beside`). A question asked from Details or a download window, which covers no row, keeps D87.1's place.
-2. The row's place is read when the question opens, so a right-click that moved the cursor has drawn the row there first.
+2. The row's place is where it was drawn last, read when the question opens, so a right-click that moved the cursor has drawn the row there first. It is forgotten ahead of the rows in every frame, so a row scrolled out of view has no place and its question keeps D87.1's. The question is given 320 px, room for the tallest Remove question, and its place counts from inside the window frame a Linux desktop without its own title bars has the app draw.
 3. The Cancel question's button takes the danger colour only when a download has a part downloaded, as D272.1 says of Remove; otherwise it is the plain primary button, which Enter also answers (D260.3).
 4. The Remove question speaks of partial files only for downloads that have one: "It stops, and the part already downloaded is deleted." for one, "1 of them has a partial file, which is deleted." among several, and nothing for downloads with nothing downloaded.
 
