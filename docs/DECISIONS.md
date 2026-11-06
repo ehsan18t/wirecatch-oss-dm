@@ -1539,6 +1539,6 @@ Decided with the maintainer on 2026-11-06. It changes D115.1, which left a runni
 
 Decided with the maintainer on 2026-11-06. The button sat inside a video's top right corner, measured from the video element's own box; a player that sizes its video larger than itself and hides the rest (YouTube before playback) put it up by the page header.
 
-1. The button sits on the visible video's top right corner, outside it: its bottom on the video's top edge, 8 pixels in from the video's right edge, its bottom corners square, so it reads as a tab of the player, as Internet Download Manager places its panel.
+1. The button sits on the visible video's top right corner, outside it: its bottom on the video's top edge, 12 pixels in from the video's right edge, clear of a player's rounded corner, its bottom corners square, so it reads as a tab of the player, as Internet Download Manager places its panel.
 2. "Visible" is the video's box cut by every ancestor that hides what overflows it, and below any fixed or sticky bar of the page that covers its top (tested along its right edge).
 3. With no room above, or with a fixed bar over the video's top, it sits inside the corner as before, below the bar.

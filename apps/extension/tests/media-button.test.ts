@@ -23,7 +23,7 @@ describe('placeButton', () => {
   it('puts the button on top of a video, touching its top edge, right-aligned with it', () => {
     expect(
       placeButton(box(100, 50, 640, 360), { audio: false, controls: true }, VIEWPORT, SIZE),
-    ).toEqual({ top: 18, left: 620, attached: true });
+    ).toEqual({ top: 18, left: 616, attached: true });
   });
 
   it('puts the button inside the top right corner when there is no room above the video', () => {
@@ -67,7 +67,7 @@ describe('placeButton', () => {
     ).toBeNull();
     expect(
       placeButton(box(600, 100, 800, 400), { audio: false, controls: false }, VIEWPORT, SIZE),
-    ).toEqual({ top: 68, left: 904, attached: true });
+    ).toEqual({ top: 68, left: 900, attached: true });
   });
 });
 
@@ -182,7 +182,7 @@ describe('MediaButton', () => {
     expect(b.host.parentNode).toBe(document.documentElement);
     expect(b.host.shadowRoot).toBeNull();
     expect(b.host.style.getPropertyValue('top')).toBe('18px');
-    expect(b.host.style.getPropertyValue('left')).toBe('620px');
+    expect(b.host.style.getPropertyValue('left')).toBe('616px');
   });
 
   // Scrolled under a page's fixed header, the video's top corner was behind the header, and the button sat on the header's search field.
@@ -225,7 +225,7 @@ describe('MediaButton', () => {
     await settle();
     expect(b.state).toBe('shown');
     expect(b.host.style.getPropertyValue('top')).toBe('48px');
-    expect(b.host.style.getPropertyValue('left')).toBe('620px');
+    expect(b.host.style.getPropertyValue('left')).toBe('616px');
   });
 
   it('stays hidden where nothing downloadable was detected, and asks again a little later', async () => {
