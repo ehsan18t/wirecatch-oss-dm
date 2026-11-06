@@ -387,6 +387,7 @@ impl QueueForm {
             }
         };
         let id = self.original.as_ref().map(|queue| queue.id);
+        let name = settings.name.clone();
         self.stage = Stage::Saving;
         self.problem = None;
         cx.notify();
@@ -409,7 +410,7 @@ impl QueueForm {
                         crate::closing::may_have_closed(main.update(cx, |main, cx| {
                             // The person may have left the page while it saved.
                             if main.queue_page.as_ref().map(Entity::entity_id) == Some(shown) {
-                                main.leave_queue_page(saved, window, cx);
+                                main.leave_queue_page(saved, &name, window, cx);
                             }
                         }));
                     }

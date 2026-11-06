@@ -102,7 +102,7 @@ impl NewQueue {
         self.problem = None;
         cx.notify();
         let created = Backend::run(cx, move |manager| async move {
-            api::create_queue(&manager, settings).map(|queue| queue.id)
+            api::create_queue(&manager, settings).map(|queue| (queue.id, queue.settings.name))
         });
         let main = self.main.clone();
         cx.spawn_in(window, async move |form, cx| {
@@ -112,11 +112,11 @@ impl NewQueue {
             may_have_closed(form.update_in(cx, |form, window, cx| {
                 form.saving = false;
                 match outcome {
-                    Ok(id) => {
+                    Ok((id, name)) => {
                         window.close_dialog(cx);
-                        may_have_closed(
-                            main.update(cx, |main, cx| main.leave_queue_page(id, window, cx)),
-                        );
+                        may_have_closed(main.update(cx, |main, cx| {
+                            main.leave_queue_page(id, &name, window, cx);
+                        }));
                     }
                     Err(problem) => {
                         form.problem = Some(problem);

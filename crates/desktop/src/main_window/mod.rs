@@ -548,16 +548,22 @@ impl MainWindow {
         self.page.drawer = false;
         self.queue_page = None;
         self.clear_selection();
-        let placeholder = match view {
-            View::All => ALL_PLACEHOLDER.to_owned(),
-            View::Group(_) | View::Queue(_) => {
-                format!("Search in {} or paste links", self.title(cx))
-            }
-        };
+        let title = self.title(cx);
+        self.name_search(view, &title, window, cx);
+        cx.notify();
+    }
+
+    fn name_search(
+        &mut self,
+        view: View,
+        title: &str,
+        window: &mut Window,
+        cx: &mut Context<'_, Self>,
+    ) {
+        let placeholder = search_placeholder(view, title);
         self.search.update(cx, |search, cx| {
             search.set_placeholder(placeholder, window, cx);
         });
-        cx.notify();
     }
 
     pub(super) fn open_screen(
@@ -735,9 +741,17 @@ impl MainWindow {
         self.show(self.view, window, cx);
     }
 
-    /// Queue `id` was saved: its downloads show.
-    fn leave_queue_page(&mut self, id: QueueId, window: &mut Window, cx: &mut Context<'_, Self>) {
+    /// Queue `id` was saved as `name`: its downloads show.
+    fn leave_queue_page(
+        &mut self,
+        id: QueueId,
+        name: &str,
+        window: &mut Window,
+        cx: &mut Context<'_, Self>,
+    ) {
         self.show_now(View::Queue(id), window, cx);
+        // The library may not hold the new queue or its new name yet.
+        self.name_search(View::Queue(id), name, window, cx);
     }
 
     /// Asks before deleting queue `id`, its name typed to confirm.
@@ -812,6 +826,14 @@ impl MainWindow {
                 |queue| queue.settings.name.clone().into(),
             ),
         }
+    }
+}
+
+/// The search's placeholder in `view`, whose title is `title`.
+fn search_placeholder(view: View, title: &str) -> String {
+    match view {
+        View::All => ALL_PLACEHOLDER.to_owned(),
+        View::Group(_) | View::Queue(_) => format!("Search in {title} or paste links"),
     }
 }
 
@@ -912,6 +934,15 @@ impl Render for MainWindow {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_search_names_the_queue_it_was_given() {
+        assert_eq!(
+            search_placeholder(View::Queue(QueueId(7)), "Videos"),
+            "Search in Videos or paste links"
+        );
+        assert_eq!(search_placeholder(View::All, "Videos"), ALL_PLACEHOLDER);
+    }
 
     #[test]
     fn opening_a_page_closes_the_drawer() {
