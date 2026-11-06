@@ -212,12 +212,13 @@ const MIGRATIONS: &[&str] = &[
             SELECT at, rule, CASE
                 WHEN folder = base THEN ''
                 WHEN substr(folder, 1, length(base) + 1) = base || '/'
-                    THEN substr(folder, length(base) + 2)
+                    THEN ltrim(substr(folder, length(base) + 2), '/\')
             END AS tail
             FROM rules
         )
         SELECT json_group_array(json(CASE
-            WHEN tail IS NOT NULL AND substr(tail, 1, 1) <> '.' AND instr(tail, '/.') = 0
+            WHEN tail IS NOT NULL AND substr(tail, 1, 1) <> '.'
+                AND instr(tail, '/.') = 0 AND instr(tail, '\.') = 0
                 THEN json_set(rule, '$.folder', tail)
             ELSE rule
         END) ORDER BY at)
@@ -3337,6 +3338,8 @@ mod tests {
             (1, "{Downloads}"),
             (2, "{Downloads}/.hidden"),
             (3, "C:/Docs"),
+            (4, "{Downloads}//Programs"),
+            (5, r"{Downloads}/Images\.hidden"),
         ] {
             conn.execute(
                 "UPDATE settings SET value = json_set(value, ?1, ?2) WHERE key = 'app'",
@@ -3360,7 +3363,7 @@ mod tests {
                 "{Downloads}/.hidden",
                 "C:/Docs",
                 "Programs",
-                "Images"
+                r"{Downloads}/Images\.hidden"
             ]
         );
         let categories: Vec<_> = settings.categories.iter().map(|r| r.category).collect();
