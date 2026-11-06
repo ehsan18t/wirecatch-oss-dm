@@ -1715,3 +1715,12 @@ Decided with the maintainer on 2026-11-07. It amends D114.4, where the engine re
 2. A running download then waits with `WaitReason::Reconnecting`, and its speed and time left are empty. The list, the download window and the details read "Reconnecting (try 3 of 6)", and the details say in full that the download keeps what it has.
 3. "Waiting for the server" stays for three seconds with no new bytes while no connection has failed. A video's file parts report reconnecting only while no other part receives data.
 4. The first request of a download is not covered: until the server has answered, the download reads "Connecting".
+
+### D263. Technical settings fold under Advanced
+
+Decided with the maintainer on 2026-11-06. It amends D85.1 and D169: a few settings asked a person to know terms such as the Public Suffix List or which proxies carry FTP, in among the settings most people look for.
+
+1. A page with such settings ends with an Advanced group: one row, "Advanced" with a chevron, that shows or hides them. They start hidden, and stay as the person left them on each page while the app runs. Search finds the row by the hidden settings' words.
+2. General: the site list's updates, "Update the site list automatically" with the list's state and Check now, move from Updates to Advanced (D169.1's place). The setting and its behaviour are unchanged.
+3. Network: "FTP links skip the proxy" moves from Proxy to Advanced.
+4. The start and finish settings stay where D262 puts them; none of them is folded.
