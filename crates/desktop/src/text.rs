@@ -769,6 +769,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn an_auto_queue_names_its_first_rule_and_counts_the_rest() {
+        use wirecatch_protocol::rules::QueueRules;
+        let rules = |enabled| {
+            AddDownloads::Auto(QueueRules {
+                enabled,
+                sites: vec!["youtube.com".into(), "vimeo.com".into()],
+                file_types: vec!["iso".into()],
+                ..QueueRules::default()
+            })
+        };
+        assert_eq!(
+            rules_fact(&rules(true)).as_deref(),
+            Some("Adds youtube.com and 2 more")
+        );
+        assert_eq!(rules_fact(&rules(false)).as_deref(), Some("Rules off"));
+        assert_eq!(rules_fact(&AddDownloads::Manual), None);
+    }
+
+    #[test]
     fn files_the_trash_refused_are_counted_once_there_are_any() {
         assert_eq!(left_in_place(0), None);
         assert_eq!(

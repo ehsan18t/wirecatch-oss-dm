@@ -153,7 +153,7 @@ impl RulesForm {
         let file_types = tags(FILE_TYPES, &rules.file_types, window, cx);
         let me = cx.entity().downgrade();
         let drafted: Drafted = Rc::new(move |cx| me.upgrade().map(|form| form.read(cx).draft(cx)));
-        let trial = cx.new(|cx| LinkTrial::new(library.clone(), Some(drafted), window, cx));
+        let trial = cx.new(|cx| LinkTrial::new(library.clone(), drafted, window, cx));
         let mut rows: Vec<Kind> = [
             (Kind::Sites, !rules.sites.is_empty()),
             (Kind::FileNames, !rules.file_names.is_empty()),
@@ -347,23 +347,21 @@ impl Render for RulesForm {
         v_flex()
             .gap_4()
             .child(card)
-            .when(self.on && has_rules(&rules), |page| {
-                page.child(
-                    panel(cx).child(
-                        v_flex()
-                            .px_4()
-                            .py_3()
-                            .gap_2()
-                            .child(div().text_role(Role::Strong, cx).child("Test a link"))
-                            .child(
-                                div()
-                                    .text_role(Role::Meta, cx)
-                                    .child("See which queue a link goes to, and why."),
-                            )
-                            .child(self.trial.clone()),
-                    ),
-                )
-            })
+            .child(
+                panel(cx).child(
+                    v_flex()
+                        .px_4()
+                        .py_3()
+                        .gap_2()
+                        .child(div().text_role(Role::Strong, cx).child("Test a link"))
+                        .child(
+                            div()
+                                .text_role(Role::Meta, cx)
+                                .child("See which queue a link goes to, and why."),
+                        )
+                        .child(self.trial.clone()),
+                ),
+            )
             .child(ties(cx))
     }
 }
