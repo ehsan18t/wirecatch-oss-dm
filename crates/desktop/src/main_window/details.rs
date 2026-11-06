@@ -13,8 +13,8 @@ use gpui_kit::component::{
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, AppContext as _, ClipboardItem, Context, Entity, InteractiveElement as _,
-    IntoElement, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _,
-    Styled as _, Subscription, Window, div, px,
+    IntoElement, ParentElement as _, Render, StatefulInteractiveElement as _, Styled as _,
+    Subscription, Window, div, px,
 };
 use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, FixAction, PER_MILLE_DONE};
 use wirecatch_protocol::{DownloadId, QueueId};
@@ -27,7 +27,7 @@ use crate::backend::act;
 use crate::library::Library;
 use crate::ui::layout::{self, Rule};
 use crate::ui::speed_graph::{SpeedHistory, speed_graph};
-use crate::ui::{Callout, Role, Typed as _, tokens};
+use crate::ui::{Callout, PathText, Role, Typed as _, tokens};
 use crate::{files, text};
 
 const WIDTH: f32 = 600.;
@@ -389,7 +389,9 @@ fn places(
         .child(place(
             IconName::FolderOpen,
             "Saved to",
-            row.path.clone(),
+            PathText::new(row.path.clone())
+                .tooltip("details-saved-to")
+                .into_any_element(),
             (row.status != DownloadStatus::Completed).then(|| {
                 Button::new("details-change-folder")
                     .xsmall()
@@ -405,7 +407,7 @@ fn places(
         .child(place(
             IconName::Globe,
             "From",
-            link,
+            div().truncate().child(link).into_any_element(),
             Some(
                 Button::new("details-copy-link")
                     .xsmall()
@@ -444,7 +446,7 @@ fn places(
 fn place(
     icon: IconName,
     label: &'static str,
-    value: String,
+    value: AnyElement,
     action: Option<AnyElement>,
     cx: &App,
 ) -> impl IntoElement {
@@ -454,10 +456,7 @@ fn place(
             .gap_1p5()
             .child(Icon::new(icon).with_size(tokens::ICON_SMALL))
             .child(label),
-        div()
-            .text_role(Role::Strong, cx)
-            .truncate()
-            .child(SharedString::from(value)),
+        div().min_w_0().text_role(Role::Strong, cx).child(value),
         cx,
     )
     .py_2()

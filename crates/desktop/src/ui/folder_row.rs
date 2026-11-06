@@ -9,6 +9,8 @@ use gpui_kit::{
     Window, div,
 };
 
+use super::PathText;
+
 type Clicked = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
 #[derive(IntoElement)]
@@ -46,13 +48,12 @@ impl RenderOnce for FolderRow {
                 div()
                     .flex_1()
                     .min_w_0()
-                    .truncate()
                     .text_color(if picked {
                         theme.foreground
                     } else {
                         theme.muted_foreground
                     })
-                    .child(self.picked.unwrap_or(self.fallback)),
+                    .child(PathText::new(self.picked.unwrap_or(self.fallback)).tooltip("folder")),
             )
             .when(picked, |row| {
                 row.child(

@@ -1550,3 +1550,10 @@ Decided on 2026-11-06. Clicking Change again while a folder chooser was open cou
 1. The app opens at most one system file or folder chooser at a time, across every window (`files::chooser_turn`). Asking for another while one is open does nothing; once it closes, by a choice, a cancel or a failure, the next one can open.
 2. GPUI makes the window that is active when the chooser is asked for its owner, so the chooser is modal to it and Windows disables that window while it is open. A request made while no window of the app is active (input sent to a window in the background, or a second request while the first chooser holds the focus) gets no owner and blocks nothing, so the app keeps the count itself rather than rely on the owner.
 3. It holds on Linux as on Windows: the portal's answer, or its failure, ends the turn the same way.
+
+### D239. A path is cut in the middle
+
+Decided with the maintainer on 2026-11-06. Paths were cut at their end, so the part that tells two folders apart (the last folder, or the file name) was the part hidden.
+
+1. Every path the desktop app shows goes through `ui::PathText`: on one line, cut before its last part when it does not fit (`C:\Users\someone\Ap…\Video`), so the last folder or file name stays in view. The last part is cut in its own middle only when it alone does not fit, which keeps a file name's extension.
+2. The whole path shows on hover, in the piece's own tooltip or in the one of the control it sits in.

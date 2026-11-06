@@ -17,7 +17,7 @@ use wirecatch_protocol::app::{
 use super::{Typing, change, choice, current, list_field};
 use crate::backend::Backend;
 use crate::library::Library;
-use crate::ui::{Role, Typed as _, tooltip};
+use crate::ui::{PathText, Role, Typed as _, tooltip};
 use crate::{files, text};
 
 const WHEN_FILE_EXISTS: &[(WhenFileExists, &str)] = &[
@@ -116,10 +116,9 @@ fn download_folder(library: &Entity<Library>, cx: &App) -> AnyElement {
                 .border_1()
                 .border_color(theme.border)
                 .rounded(theme.radius)
-                .truncate()
                 .text_role(Role::Body, cx)
                 .tooltip(tooltip::plain(folder.clone()))
-                .child(folder),
+                .child(PathText::new(folder)),
         )
         .child(
             Button::new("change-download-folder")
@@ -147,7 +146,7 @@ fn download_folder(library: &Entity<Library>, cx: &App) -> AnyElement {
         .into_any_element()
 }
 
-/// Where a type of file goes, whole in a tooltip since long paths are cut off.
+/// Where a type of file goes.
 fn type_folder_path(index: usize, rule: Option<&CategoryRule>, cx: &App) -> AnyElement {
     let folder = rule.map_or_else(
         || "Download folder".to_owned(),
@@ -164,10 +163,9 @@ fn type_folder_path(index: usize, rule: Option<&CategoryRule>, cx: &App) -> AnyE
             index as u64,
         ))
         .w(px(FOLDER_WIDTH))
-        .truncate()
         .text_role(tone, cx)
         .tooltip(tooltip::plain(folder.clone()))
-        .child(folder)
+        .child(PathText::new(folder))
         .into_any_element()
 }
 
