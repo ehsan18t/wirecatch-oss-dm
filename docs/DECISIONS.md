@@ -1715,3 +1715,12 @@ Decided with the maintainer on 2026-11-07. It amends D114.4, where the engine re
 2. A running download then waits with `WaitReason::Reconnecting`, and its speed and time left are empty. The list, the download window and the details read "Reconnecting (try 3 of 6)", and the details say in full that the download keeps what it has.
 3. "Waiting for the server" stays for three seconds with no new bytes while no connection has failed. A video's file parts report reconnecting only while no other part receives data.
 4. The first request of a download is not covered: until the server has answered, the download reads "Connecting".
+
+### D262. What happens when downloads start and finish is one page
+
+Decided with the maintainer on 2026-11-06. It amends D85.1, D85.4, D50.1 and D259.2: the choices about what happens as a download starts and ends sat on three pages (Browser, Media and Notifications), so a person had to know which page held each.
+
+1. The Notifications page becomes "When downloads start and finish", in the same place among the pages. It holds every setting it held before and gathers the start and finish settings of Browser and Media, none removed, merged or folded away.
+2. Starting, in the order they happen: Ask before each download, Ask before each video, Show progress while downloading, When a download starts, and how long its notice stays. Finishing: When a download finishes, how long its notice stays, and Show notifications during Do Not Disturb.
+3. Browser keeps Capture and What is caught; its Download window group is gone (D85.4). Media keeps Remember these choices with the other video settings; Ask before each video moves here (D50.1), dimmed while the media add-on does not work as D259.1 dims the video settings, with a line saying it is used once the add-on is installed. D259.2's order no longer applies: the two switches are on different pages.
+4. No setting key changes, so saved settings and export files read as before.

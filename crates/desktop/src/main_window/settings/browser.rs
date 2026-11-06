@@ -1,5 +1,5 @@
-//! Browser: what the extension catches and how a caught download is asked about. The
-//! extension's popup changes these same settings.
+//! Browser: what the extension catches and where it goes. The extension's popup changes these
+//! same settings. Asking about a caught download sits with the start and finish settings.
 
 use gpui_kit::component::setting::{
     NumberFieldOptions, SettingField, SettingGroup, SettingItem, SettingPage,
@@ -17,11 +17,7 @@ use crate::library::Library;
 pub(super) fn page(library: &Entity<Library>, cx: &App) -> SettingPage {
     SettingPage::new(super::Page::Browser.title())
         .resettable(false)
-        .groups([
-            capture(library),
-            what_is_caught(library, cx),
-            download_window(library),
-        ])
+        .groups([capture(library), what_is_caught(library, cx)])
 }
 
 fn extension(patch: ExtensionSettingsPatch) -> AppSettingsPatch {
@@ -125,33 +121,38 @@ fn what_is_caught(library: &Entity<Library>, cx: &App) -> SettingGroup {
         )
 }
 
-fn download_window(library: &Entity<Library>) -> SettingGroup {
-    SettingGroup::new()
-        .title("Download window")
-        .item(
-            SettingItem::new(
-                "Ask before each download",
-                switch(library, |s| s.extension.ask_before_download, |on| {
-                    extension(ExtensionSettingsPatch {
-                        ask_before_download: Some(on),
-                        ..ExtensionSettingsPatch::default()
-                    })
-                }),
-            )
-            .description("Rename the file, pick its folder and queue, or save it for later. Videos follow Settings, Media.")
-            .keywords(["ask", "confirm", "prompt", "dialog"]),
-        )
-        .item(
-            SettingItem::new(
-                "Show progress while downloading",
-                switch(library, |s| s.show_progress_windows, |on| AppSettingsPatch {
-                    show_progress_windows: Some(on),
-                    ..AppSettingsPatch::default()
-                }),
-            )
-            .description("After you click Download, a window stays open and shows how the download is going.")
-            .keywords(["progress", "window", "popup"]),
-        )
+/// "Ask before each download" for browser downloads, for the start and finish page (D262).
+pub(super) fn ask_each_download(library: &Entity<Library>) -> SettingItem {
+    SettingItem::new(
+        "Ask before each download",
+        switch(library, |s| s.extension.ask_before_download, |on| {
+            extension(ExtensionSettingsPatch {
+                ask_before_download: Some(on),
+                ..ExtensionSettingsPatch::default()
+            })
+        }),
+    )
+    .description("Rename the file, pick its folder and queue, or save it for later. Videos follow Ask before each video.")
+    .keywords(["ask", "confirm", "prompt", "dialog", "browser"])
+}
+
+/// "Show progress while downloading", for the start and finish page (D262).
+pub(super) fn show_progress(library: &Entity<Library>) -> SettingItem {
+    SettingItem::new(
+        "Show progress while downloading",
+        switch(
+            library,
+            |s| s.show_progress_windows,
+            |on| AppSettingsPatch {
+                show_progress_windows: Some(on),
+                ..AppSettingsPatch::default()
+            },
+        ),
+    )
+    .description(
+        "After you click Download, a window stays open and shows how the download is going.",
+    )
+    .keywords(["progress", "window", "popup"])
 }
 
 /// A list setting of the extension.

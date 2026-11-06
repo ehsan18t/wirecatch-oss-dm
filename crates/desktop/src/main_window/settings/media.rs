@@ -1,6 +1,6 @@
-//! Media: whether a video asks for a quality or downloads at once with the saved choices (D50),
-//! whether a pick in the quality window is kept (D200), the resolution and what to do when a
-//! video lacks it, and what videos and audio alone are saved as, each with its own choices.
+//! Media: the media add-on, whether a pick in the quality window is kept (D200), the resolution
+//! and what to do when a video lacks it, and what videos and audio alone are saved as. Whether
+//! a video asks first sits with the other start and finish settings (D262).
 
 use gpui_kit::component::combobox::{Combobox, ComboboxEvent, ComboboxState};
 use gpui_kit::component::searchable_list::{SearchableListItem, SearchableVec};
@@ -154,42 +154,27 @@ fn quality_field(library: &Entity<Library>, cx: &App) -> SettingField<SharedStri
     )
 }
 
-/// A switch about the quality window.
-struct WindowSwitch {
-    title: &'static str,
-    description: &'static str,
-    keywords: &'static [&'static str],
-    read: fn(&AppSettings) -> bool,
-    patch: fn(bool) -> AppSettingsPatch,
-}
-
-/// Asking first: whether the quality window opens decides what remembering its picks means.
-const QUALITY_WINDOW: [WindowSwitch; 2] = [
-    WindowSwitch {
-        title: ASK_EACH_VIDEO,
-        description: "Opens the quality window for each video. Off, videos start at once with the settings below.",
-        keywords: &["ask", "quality window", "prompt"],
-        read: |s| s.media.ask_each_time,
-        patch: |on| {
+/// "Ask before each video", for the page about what happens when downloads start (D262).
+/// Dimmed like the other video settings while the media add-on does not work (D259.1).
+pub(super) fn ask_each_video(library: &Entity<Library>, cx: &App) -> SettingItem {
+    let ready = addon_ready(&library.read(cx).addons);
+    SettingItem::new(
+        ASK_EACH_VIDEO,
+        switch(library, |s| s.media.ask_each_time, |on| {
             media(MediaDefaultsPatch {
                 ask_each_time: Some(on),
                 ..MediaDefaultsPatch::default()
             })
-        },
-    },
-    WindowSwitch {
-        title: REMEMBER_CHOICES,
-        description: "Saves your quality window picks as the settings below. Off, they apply to that video only.",
-        keywords: &["remember", "save", "last", "quality window"],
-        read: |s| s.media.remember_choices,
-        patch: |on| {
-            media(MediaDefaultsPatch {
-                remember_choices: Some(on),
-                ..MediaDefaultsPatch::default()
-            })
-        },
-    },
-];
+        }),
+    )
+    .description(if ready {
+        "Opens the quality window for each video, to pick its quality and format. Off, videos start at once with the choices in Settings, Media."
+    } else {
+        "Used once the media add-on is installed, from Settings, Media."
+    })
+    .disabled(!ready)
+    .keywords(["ask", "quality window", "prompt", "video"])
+}
 
 fn video(library: &Entity<Library>, cx: &App) -> Vec<SettingItem> {
     let by_height = current(
@@ -198,19 +183,22 @@ fn video(library: &Entity<Library>, cx: &App) -> Vec<SettingItem> {
         |s| matches!(s.media.quality, VideoQuality::Height(_)),
         false,
     );
-    let mut items: Vec<SettingItem> = QUALITY_WINDOW
-        .iter()
-        .map(|it| {
-            SettingItem::new(it.title, switch(library, it.read, it.patch))
-                .description(it.description)
-                .keywords(it.keywords.iter().copied())
-        })
-        .collect();
-    items.push(
+    let mut items = vec![
+        SettingItem::new(
+            REMEMBER_CHOICES,
+            switch(library, |s| s.media.remember_choices, |on| {
+                media(MediaDefaultsPatch {
+                    remember_choices: Some(on),
+                    ..MediaDefaultsPatch::default()
+                })
+            }),
+        )
+        .description("Saves your quality window picks as the settings below. Off, they apply to that video only.")
+        .keywords(["remember", "save", "last", "quality window"]),
         SettingItem::new("Resolution", quality_field(library, cx))
             .description(format!("Used when {} doesn't ask, and chosen first in the quality window. Audio-only downloads use the audio settings.", host::CHANNEL.name()))
             .keywords(["quality", "1080p", "4k", "720p", "best"]),
-    );
+    ];
     if by_height {
         items.push(fallback(library));
     }
@@ -748,12 +736,6 @@ mod tests {
         assert!(addon_ready(&[]));
         assert!(addon_ready(&[media(true)]));
         assert!(!addon_ready(&[media(false)]));
-    }
-
-    #[test]
-    fn asking_comes_before_remembering() {
-        let titles = QUALITY_WINDOW.map(|it| it.title);
-        assert_eq!(titles, [ASK_EACH_VIDEO, REMEMBER_CHOICES]);
     }
 
     #[test]
