@@ -174,10 +174,13 @@ impl Laid {
 
     /// The heading to pin over the list whose top is `top`: the one its top line sits under, once
     /// that heading's text, `text_from` down its own line, has begun to scroll away, so the pinned
-    /// copy always covers it.
+    /// copy always covers it. Until then the heading before stays pinned, being pushed away.
     pub fn pinned(&self, top: ListOffset, text_from: Pixels) -> Option<usize> {
-        self.heading_over(top.item_ix)
-            .filter(|heading| *heading < top.item_ix || top.offset_in_item >= text_from)
+        let heading = self.heading_over(top.item_ix)?;
+        if heading < top.item_ix || top.offset_in_item >= text_from {
+            return Some(heading);
+        }
+        self.heading_over(heading.checked_sub(1)?)
     }
 
     /// What the day heading on `line` tells.
@@ -437,6 +440,7 @@ mod tests {
         let downloads = [
             row(1, 1, DownloadStatus::Downloading),
             row(2, 1, DownloadStatus::Downloading),
+            row(3, 1, DownloadStatus::Paused),
         ];
         let shown = laid(asked(View::All, "", &[]), &downloads);
         let at = |item_ix, offset| ListOffset {
@@ -448,6 +452,9 @@ mod tests {
         assert_eq!(shown.pinned(at(0, 11.), text_from), None);
         assert_eq!(shown.pinned(at(0, 12.), text_from), Some(0));
         assert_eq!(shown.pinned(at(1, 0.), text_from), Some(0));
+        assert_eq!(shown.pinned(at(3, 0.), text_from), Some(0));
+        assert_eq!(shown.pinned(at(3, 11.), text_from), Some(0));
+        assert_eq!(shown.pinned(at(3, 12.), text_from), Some(3));
     }
 
     #[test]
