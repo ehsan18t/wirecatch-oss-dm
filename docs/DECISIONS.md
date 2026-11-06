@@ -1574,3 +1574,12 @@ Decided with the maintainer on 2026-11-06. A queue's name is one someone made up
 1. A queue's name inside running text of the desktop app is drawn in the accent colour at medium weight, through `ui::Sentence`, which marks each name it is given. A label or note of a `Field` may be such a sentence.
 2. Menu items, tooltips and window titles keep plain text: they are short and say one thing.
 3. A settings row's description stays plain text ("1 queue uses its own value: Videos."): gpui-component's `SettingItem::description` takes a string or Markdown, which cannot colour a name.
+
+### D244. A download's row has two lines
+
+Decided with the maintainer on 2026-11-06. It changes D115.1 and D115.2, where the link and the whole save folder each took a line of their own under the name, so a window showed about a third of the rows a download manager does.
+
+1. A row is its name over one line: what matters for its state (a failure's first sentence, a running download's speed and size, a paused one's size, a word for one that waits), then the link's host, with its path once the download is over, then the folder's last name as a chip. Hovering the link or the chip shows it whole.
+2. The time column says what the heading does not: a running download's time left, Paused, a place in a queue's line, or when the download finished or was added, to the second. A waiting row outside a queue's page leaves it empty.
+3. Work under way or paused draws its bar under the row's text.
+4. The View menu still keeps the link and the folder on the second line; with neither, a row is the one compact line it was.
