@@ -9,14 +9,12 @@ use chrono::NaiveDate;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::menu::ContextMenuExt as _;
 use gpui_kit::component::tooltip::Tooltip;
-use gpui_kit::component::{
-    ActiveTheme as _, Icon, IconName, Sizable as _, WindowExt as _, h_flex, v_flex,
-};
+use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, ClipboardItem, Context, ElementId, Hsla, InteractiveElement as _, IntoElement,
-    ListAlignment, ListState, MouseButton, ParentElement as _, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Window, canvas, div, list, px, relative,
+    AnyElement, App, Context, ElementId, Hsla, InteractiveElement as _, IntoElement, ListAlignment,
+    ListState, MouseButton, ParentElement as _, SharedString, StatefulInteractiveElement as _,
+    Styled as _, Window, canvas, div, list, px, relative,
 };
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{
@@ -31,9 +29,9 @@ use super::laid::{Asked, Day, Laid, Line};
 use super::{Group, MainWindow, View, fixes, row_menu};
 use crate::backend::act;
 use crate::rows::Tally;
+use crate::text;
 use crate::ui::select_circle::{Picked, SelectCircle};
 use crate::ui::{FileTile, Role, Typed as _, icon, tokens, tooltip};
-use crate::{files, text};
 
 /// Space before the circle column and after the figure.
 pub(super) const PAD: f32 = 12.;
@@ -544,12 +542,7 @@ fn time_cell(row: &DownloadSummary, place: Option<usize>, dated: bool, cx: &App)
 
 /// The name over what the row says under it: its state while that matters, then the link and the
 /// folder the View menu keeps, as many lines as the settings give.
-fn text_column(
-    row: &DownloadSummary,
-    shown: ListLines,
-    tone: Hsla,
-    cx: &mut Context<'_, MainWindow>,
-) -> impl IntoElement {
+fn text_column(row: &DownloadSummary, shown: ListLines, tone: Hsla, cx: &App) -> impl IntoElement {
     let danger = cx.theme().danger;
     let failed = row.status == DownloadStatus::Failed;
     let room = usize::from(shown.link) + usize::from(shown.folder);
@@ -631,7 +624,7 @@ fn status_line(row: &DownloadSummary, tone: Hsla, cx: &App) -> Option<AnyElement
     Some(said.into_any_element())
 }
 
-/// The full link, its host brighter; a click copies it, and hovering shows it whole.
+/// The full link, its host brighter; hovering shows it whole.
 fn link_line(row: &DownloadSummary, cx: &App) -> AnyElement {
     let theme = cx.theme();
     let link = row.url.clone();
@@ -645,12 +638,10 @@ fn link_line(row: &DownloadSummary, cx: &App) -> AnyElement {
         format!("{scheme}://")
     };
     let (host, path) = (rest[..host_end].to_owned(), rest[host_end..].to_owned());
-    let copied = link.clone();
     h_flex()
         .id(row_id("link", row.id))
         .max_w_full()
         .overflow_hidden()
-        .cursor_pointer()
         .text_role(Role::Meta, cx)
         .child(div().flex_shrink_0().child(scheme))
         .child(
@@ -660,30 +651,21 @@ fn link_line(row: &DownloadSummary, cx: &App) -> AnyElement {
                 .child(host),
         )
         .child(div().min_w_0().truncate().child(path))
-        .hover(|line| line.text_color(theme.foreground))
-        .tooltip(move |window, cx| whole(link.clone(), "Click to copy the link", window, cx))
-        .on_click(move |_, window, cx| {
-            cx.stop_propagation();
-            cx.write_to_clipboard(ClipboardItem::new_string(copied.clone()));
-            window.push_notification("Link copied.", cx);
-        })
+        .tooltip(move |window, cx| whole(link.clone(), window, cx))
         .into_any_element()
 }
 
-/// The folder the file is saved in; a click opens it, and hovering shows it whole.
-fn folder_line(row: &DownloadSummary, cx: &mut Context<'_, MainWindow>) -> AnyElement {
-    let theme = cx.theme();
-    let id = row.id;
+/// The folder the file is saved in; hovering shows it whole.
+fn folder_line(row: &DownloadSummary, cx: &App) -> AnyElement {
     let folder = std::path::Path::new(&text::folder(&row.path))
         .parent()
         .map_or_else(String::new, |folder| folder.display().to_string());
     let shown = folder.clone();
     h_flex()
-        .id(row_id("folder", id))
+        .id(row_id("folder", row.id))
         .max_w_full()
         .gap_1()
         .overflow_hidden()
-        .cursor_pointer()
         .text_role(Role::Caption, cx)
         .child(
             Icon::new(IconName::Folder)
@@ -691,24 +673,18 @@ fn folder_line(row: &DownloadSummary, cx: &mut Context<'_, MainWindow>) -> AnyEl
                 .flex_shrink_0(),
         )
         .child(div().min_w_0().truncate().child(shown))
-        .hover(|line| line.text_color(theme.foreground))
-        .tooltip(move |window, cx| whole(folder.clone(), "Click to open the folder", window, cx))
-        .on_click(cx.listener(move |_, _, window, cx| {
-            cx.stop_propagation();
-            files::show_in_folder(id, window, cx);
-        }))
+        .tooltip(move |window, cx| whole(folder.clone(), window, cx))
         .into_any_element()
 }
 
-/// A popover with a line's whole text, wrapped, over what a click on it does.
-fn whole(said: String, hint: &'static str, window: &mut Window, cx: &mut App) -> gpui_kit::AnyView {
+/// A popover with a line's whole text, wrapped.
+fn whole(said: String, window: &mut Window, cx: &mut App) -> gpui_kit::AnyView {
     tooltip::unless_in_menu(window, cx, |window, cx| {
         Tooltip::element(move |_, cx| {
-            v_flex()
+            div()
                 .max_w(px(420.))
-                .gap_1()
-                .child(div().text_role(Role::Body, cx).child(said.clone()))
-                .child(div().text_role(Role::Meta, cx).child(hint))
+                .text_role(Role::Body, cx)
+                .child(said.clone())
         })
         .build(window, cx)
     })
@@ -896,6 +872,60 @@ mod tests {
         assert_eq!(label(Group::UpNext, &waiting), Some("Pause all"));
         let running = [row(DownloadStatus::Downloading)];
         assert_eq!(label(Group::Downloading, &running), Some("Pause all"));
+    }
+
+    /// One of a row's lines under its name, inside a row that counts its clicks.
+    struct LineInRow {
+        row: DownloadSummary,
+        line: fn(&DownloadSummary, &App) -> AnyElement,
+        clicks: usize,
+    }
+
+    impl gpui_kit::Render for LineInRow {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
+            v_flex()
+                .id("row")
+                .size_full()
+                .on_click(cx.listener(|this, _, _, _| this.clicks += 1))
+                .child((self.line)(&self.row, cx))
+        }
+    }
+
+    /// How many clicks the row got from a click on `line`, and what the clipboard then holds.
+    fn click_on(
+        line: fn(&DownloadSummary, &App) -> AnyElement,
+        cx: &mut gpui_kit::TestAppContext,
+    ) -> (usize, Option<String>) {
+        use gpui_kit::AppContext as _;
+        cx.update(gpui_kit::component::init);
+        let (window, root) = cx
+            .update(|cx| {
+                gpui_kit::open_window(gpui_kit::WindowOptions::default(), cx, |_, cx| {
+                    cx.new(|_| LineInRow {
+                        row: download(1),
+                        line,
+                        clicks: 0,
+                    })
+                })
+            })
+            .unwrap();
+        let cx = gpui_kit::VisualTestContext::from_window(window, cx).into_mut();
+        cx.run_until_parked();
+        cx.simulate_click(gpui_kit::point(px(4.), px(4.)), gpui_kit::Modifiers::none());
+        let copied = cx.read_from_clipboard().and_then(|copied| copied.text());
+        (root.read_with(cx, |root, _| root.clicks), copied)
+    }
+
+    #[gpui_kit::test]
+    fn a_click_on_the_link_line_selects_the_row_and_copies_nothing(
+        cx: &mut gpui_kit::TestAppContext,
+    ) {
+        assert_eq!(click_on(link_line, cx), (1, None));
+    }
+
+    #[gpui_kit::test]
+    fn a_click_on_the_folder_line_selects_the_row(cx: &mut gpui_kit::TestAppContext) {
+        assert_eq!(click_on(folder_line, cx), (1, None));
     }
 
     #[test]
