@@ -23,7 +23,7 @@ use crate::text;
 use crate::ui::{Field, Role, Typed as _, choice};
 
 /// How the hosts that skip the proxy are typed, in Settings and in a queue's proxy.
-pub(super) const BYPASS_HELP: &str = "One per line. A host covers its subdomains. IP addresses and ranges (10.0.0.0/8) work too, and <local> covers every name without a dot, such as a printer or router at home.";
+pub(super) const BYPASS_HELP: &str = "One per line. A host covers its subdomains. IP addresses and ranges (10.0.0.0/8) work too. Add <local> to reach the devices on your own network directly, such as a printer or router.";
 
 /// One entry of the proxy list: the global proxy, or one of the queue's own.
 #[derive(Clone)]

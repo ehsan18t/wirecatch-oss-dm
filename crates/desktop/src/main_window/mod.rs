@@ -18,8 +18,9 @@ mod order;
 mod palette;
 mod proxy_dialog;
 mod queue_delete;
-mod queue_dialog;
+mod queue_editor;
 mod queue_header;
+mod queue_new;
 mod queue_proxy;
 mod queue_rules;
 mod rail;
@@ -174,6 +175,8 @@ impl Group {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Screen {
     Downloads,
+    /// A queue's own page, where its settings are changed (D255).
+    QueuePage,
     Settings,
     Shortcuts,
     About,
@@ -344,6 +347,8 @@ pub struct MainWindow {
     hovered: Option<DownloadId>,
     scroll: list::Scroll,
     settings_on: settings::OpenOn,
+    /// The queue page's form, while that page is open.
+    queue_page: Option<Entity<queue_editor::QueueForm>>,
     focus: FocusHandle,
     _subscriptions: Vec<Subscription>,
 }
@@ -487,6 +492,7 @@ impl MainWindow {
             hovered: None,
             scroll: list::Scroll::default(),
             settings_on: settings::OpenOn::default(),
+            queue_page: None,
             all_queues: false,
             queue_speeds: HashMap::new(),
             focus,
@@ -521,6 +527,7 @@ impl MainWindow {
         self.view = view;
         self.page.screen = Screen::Downloads;
         self.page.drawer = false;
+        self.queue_page = None;
         self.clear_selection();
         let placeholder = match view {
             View::All => ALL_PLACEHOLDER.to_owned(),
@@ -635,20 +642,54 @@ impl MainWindow {
         ));
     }
 
-    /// Opens the queue editor on `queue`, or on a new queue.
+    /// Opens the page of `queue`, shown in the navigation, or New queue when `None`.
     fn edit_queue(
         &mut self,
         queue: Option<QueueId>,
         window: &mut Window,
         cx: &mut Context<'_, Self>,
     ) {
-        queue_dialog::open(
+        match queue {
+            Some(id) if self.library.read(cx).queue(id).is_some() => {
+                self.show(View::Queue(id), window, cx);
+                self.open_queue_page(queue_editor::Opening::Queue(id), window, cx);
+            }
+            Some(_) => {}
+            None => queue_new::open(cx.entity().downgrade(), window, cx),
+        }
+    }
+
+    /// Shows the queue page, its way back leading to the view shown now.
+    fn open_queue_page(
+        &mut self,
+        opening: queue_editor::Opening,
+        window: &mut Window,
+        cx: &mut Context<'_, Self>,
+    ) {
+        let new = matches!(opening, queue_editor::Opening::New(_));
+        let (library, main, back) = (
             self.library.clone(),
-            queue,
             cx.entity().downgrade(),
-            window,
-            cx,
+            self.title(cx),
         );
+        let form =
+            cx.new(|cx| queue_editor::QueueForm::new(library, opening, back, main, window, cx));
+        if new {
+            queue_editor::QueueForm::focus_name(&form, window, cx);
+        }
+        self.queue_page = Some(form);
+        self.page.open(Screen::QueuePage);
+        cx.notify();
+    }
+
+    /// Back to the downloads from the queue page.
+    fn close_queue_page(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
+        self.show(self.view, window, cx);
+    }
+
+    /// Queue `id` was saved: its downloads show.
+    fn leave_queue_page(&mut self, id: QueueId, window: &mut Window, cx: &mut Context<'_, Self>) {
+        self.show(View::Queue(id), window, cx);
     }
 
     /// Asks before deleting queue `id`, its name typed to confirm.
@@ -795,6 +836,11 @@ impl Render for MainWindow {
                         .children(self.banner_stack(cx))
                         .children(self.queue_header(cx))
                         .child(self.list(cx)),
+                ),
+                Screen::QueuePage => layout::body(
+                    navigation,
+                    div(),
+                    div().flex_1().min_h_0().children(self.queue_page.clone()),
                 ),
                 Screen::Settings => self.settings(cx),
                 Screen::Shortcuts => {

@@ -1,16 +1,15 @@
-//! Making a queue or changing one (D72): its name and description, its own folder (D94), its own
-//! limits, its hours and when it tells of finished downloads. A limit follows the app's until it
-//! is switched on (D72.1). Its rules and its proxy have editors of their own.
+//! A queue's own page in the main window (D255): its settings under tabs, General (name,
+//! description, its own folder, D94), Rules, Limits, Schedule, Network and Notifications. A
+//! limit follows the app's until it is switched on (D72.1). Its rules and its proxy have editors
+//! of their own.
+
+mod tabs;
 
 use chrono::{NaiveTime, Timelike as _};
-use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::input::{Input, InputEvent, InputState, NumberInput};
-use gpui_kit::component::time_field::{TimeField, TimeFieldState};
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, WindowExt as _, h_flex, v_flex};
-use gpui_kit::prelude::FluentBuilder as _;
+use gpui_kit::component::input::{InputEvent, InputState};
+use gpui_kit::component::time_field::TimeFieldState;
 use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, Div, Entity, IntoElement, ParentElement as _,
-    Render, Styled as _, Subscription, WeakEntity, Window, div, px,
+    App, AppContext as _, Context, Entity, SharedString, Subscription, WeakEntity, Window,
 };
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{
@@ -19,16 +18,13 @@ use wirecatch_protocol::app::{
 };
 use wirecatch_shell::api;
 
+use super::MainWindow;
 use super::queue_proxy::ProxyForm;
 use super::queue_rules::RulesForm;
-use super::{MainWindow, View};
 use crate::backend::{Backend, said};
 use crate::library::Library;
-use crate::ui::switch_row::group;
-use crate::ui::{Field, FolderRow, Role, SwitchRow, Typed as _, choice};
 use crate::{files, text};
 
-const WIDTH: f32 = 600.;
 /// What a speed limit switched on starts at when the app has none.
 const FIRST_SPEED_LIMIT: u64 = 2 * Unit::Mb.bytes();
 /// A schedule switched on starts as one night.
@@ -90,92 +86,57 @@ enum Stage {
     Saving,
 }
 
-/// Opens the queue editor on `queue`, or on a new queue when `None`.
-pub(super) fn open(
-    library: Entity<Library>,
-    queue: Option<QueueId>,
-    main: WeakEntity<MainWindow>,
-    window: &mut Window,
-    cx: &mut App,
-) {
-    let form = cx.new(|cx| QueueForm::new(library, queue, main, window, cx));
-    if queue.is_none() {
-        let name = form.read(cx).name.clone();
-        crate::ui::dialog::focus_after_opening(&name, window, cx);
-    }
-    crate::ui::dialog::open(window, cx, move |dialog, _, cx| {
-        let saving = form.clone();
-        let title = match &form.read(cx).original {
-            Some(queue) => format!("Edit {}", queue.settings.name),
-            None => "New queue".to_owned(),
-        };
-        dialog
-            .title(title)
-            .w(px(WIDTH))
-            .child(form.clone())
-            .on_ok(move |_, window, cx| {
-                saving.update(cx, |form, cx| form.save(window, cx));
-                false
-            })
-            .footer(footer(&form, cx))
-    });
+/// A tab of the page.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum Section {
+    General,
+    Rules,
+    Limits,
+    Schedule,
+    Network,
+    Notifications,
 }
 
-/// Save and Cancel, with Delete queue on the left, which closes the editor for its own question.
-fn footer(form: &Entity<QueueForm>, cx: &App) -> Div {
-    let state = form.read(cx);
-    let (save, delete) = (form.clone(), form.clone());
-    let deletable = state
-        .original
-        .as_ref()
-        .is_some_and(|queue| !queue.is_default);
-    let left = deletable.then(|| {
-        Button::new("ask-delete")
-            .ghost()
-            .text_color(cx.theme().danger)
-            .label("Delete queue")
-            .on_click(move |_, window, cx| delete.update(cx, |form, cx| form.delete(window, cx)))
-    });
-    let buttons = h_flex()
-        .w_full()
-        .gap_2()
-        .items_center()
-        .child(h_flex().flex_1().min_w_0().children(left))
-        .child(
-            Button::new("cancel")
-                .label("Cancel")
-                .on_click(|_, window, cx| window.close_dialog(cx)),
-        )
-        .child(
-            Button::new("save")
-                .primary()
-                .label(if state.original.is_some() {
-                    "Save"
-                } else {
-                    "Create queue"
-                })
-                .loading(state.stage == Stage::Saving)
-                .disabled(state.stage == Stage::Saving)
-                .on_click(move |_, window, cx| save.update(cx, |form, cx| form.save(window, cx))),
-        );
-    // Shown here, not above the form, so it is in sight wherever the form is scrolled.
-    v_flex()
-        .w_full()
-        .gap_2()
-        .children(state.problem.as_ref().map(|problem| {
-            div()
-                .text_role(Role::Secondary, cx)
-                .text_color(cx.theme().danger)
-                .child(problem.clone())
-        }))
-        .child(buttons)
+impl Section {
+    const ALL: [Self; 6] = [
+        Self::General,
+        Self::Rules,
+        Self::Limits,
+        Self::Schedule,
+        Self::Network,
+        Self::Notifications,
+    ];
+
+    const fn label(self) -> &'static str {
+        match self {
+            Self::General => "General",
+            Self::Rules => "Rules",
+            Self::Limits => "Limits",
+            Self::Schedule => "Schedule",
+            Self::Network => "Network",
+            Self::Notifications => "Notifications",
+        }
+    }
+
+    fn index(self) -> usize {
+        Self::ALL
+            .iter()
+            .position(|section| *section == self)
+            .unwrap_or_default()
+    }
 }
+
+/// What the form cannot save, and the tab to show it on.
+type Problem = (Section, String);
 
 pub struct QueueForm {
     library: Entity<Library>,
     main: WeakEntity<MainWindow>,
-    /// The queue as it was when the editor opened; `None` for a new one.
+    /// The queue as it was when the page opened; `None` for a new one.
     original: Option<Queue>,
+    /// What the way back says: the queue, or the view the page was opened from.
+    back: SharedString,
+    section: Section,
     name: Entity<InputState>,
     description: Entity<InputState>,
     folder: Option<String>,
@@ -201,17 +162,41 @@ pub struct QueueForm {
     _subscriptions: Vec<Subscription>,
 }
 
+/// What the page opens on.
+pub(super) enum Opening {
+    /// A queue that exists.
+    Queue(QueueId),
+    /// A queue not made yet, starting from these settings.
+    New(Box<QueueSettings>),
+}
+
+impl Opening {
+    /// The queue as it is, if it exists, and the settings the form starts from.
+    fn read(self, library: &Library) -> (Option<Queue>, QueueSettings) {
+        match self {
+            Self::Queue(id) => {
+                let original = library.queue(id).cloned();
+                let opened = original
+                    .as_ref()
+                    .map_or_else(|| QueueSettings::new(""), |queue| queue.settings.clone());
+                (original, opened)
+            }
+            Self::New(settings) => (None, *settings),
+        }
+    }
+}
+
 impl QueueForm {
-    fn new(
+    pub(super) fn new(
         library: Entity<Library>,
-        queue: Option<QueueId>,
+        opening: Opening,
+        back: SharedString,
         main: WeakEntity<MainWindow>,
         window: &mut Window,
         cx: &mut Context<'_, Self>,
     ) -> Self {
-        let original = queue.and_then(|id| library.read(cx).queue(id).cloned());
-        let opened = original.as_ref().map(|queue| queue.settings.clone());
-        let opened = opened.unwrap_or_else(|| QueueSettings::new(""));
+        let (original, opened) = opening.read(library.read(cx));
+        let queue = original.as_ref().map(|queue| queue.id);
         let app = library.read(cx).settings.clone();
 
         let name =
@@ -248,11 +233,7 @@ impl QueueForm {
             .or(app.as_ref().and_then(|s| s.global_speed_limit))
             .unwrap_or(FIRST_SPEED_LIMIT);
         let unit = Unit::of(limit_bytes);
-        let limit = cx.new(|cx| {
-            let mut state = InputState::new(window, cx).min(0.).step(unit.step());
-            state.set_value(in_unit(limit_bytes, unit), window, cx);
-            state
-        });
+        let limit = limit_field(limit_bytes, unit, window, cx);
         let schedule = opened.schedule.as_ref();
         let start = time_field(schedule.map_or(FIRST_START, |s| s.start), window, cx);
         let stop = time_field(
@@ -285,14 +266,22 @@ impl QueueForm {
             problem: None,
             stage: Stage::Editing,
             original,
+            back,
+            section: Section::General,
             _subscriptions: edited.into(),
         }
     }
 
-    fn read(&self, cx: &App) -> Result<QueueSettings, String> {
+    /// Gives the keyboard to the name of `form`'s queue.
+    pub(super) fn focus_name(form: &Entity<Self>, window: &mut Window, cx: &mut App) {
+        let name = form.read(cx).name.clone();
+        name.update(cx, |name, cx| name.focus(window, cx));
+    }
+
+    fn read(&self, cx: &App) -> Result<QueueSettings, Problem> {
         let name = self.name.read(cx).value().trim().to_owned();
         if name.is_empty() {
-            return Err("Give the queue a name.".to_owned());
+            return Err((Section::General, "Give the queue a name.".to_owned()));
         }
         let mut settings = self
             .original
@@ -307,34 +296,39 @@ impl QueueForm {
         settings.folder = own_if(self.folder.is_some(), || {
             PortablePath(self.folder.clone().unwrap_or_default())
         });
+        let limits = |problem: String| (Section::Limits, problem);
         settings.max_concurrent = if self.is_own(Own::Concurrent) {
             Setting::Own(whole(&self.concurrent, MAX_CONCURRENT_DOWNLOADS, cx).ok_or_else(
-                || format!("Downloads at the same time must be between 1 and {MAX_CONCURRENT_DOWNLOADS}."),
+                || limits(format!("Downloads at the same time must be between 1 and {MAX_CONCURRENT_DOWNLOADS}.")),
             )?)
         } else {
             Setting::Global
         };
-        settings.connections =
-            if self.is_own(Own::Connections) {
-                let most = u32::from(MAX_CONNECTIONS_PER_DOWNLOAD);
-                let typed = whole(&self.connections, most, cx).and_then(|n| u8::try_from(n).ok());
-                Setting::Own(typed.ok_or_else(|| {
-                    format!("Connections per download must be between 1 and {most}.")
-                })?)
-            } else {
-                Setting::Global
-            };
+        settings.connections = if self.is_own(Own::Connections) {
+            let most = u32::from(MAX_CONNECTIONS_PER_DOWNLOAD);
+            let typed = whole(&self.connections, most, cx).and_then(|n| u8::try_from(n).ok());
+            Setting::Own(typed.ok_or_else(|| {
+                limits(format!(
+                    "Connections per download must be between 1 and {most}."
+                ))
+            })?)
+        } else {
+            Setting::Global
+        };
         settings.speed_limit = if self.is_own(Own::Speed) {
             Setting::Own(
                 limit_from(&self.limit.read(cx).value(), self.unit, self.opened_limit).ok_or_else(
-                    || "Enter a speed limit above zero, or turn the limit off.".to_owned(),
+                    || limits("Enter a speed limit above zero, or turn the limit off.".to_owned()),
                 )?,
             )
         } else {
             Setting::Global
         };
         settings.schedule = if self.is_own(Own::Schedule) {
-            Some(self.schedule(cx)?)
+            Some(
+                self.schedule(cx)
+                    .map_err(|problem| (Section::Schedule, problem))?,
+            )
         } else {
             None
         };
@@ -369,7 +363,8 @@ impl QueueForm {
         }
         let settings = match self.read(cx) {
             Ok(settings) => settings,
-            Err(problem) => {
+            Err((section, problem)) => {
+                self.section = section;
                 self.problem = Some(problem);
                 cx.notify();
                 return;
@@ -394,12 +389,9 @@ impl QueueForm {
                 form.stage = Stage::Editing;
                 match outcome {
                     Ok(saved) => {
-                        window.close_dialog(cx);
-                        if id.is_none() {
-                            crate::closing::may_have_closed(main.update(cx, |main, cx| {
-                                main.show(View::Queue(saved), window, cx);
-                            }));
-                        }
+                        crate::closing::may_have_closed(main.update(cx, |main, cx| {
+                            main.leave_queue_page(saved, window, cx);
+                        }));
                     }
                     Err(problem) => {
                         form.problem = Some(problem);
@@ -411,12 +403,19 @@ impl QueueForm {
         .detach();
     }
 
-    /// Closes the editor for the question that deletes the queue.
-    fn delete(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
+    /// Back to the downloads, unsaved changes left behind.
+    fn go_back(&self, window: &mut Window, cx: &mut App) {
+        let main = self.main.clone();
+        crate::closing::may_have_closed(
+            main.update(cx, |main, cx| main.close_queue_page(window, cx)),
+        );
+    }
+
+    /// Asks before deleting the queue; the page closes once it is deleted.
+    fn delete(&self, window: &mut Window, cx: &mut App) {
         let Some(id) = self.original.as_ref().map(|queue| queue.id) else {
             return;
         };
-        window.close_dialog(cx);
         crate::closing::may_have_closed(
             self.main
                 .update(cx, |main, cx| main.delete_queue(id, window, cx)),
@@ -467,209 +466,6 @@ impl QueueForm {
     }
 }
 
-impl Render for QueueForm {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
-        let folder = FolderRow::new(
-            self.folder.as_deref().map(text::folder),
-            FOLDER_BY_TYPE,
-            cx.listener(|_, _, _, cx| Self::choose_folder(cx)),
-            cx.listener(|form, _, _, cx| {
-                form.folder = None;
-                cx.notify();
-            }),
-        );
-        v_flex()
-            .gap_5()
-            .pb_1()
-            .text_sm()
-            .child(Field::new("Name", Input::new(&self.name)))
-            .child(
-                Field::new("Description", Input::new(&self.description))
-                    .note("Optional. Shown under the queue's name."),
-            )
-            .child(
-                Field::new("Save to", folder).note(if self.folder.is_some() {
-                    "Every download of this queue is saved here, whatever its file type."
-                } else {
-                    "Pick a folder to keep this queue's downloads together."
-                }),
-            )
-            .child(group("Limits", self.limits(cx), cx))
-            .child(group(
-                "Rules",
-                vec![self.rules.clone().into_any_element()],
-                cx,
-            ))
-            .child(group(
-                "Network",
-                vec![self.proxy.clone().into_any_element()],
-                cx,
-            ))
-            .child(group("Schedule", vec![self.schedule_row(cx)], cx))
-            .child(group("Notifications", vec![self.notify_row(cx)], cx))
-    }
-}
-
-impl QueueForm {
-    fn limits(&self, cx: &mut Context<'_, Self>) -> Vec<AnyElement> {
-        let app = self.library.read(cx).settings.clone();
-        let global = |value: Option<String>| value.map(|value| format!("Global: {value}"));
-        let unit = choice::one_of(
-            "limit-unit",
-            &["KB/s", "MB/s"],
-            usize::from(self.unit == Unit::Mb),
-            cx.listener(|form, picked: &usize, window, cx| {
-                let unit = if *picked == 1 { Unit::Mb } else { Unit::Kb };
-                form.set_unit(unit, window, cx);
-            }),
-            cx,
-        );
-        vec![
-            SwitchRow::new(
-                "concurrent-on",
-                "Downloads at the same time",
-                self.is_own(Own::Concurrent),
-            )
-            .help("Up to this many of its downloads run at once; the global limit still applies.")
-            .off(global(
-                app.as_ref().map(|s| s.max_concurrent_downloads.to_string()),
-            ))
-            .on_toggle(cx.listener(|form, on: &bool, _, cx| {
-                form.switch(Own::Concurrent, *on, cx);
-            }))
-            .fields(narrow(NumberInput::new(&self.concurrent)))
-            .into_any_element(),
-            SwitchRow::new("limit-on", "Speed limit", self.is_own(Own::Speed))
-                .help("Shared by all its downloads; the global limit still applies.")
-                .off(global(app.as_ref().map(|s| {
-                    s.global_speed_limit
-                        .map_or_else(|| "no limit".to_owned(), text::speed)
-                })))
-                .ruled(true)
-                .on_toggle(cx.listener(|form, on: &bool, _, cx| {
-                    form.switch(Own::Speed, *on, cx);
-                }))
-                .fields(
-                    h_flex()
-                        .gap_2()
-                        .child(narrow(NumberInput::new(&self.limit)))
-                        .child(unit),
-                )
-                .into_any_element(),
-            SwitchRow::new(
-                "connections-on",
-                "Connections per download",
-                self.is_own(Own::Connections),
-            )
-            .help("Each of its downloads uses up to this many connections.")
-            .off(global(
-                app.as_ref().map(|s| s.connections_per_download.to_string()),
-            ))
-            .ruled(true)
-            .on_toggle(cx.listener(|form, on: &bool, _, cx| {
-                form.switch(Own::Connections, *on, cx);
-            }))
-            .fields(narrow(NumberInput::new(&self.connections)))
-            .into_any_element(),
-        ]
-    }
-
-    fn schedule_row(&self, cx: &mut Context<'_, Self>) -> AnyElement {
-        let stops = choice::one_of(
-            "stops",
-            &["When the queue is empty", "At"],
-            usize::from(!self.until_empty),
-            cx.listener(|form, picked: &usize, _, cx| {
-                form.until_empty = *picked == 0;
-                cx.notify();
-            }),
-            cx,
-        );
-        let pressed: Vec<(&'static str, bool)> = WEEK
-            .iter()
-            .map(|(day, label)| (*label, self.days.contains(day)))
-            .collect();
-        let days = choice::any_of(
-            "days",
-            &pressed,
-            cx.listener(|form, picked: &[usize], _, cx| {
-                form.days = picked
-                    .iter()
-                    .filter_map(|i| WEEK.get(*i))
-                    .map(|(d, _)| *d)
-                    .collect();
-                form.problem = None;
-                cx.notify();
-            }),
-            cx,
-        );
-        let line = |label: &'static str, value: AnyElement| {
-            h_flex()
-                .gap_3()
-                .child(
-                    div()
-                        .w(px(72.))
-                        .flex_shrink_0()
-                        .text_role(Role::Secondary, cx)
-                        .child(label),
-                )
-                .child(value)
-        };
-        SwitchRow::new("schedule-on", "Run on a schedule", self.is_own(Own::Schedule))
-            .help("Its downloads start only in these hours, on the days picked. Start now runs it outside them.")
-            .on_toggle(cx.listener(|form, on: &bool, _, cx| {
-                form.switch(Own::Schedule, *on, cx);
-            }))
-            .fields(
-                v_flex()
-                    .gap_2p5()
-                    .child(line("Starts at", TimeField::new(&self.start).into_any_element()))
-                    .child(line(
-                        "Stops",
-                        h_flex()
-                            .gap_2()
-                            .child(stops)
-                            .when(!self.until_empty, |row| row.child(TimeField::new(&self.stop)))
-                            .into_any_element(),
-                    ))
-                    .child(line("Days", days.into_any_element())),
-            )
-            .into_any_element()
-    }
-
-    fn notify_row(&self, cx: &mut Context<'_, Self>) -> AnyElement {
-        h_flex()
-            .px_4()
-            .py_3()
-            .gap_4()
-            .child(
-                v_flex()
-                    .flex_1()
-                    .min_w_0()
-                    .gap_0p5()
-                    .child(div().text_role(Role::Strong, cx).child("Tell me when"))
-                    .child(div().text_role(Role::Meta, cx).child(
-                        "A notice for each finished download, or one when the whole queue is done.",
-                    )),
-            )
-            .child(choice::one_of(
-                "notify",
-                &["Each finishes", "All are done"],
-                usize::from(self.notify == QueueNotify::WhenDone),
-                cx.listener(|form, picked: &usize, _, cx| {
-                    form.notify = if *picked == 1 {
-                        QueueNotify::WhenDone
-                    } else {
-                        QueueNotify::EachDownload
-                    };
-                    cx.notify();
-                }),
-                cx,
-            ))
-            .into_any_element()
-    }
-}
-
 /// The rules and proxy editors, which keep their own state.
 fn editors(
     library: &Entity<Library>,
@@ -716,10 +512,6 @@ fn forget_problem_on_edit(
     })
 }
 
-fn narrow(field: impl IntoElement) -> Div {
-    div().w(px(132.)).child(field)
-}
-
 fn number_field(
     value: u32,
     most: u32,
@@ -732,6 +524,19 @@ fn number_field(
             .min(1.)
             .max(f64::from(most));
         state.set_value(value.to_string(), window, cx);
+        state
+    })
+}
+
+fn limit_field(
+    bytes: u64,
+    unit: Unit,
+    window: &mut Window,
+    cx: &mut Context<'_, QueueForm>,
+) -> Entity<InputState> {
+    cx.new(|cx| {
+        let mut state = InputState::new(window, cx).min(0.).step(unit.step());
+        state.set_value(in_unit(bytes, unit), window, cx);
         state
     })
 }
@@ -844,7 +649,8 @@ fn saved_days(pressed: &[Weekday]) -> Vec<Weekday> {
 
 #[cfg(test)]
 mod tests {
-    use gpui_kit::TestAppContext;
+    use gpui_kit::component::time_field::TimeField;
+    use gpui_kit::{IntoElement, Render, TestAppContext};
     use wirecatch_protocol::app::ClockFormat;
 
     use super::*;

@@ -185,7 +185,8 @@ impl MainWindow {
             .into_iter()
             .map(|queue| {
                 let theme = cx.theme();
-                let current = self.page.screen == Screen::Downloads && self.view == queue.view;
+                let current = matches!(self.page.screen, Screen::Downloads | Screen::QueuePage)
+                    && self.view == queue.view;
                 let behind = if current {
                     theme.sidebar_accent
                 } else {

@@ -19,6 +19,7 @@ pub mod sentence;
 pub mod small_title_bar;
 pub mod speed_graph;
 pub mod switch_row;
+pub mod tag_field;
 pub mod tokens;
 pub mod tooltip;
 

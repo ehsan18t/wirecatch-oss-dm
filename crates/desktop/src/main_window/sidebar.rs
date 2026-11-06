@@ -35,7 +35,9 @@ pub(super) fn foot_page(screen: Screen) -> (&'static str, &'static str, Lucide) 
     match screen {
         Screen::Shortcuts => ("open-shortcuts", "Keyboard shortcuts", Lucide::Keyboard),
         Screen::About => ("open-about", "About", Lucide::Info),
-        Screen::Downloads | Screen::Settings => ("open-settings", "Settings", Lucide::Settings),
+        Screen::Downloads | Screen::QueuePage | Screen::Settings => {
+            ("open-settings", "Settings", Lucide::Settings)
+        }
     }
 }
 
