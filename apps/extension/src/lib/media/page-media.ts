@@ -106,3 +106,11 @@ export function mediaTitle(el: HTMLMediaElement, doc: Document): string | null {
   const title = own.trim() || doc.title.trim();
   return title === '' ? null : title.slice(0, MAX_TITLE_LENGTH);
 }
+
+/**
+ * A media element shown full screen by itself cannot have anything drawn over it;
+ * a player container shown full screen can, if the button moves inside it.
+ */
+export function hiddenByFullscreen(target: HTMLMediaElement, fullscreen: Element | null): boolean {
+  return fullscreen !== null && (fullscreen === target || !containsDeep(fullscreen, target));
+}

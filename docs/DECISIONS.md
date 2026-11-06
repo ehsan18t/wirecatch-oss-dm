@@ -1535,10 +1535,10 @@ Decided with the maintainer on 2026-11-06. It changes D115.1, which left a runni
 2. A selection bar button that only some of the ticked rows take says how many: "Pause 2", "Resume 1", "Try 2 again", "Start 2 over". When every ticked row takes it, it keeps its plain word.
 3. Pause still covers queued, connecting and processing rows as well as running ones, so a ticked queued row does not start a moment later.
 
-### D225. The video button sits on top of the video, as a tab of it
+### D225. The media button is a tab of the player
 
-Decided with the maintainer on 2026-11-06. The button sat inside a video's top right corner, measured from the video element's own box; a player that sizes its video larger than itself and hides the rest (YouTube before playback) put it up by the page header.
+Decided with the maintainer on 2026-11-06. The button sat inside a video's top right corner, measured from the video element's own box, and above an audio player with a gap; a player that sizes its video larger than itself and hides the rest (YouTube before playback) put it up by the page header.
 
-1. The button sits on the visible video's top right corner, outside it: its bottom on the video's top edge, 12 pixels in from the video's right edge, clear of a player's rounded corner, its bottom corners square, so it reads as a tab of the player, as Internet Download Manager places its panel.
-2. "Visible" is the video's box cut by every ancestor that hides what overflows it, and below any fixed or sticky bar of the page that covers its top (tested along its right edge).
-3. With no room above, or with a fixed bar over the video's top, it sits inside the corner as before, below the bar.
+1. The button has one shape, a tab of the player, 12 pixels in from the media's right edge: on top of its top edge, touching it, with square bottom corners; or, with no room above or a page's fixed bar over a video's top, hanging from that edge (inside a video, under an audio player) with square top corners. There is no other placement and no other shape.
+2. A video's edge is that of the part a person sees: its box cut by every ancestor that hides what overflows it, except the body and the root, whose overflow is the window's, and below any fixed or sticky bar of the page that covers its top (tested along its right edge). A video wholly outside the part its player shows (YouTube before playback) is placed by the player.
+3. A copy of the content script left in an open tab by a reloaded or updated extension removes its button the next time the page's media or pointer reaches it (`ButtonDeps.alive`), since the page cannot be told that a newer copy started.

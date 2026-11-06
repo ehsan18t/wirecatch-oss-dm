@@ -47,6 +47,8 @@ export default defineContentScript({
         });
         return isDownloadAnswer(answer) ? answer : { ok: false, message: MEDIA_UNREACHABLE };
       },
+      // Pages cannot tell this copy that a newer one replaced it (see `noScriptStartedPostMessage`).
+      alive: () => ctx.isValid,
     });
     // A reloaded or updated extension starts a fresh copy of this script: remove the old button.
     ctx.onInvalidated(() => button.destroy());

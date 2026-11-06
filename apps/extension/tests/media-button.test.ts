@@ -20,16 +20,16 @@ function box(left: number, top: number, width: number, height: number): Box {
 }
 
 describe('placeButton', () => {
-  it('puts the button on top of a video, touching its top edge, right-aligned with it', () => {
+  it('puts the button on top of a video, touching its top edge, 12 pixels in from its right', () => {
     expect(
       placeButton(box(100, 50, 640, 360), { audio: false, controls: true }, VIEWPORT, SIZE),
-    ).toEqual({ top: 18, left: 616, attached: true });
+    ).toEqual({ top: 18, left: 616, edge: 'above' });
   });
 
-  it('puts the button inside the top right corner when there is no room above the video', () => {
+  it('hangs the button from the top edge of the video when there is no room above it', () => {
     expect(
       placeButton(box(100, 10, 640, 360), { audio: false, controls: true }, VIEWPORT, SIZE),
-    ).toEqual({ top: 18, left: 620, attached: false });
+    ).toEqual({ top: 10, left: 616, edge: 'below' });
   });
 
   it('keeps clear of native controls when the video is scrolled mostly out of view', () => {
@@ -40,16 +40,16 @@ describe('placeButton', () => {
     // Without native controls the same sliver has room.
     expect(
       placeButton(box(100, -290, 640, 360), { audio: false, controls: false }, VIEWPORT, SIZE),
-    ).toEqual({ top: 8, left: 620, attached: false });
+    ).toEqual({ top: 0, left: 616, edge: 'below' });
   });
 
-  it('puts the button just above an audio player, or below it at the top of the page', () => {
+  it('puts the button on top of an audio player, or under it at the top of the page', () => {
     expect(
       placeButton(box(40, 200, 300, 54), { audio: true, controls: true }, VIEWPORT, SIZE),
-    ).toEqual({ top: 164, left: 228, attached: false });
+    ).toEqual({ top: 168, left: 216, edge: 'above' });
     expect(
       placeButton(box(40, 10, 300, 54), { audio: true, controls: true }, VIEWPORT, SIZE),
-    ).toEqual({ top: 68, left: 228, attached: false });
+    ).toEqual({ top: 64, left: 216, edge: 'below' });
   });
 
   it('shows nothing for small, hidden or off-screen elements, and stays inside the viewport', () => {
@@ -67,7 +67,7 @@ describe('placeButton', () => {
     ).toBeNull();
     expect(
       placeButton(box(600, 100, 800, 400), { audio: false, controls: false }, VIEWPORT, SIZE),
-    ).toEqual({ top: 68, left: 900, attached: true });
+    ).toEqual({ top: 68, left: 900, edge: 'above' });
   });
 });
 
@@ -203,7 +203,7 @@ describe('MediaButton', () => {
     Reflect.deleteProperty(document, 'elementFromPoint');
     expect(b.state).toBe('shown');
     expect(Number.parseInt(b.host.style.getPropertyValue('top'), 10)).toBeGreaterThanOrEqual(56);
-    expect(b.host.style.getPropertyValue('left')).toBe('620px');
+    expect(b.host.style.getPropertyValue('left')).toBe('616px');
   });
 
   // A player that makes its video taller than itself and hides the rest (YouTube before playback) put the button up by the page header, over what the person never sees.
@@ -266,6 +266,29 @@ describe('MediaButton', () => {
     expect(b.state).toBe('shown');
     expect(b.host.style.getPropertyValue('top')).toBe('48px');
     expect(b.host.style.getPropertyValue('left')).toBe('616px');
+  });
+
+  // A reloaded or updated extension leaves the previous copy of this script running in open tabs, with its button: the old design showed next to the new one.
+  it('removes itself once its extension is gone', async () => {
+    const fake = fakeDeps();
+    let alive = true;
+    fake.deps.alive = () => alive;
+    const video = media('video', box(100, 50, 640, 360), { src: 'https://cdn.example.com/a.mp4' });
+    const b = start(fake);
+    video.dispatchEvent(new Event('play'));
+    await settle();
+    expect(b.host.isConnected).toBe(true);
+    alive = false;
+    video.dispatchEvent(new Event('pause'));
+    await settle();
+    expect(b.host.isConnected).toBe(false);
+    expect(b.state).toBe('none');
+  });
+
+  it('only has the tab shape, on top of its media or hanging from its edge', () => {
+    expect(SHADOW_CSS).not.toMatch(/border-radius:16px/);
+    expect(SHADOW_CSS).toMatch(/\.w\.above \.b\{border-radius:8px 8px 0 0\}/);
+    expect(SHADOW_CSS).toMatch(/\.w\.below \.b\{border-radius:0 0 8px 8px\}/);
   });
 
   it('stays hidden where nothing downloadable was detected, and asks again a little later', async () => {
@@ -737,7 +760,7 @@ describe('MediaButton', () => {
     await settle();
     expect(b.state).toBe('shown');
     expect(fake.checks).toEqual([{ src: 'https://e.com/b.mp3', audio: true }]);
-    expect(b.host.style.getPropertyValue('top')).toBe('164px');
+    expect(b.host.style.getPropertyValue('top')).toBe('168px');
   });
 
   it('sends the element and the page title on click, and shows the answer', async () => {

@@ -1,6 +1,6 @@
-/** The part of a page element its ancestors show, in viewport pixels. */
+/** Where the media button goes on the page: the part of the media a person sees, in viewport pixels. */
 
-import type { Box } from './placement';
+import { placeButton, type Box, type Position, type Size } from './placement';
 
 /** Most ancestors whose clipping is taken into account; a player is a few levels up. */
 const MOST_CLIPPING_ANCESTORS = 32;
@@ -102,11 +102,23 @@ function isFixedBar(hit: Element, media: Element, own: Element): boolean {
 }
 
 /** The part of `el` a person sees, below any fixed bar of the page, and whether such a bar covers its top; `own` is the button's host. */
-export function shownPart(el: Element, own: Element): { box: Box; covered: boolean } {
+function shownPart(el: Element, own: Element): { box: Box; covered: boolean } {
   const seen = visibleBox(el);
   const clear = belowFixedBars(el, seen, own);
   return {
     box: { ...seen, top: clear, height: Math.max(0, seen.bottom - clear) },
     covered: clear > seen.top,
   };
+}
+
+/** Where a button of `size` goes on `el`, from the part of it a person sees; `own` is the button's host. */
+export function placeOnPage(el: HTMLMediaElement, own: Element, size: Size): Position | null {
+  const view = el.ownerDocument.defaultView;
+  const { box, covered } = shownPart(el, own);
+  return placeButton(
+    box,
+    { audio: el.tagName === 'AUDIO', controls: el.controls, covered },
+    { width: view?.innerWidth ?? 0, height: view?.innerHeight ?? 0 },
+    size,
+  );
 }
