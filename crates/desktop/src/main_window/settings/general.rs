@@ -23,7 +23,7 @@ use crate::library::Library;
 use crate::ui::{Callout, Role, Typed as _, tokens};
 use crate::{text, theme};
 
-const UP_TO_DATE: &str = "The Public Suffix List is up to date.";
+const UP_TO_DATE: &str = "The site list is up to date.";
 
 /// Narrow enough to leave the setting's title its room while an update downloads.
 const DOWNLOADING_WIDTH: f32 = 200.;
@@ -41,7 +41,7 @@ const THEMES: &[(Theme, &str)] = &[
 
 const SWATCH: f32 = 22.;
 
-pub(super) fn page(library: &Entity<Library>) -> SettingPage {
+pub(super) fn page(library: &Entity<Library>, fold: &super::Fold) -> SettingPage {
     SettingPage::new(super::Page::General.title())
         .resettable(false)
         .groups([
@@ -50,6 +50,7 @@ pub(super) fn page(library: &Entity<Library>) -> SettingPage {
             updates(library),
             backup(library),
             troubleshooting(),
+            advanced(library, fold),
         ])
 }
 
@@ -161,45 +162,60 @@ fn updates(library: &Entity<Library>) -> SettingGroup {
                 .keywords(["update", "upgrade", "version", "new version"]),
         )
         .items(no_updates.is_none().then(|| {
-                SettingItem::new(
-                    "Get pre-release versions",
-                    switch(library, |s| s.prerelease_updates, |on| AppSettingsPatch {
+            SettingItem::new(
+                "Get pre-release versions",
+                switch(
+                    library,
+                    |s| s.prerelease_updates,
+                    |on| AppSettingsPatch {
                         prerelease_updates: Some(on),
                         ..AppSettingsPatch::default()
-                    }),
-                )
-                .description("Also offers versions still being tested, which come sooner and may have problems.")
-                .keywords(["beta", "preview", "pre-release", "test"])
+                    },
+                ),
+            )
+            .description(
+                "Also offers versions still being tested, which come sooner and may have problems.",
+            )
+            .keywords(["beta", "preview", "pre-release", "test"])
         }))
         .item(
             SettingItem::new(
                 "Keep add-ons up to date",
-                switch(library, |s| s.auto_update_addons, |on| AppSettingsPatch {
-                    auto_update_addons: Some(on),
-                    ..AppSettingsPatch::default()
-                }),
+                switch(
+                    library,
+                    |s| s.auto_update_addons,
+                    |on| AppSettingsPatch {
+                        auto_update_addons: Some(on),
+                        ..AppSettingsPatch::default()
+                    },
+                ),
             )
             .description("Installs new versions of the media add-on automatically.")
             .keywords(["addon", "ffmpeg", "yt-dlp", "media"]),
         )
-        .item(
+}
+
+/// The site list's updates, folded under Advanced (D263, D169).
+fn advanced(library: &Entity<Library>, fold: &super::Fold) -> SettingGroup {
+    let shown = library.clone();
+    fold.group(
+        &["site list", "public suffix list", "psl", "domains", "privacy", "check now"],
+        vec![
             SettingItem::new(
-                "Update the Public Suffix List automatically",
+                "Update the site list automatically",
                 switch(library, |s| s.update_suffix_list, |on| AppSettingsPatch {
                     update_suffix_list: Some(on),
                     ..AppSettingsPatch::default()
                 }),
             )
             .description(
-                "Tells sites apart as new domains appear, such as which links may reach your local network. Checked weekly while nothing downloads; publicsuffix.org sees only your IP address and the app\u{2019}s version.",
+                "Keeps the list of which sites share an owner current, checked weekly while nothing downloads. publicsuffix.org sees only your IP address and the app\u{2019}s version.",
             )
-            .keywords(["psl", "domains", "privacy"]),
-        )
-        .item({
-            let library = library.clone();
-            SettingItem::render(move |_, _, cx| suffix_list_state(&library, cx))
-                .keywords(["psl", "domains", "check now"])
-        })
+            .keywords(["site list", "public suffix list", "psl", "domains", "privacy"]),
+            SettingItem::render(move |_, _, cx| suffix_list_state(&shown, cx))
+                .keywords(["psl", "domains", "check now"]),
+        ],
+    )
 }
 
 /// The list in use, its Check now, and a note when the last check failed (D44.4, D169).

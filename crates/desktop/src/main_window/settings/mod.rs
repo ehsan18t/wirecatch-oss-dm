@@ -11,13 +11,16 @@ mod network;
 mod notifications;
 mod speed;
 
+use std::collections::HashSet;
 use std::rc::Rc;
 use std::time::Duration;
 
 use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::group_box::GroupBoxVariant;
 use gpui_kit::component::input::{InputEvent, Textarea, TextareaState};
-use gpui_kit::component::setting::{SelectIndex, SettingField, SettingPage, Settings};
+use gpui_kit::component::setting::{
+    SelectIndex, SettingField, SettingGroup, SettingItem, SettingPage, Settings,
+};
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, h_flex};
 use gpui_kit::{
     App, AppContext as _, Context, Div, Entity, Focusable as _, InteractiveElement as _,
@@ -29,6 +32,7 @@ use wirecatch_shell::api;
 
 use super::{MainWindow, Screen, sidebar};
 use crate::backend::act;
+use crate::closing::may_have_closed;
 use crate::library::Library;
 use crate::text;
 use crate::ui::{Role, Typed as _, tokens};
@@ -41,6 +45,7 @@ impl MainWindow {
             &self.library,
             &cx.entity().downgrade(),
             self.settings_on,
+            &self.advanced_shown,
             cx,
         );
         let foot = self.foot(cx);
@@ -124,7 +129,7 @@ const SAVE_AFTER: Duration = Duration::from_millis(800);
 const FIELD_WIDTH: f32 = 320.;
 
 /// A settings page.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub(super) enum Page {
     General,
     Files,
@@ -185,18 +190,67 @@ fn page(
     page: Page,
     library: &Entity<Library>,
     main: &WeakEntity<MainWindow>,
+    advanced: bool,
     cx: &App,
 ) -> SettingPage {
+    let fold = Fold {
+        page,
+        shown: advanced,
+        main: main.clone(),
+    };
     match page {
-        Page::General => general::page(library),
+        Page::General => general::page(library, &fold),
         Page::Files => files::page(library),
         Page::Notifications => notifications::page(library, cx),
         Page::Browser => browser::page(library, cx),
         Page::Media => media::page(library, cx),
         Page::Speed => speed::page(library, main, cx),
-        Page::Network => network::page(library, cx),
+        Page::Network => network::page(library, &fold, cx),
     }
     .icon(Icon::new(page.icon()))
+}
+
+/// Where a page's Advanced settings are folded, and whether they are shown (D263).
+struct Fold {
+    page: Page,
+    shown: bool,
+    main: WeakEntity<MainWindow>,
+}
+
+impl Fold {
+    /// The page's Advanced group: one row that shows or hides `items`, found by search under
+    /// `keywords` while they are hidden.
+    fn group(&self, keywords: &'static [&'static str], items: Vec<SettingItem>) -> SettingGroup {
+        let (page, shown, main) = (self.page, self.shown, self.main.clone());
+        let toggle = SettingItem::render(move |_, _, cx| {
+            let main = main.clone();
+            h_flex()
+                .id("advanced")
+                .w_full()
+                .gap_2()
+                .cursor_pointer()
+                .child(
+                    Icon::new(if shown {
+                        Lucide::ChevronDown
+                    } else {
+                        Lucide::ChevronRight
+                    })
+                    .with_size(tokens::ICON),
+                )
+                .child(div().text_role(Role::Strong, cx).child("Advanced"))
+                .on_click(move |_, _, cx| {
+                    may_have_closed(main.update(cx, |main, cx| {
+                        if !main.advanced_shown.remove(&page) {
+                            main.advanced_shown.insert(page);
+                        }
+                        cx.notify();
+                    }));
+                })
+        })
+        .keywords(keywords.iter().copied());
+        let group = SettingGroup::new().item(toggle);
+        if shown { group.items(items) } else { group }
+    }
 }
 
 /// Every page, headed like the downloads' page.
@@ -204,6 +258,7 @@ fn screen(
     library: &Entity<Library>,
     main: &WeakEntity<MainWindow>,
     open_on: OpenOn,
+    advanced: &HashSet<Page>,
     cx: &App,
 ) -> Settings {
     let header = page_header(cx);
@@ -221,7 +276,9 @@ fn screen(
         .sidebar_size_range(px(sidebar::WIDTH)..px(sidebar::WIDTH))
         .header_style(&StyleRefinement::default().mt(px(BACK_HEIGHT)))
         .with_group_variant(GroupBoxVariant::Outline)
-        .pages(PAGES.map(|shown| page(shown, library, main, cx).header_style(&header)))
+        .pages(PAGES.map(|shown| {
+            page(shown, library, main, advanced.contains(&shown), cx).header_style(&header)
+        }))
 }
 
 /// Sends `patch` to the manager; a refusal shows in the window in front.
