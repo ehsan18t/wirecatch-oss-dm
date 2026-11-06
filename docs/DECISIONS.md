@@ -1146,7 +1146,7 @@ Decided with the maintainer on 2026-11-04. It amends D89's progress window and t
 1. A file's question and its progress share one height, so the window does not resize between them and Pause lands where Download was. The question's form stays until the download's row exists.
 2. Progress, paused, finished and failed use one layout: name and how it ended, the graph, four facts (or why it failed), the folder, then the queue on the left and the buttons on the right. A running download offers Cancel, Hide and Pause; Hide leaves it running, Close is for one with nothing left to run.
 3. The bar is the graph: across is how much is done, height is how fast. It runs from the left edge to the progress line, or to the right edge once finished. The speed and percent sit in their own row above it. The app keeps no history, so a window knows only what it watched (`RunRecord`), and a download too short to draw shows a plain full bar.
-4. Three seconds with no new bytes reads "Waiting for the server": the engine retries on its own and does not say so. That time does not count towards Took or Average, and a file that starts over starts those figures over.
+4. Three seconds with no new bytes reads "Waiting for the server": the engine retries on its own and does not say so. That time does not count towards Took or Average, and a file that starts over starts those figures over. Amended by D271: a connection that failed or dropped reads "Reconnecting (try 3 of 6)".
 5. A file's question picks its queue with a badge in the button row, Automatic by default, whose menu and tooltip say why Automatic chose that queue. The folder field takes the whole width.
 6. A switch along the foot changes the setting behind what the window shows: "Ask before each download" and "Show progress while downloading". The same words are in Settings and the extension.
 7. A video's question has the same shape: every option in one column under the same labels, the queue badge in the button row, and "Ask before each video" along the foot. A format starts at or below the audio quality the download has, since a higher one only makes the file bigger; picking a higher one is allowed and says so.
@@ -1706,3 +1706,12 @@ Decided with the maintainer on 2026-11-06. In a long list nothing said which day
 
 1. The heading of the group or day the top of the list is in stays pinned over the list while its rows scroll under it, with its circle, count, size and action, until the next heading pushes it up and away. Clicks on it reach only the heading.
 2. Pause all and Resume all are outlined buttons with their icons. A day heading offers Remove from list, which asks first as Remove does.
+
+### D271. A download that reconnects says so
+
+Decided with the maintainer on 2026-11-07. It amends D114.4, where the engine retried a failed or dropped connection without saying so, and the download showed the last speed and a time left of hours while nothing arrived.
+
+1. The engine says when a connection is trying again after it failed or dropped, and nothing arrives on any connection meanwhile: `Progress::retry` gives which try it is and how many a connection makes (`DownloadOptions::max_retries`). A try that received data starts the count again, and the first new data clears it.
+2. A running download then waits with `WaitReason::Reconnecting`, and its speed and time left are empty. The list, the download window and the details read "Reconnecting (try 3 of 6)", and the details say in full that the download keeps what it has.
+3. "Waiting for the server" stays for three seconds with no new bytes while no connection has failed. A video's file parts report reconnecting only while no other part receives data.
+4. The first request of a download is not covered: until the server has answered, the download reads "Connecting".

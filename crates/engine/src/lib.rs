@@ -292,7 +292,7 @@ pub use file_work::FileWork;
 pub use limiter::RateLimiter;
 pub use net_guard::{AddressKind, PrivateNetwork};
 pub use options::{DownloadOptions, MAX_BUFFER_SIZE, MAX_CONNECTIONS};
-pub use progress::Progress;
+pub use progress::{Progress, Retry};
 pub use proxy::{ManualProxies, ProxyChoice, ProxyRoute, ProxySetting};
 pub use retry::Backoff;
 pub use state::resume_file_url;

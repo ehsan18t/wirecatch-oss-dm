@@ -342,6 +342,7 @@ impl Gauge {
                 connections: p.connections(),
                 processing: None,
                 retry_at: None,
+                retry: p.retry(),
             },
             Gauge::Media(m) => m.read(),
         }

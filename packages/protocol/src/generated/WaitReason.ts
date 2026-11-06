@@ -60,4 +60,17 @@ export type WaitReason =
          */
         retry_at: UnixMillis;
       };
+    }
+  | {
+      type: 'reconnecting';
+      data: {
+        /**
+         * Which try this is, counting from 1; a try that received data starts the count again.
+         */
+        attempt: number;
+        /**
+         * Tries before the download fails.
+         */
+        of: number;
+      };
     };

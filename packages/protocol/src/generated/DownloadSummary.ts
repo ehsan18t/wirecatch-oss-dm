@@ -71,7 +71,8 @@ export type DownloadSummary = {
    */
   error: UserError | null;
   /**
-   * Why a `Queued` download is not running yet; `None` for every other status.
+   * Why a `Queued` download is not running yet, or why a running one receives nothing for now
+   * ([`WaitReason::ServerRefused`], [`WaitReason::Reconnecting`]); `None` otherwise.
    */
   waiting: WaitReason | null;
   /**

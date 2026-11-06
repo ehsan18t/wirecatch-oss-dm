@@ -235,7 +235,8 @@ pub fn shown_wait(row: &DownloadSummary) -> Option<&WaitReason> {
     let wait = row.waiting.as_ref()?;
     match (row.status, wait) {
         (DownloadStatus::Queued, _)
-        | (DownloadStatus::Connecting, WaitReason::ServerRefused { .. }) => Some(wait),
+        | (DownloadStatus::Connecting, WaitReason::ServerRefused { .. })
+        | (DownloadStatus::Downloading, WaitReason::Reconnecting { .. }) => Some(wait),
         _ => None,
     }
 }
@@ -310,6 +311,9 @@ pub fn wait_short(wait: &WaitReason, queue: Option<&str>) -> Sentence {
         WaitReason::InLine { position } => named(said.text(&place(*position)), queue, false),
         WaitReason::ServerRefused { retry_at } => {
             said.text(&format!("Retrying at {}", clock(*retry_at)))
+        }
+        WaitReason::Reconnecting { attempt, of } => {
+            said.text(&format!("Reconnecting (try {attempt} of {of})"))
         }
     }
 }
@@ -392,6 +396,11 @@ pub fn wait_long(wait: &WaitReason, queue: Option<&str>) -> Sentence {
             "The video's server refused it for now, which sites sometimes do for a few minutes. {} tries again automatically at {} and keeps what was already downloaded.",
             host::CHANNEL.name(),
             clock(*retry_at)
+        )
+        .into(),
+        WaitReason::Reconnecting { attempt, of } => format!(
+            "The connection to the server was lost. {} is reconnecting (try {attempt} of {of}) and keeps what was already downloaded.",
+            host::CHANNEL.name()
         )
         .into(),
     }
@@ -962,6 +971,23 @@ mod tests {
         };
         assert_eq!(short(full).said(), "Next in Main, waiting for a free slot");
         assert_eq!(short(WaitReason::QueuePaused).said(), "Main is paused");
+    }
+
+    #[test]
+    fn a_download_reconnecting_says_which_try() {
+        let reconnecting = DownloadSummary {
+            status: DownloadStatus::Downloading,
+            waiting: Some(WaitReason::Reconnecting { attempt: 3, of: 6 }),
+            ..wirecatch_test_support::downloads::download(1)
+        };
+        assert_eq!(
+            status_short(&reconnecting, Some("Main")).said(),
+            "Reconnecting (try 3 of 6)"
+        );
+        assert!(
+            status_detail(&reconnecting, Some("Main"))
+                .is_some_and(|said| said.said().contains("reconnecting (try 3 of 6)"))
+        );
     }
 
     #[test]

@@ -221,14 +221,34 @@ fn sample(entry: &mut Entry, now: Instant) -> bool {
     row.connections = saturating_cast(reading.connections);
     row.speed = run.meter.sample(row.done, now);
     row.eta_secs = speed::eta(row.total, row.done, row.speed);
-    before
-        != (
-            row.status,
-            row.done,
-            row.total,
-            row.speed,
-            row.connections,
-            row.eta_secs,
-            row.processing,
-        )
+    // Trying again after a connection failed or dropped: nothing arrives, so no speed or time
+    // left (D271).
+    let reconnecting = reading
+        .retry
+        .filter(|_| row.status == DownloadStatus::Downloading)
+        .map(|retry| WaitReason::Reconnecting {
+            attempt: retry.attempt,
+            of: retry.of,
+        });
+    if reconnecting.is_some() {
+        row.speed = 0;
+        row.eta_secs = None;
+    }
+    let rewaited = row.waiting != reconnecting
+        && (reconnecting.is_some() || matches!(row.waiting, Some(WaitReason::Reconnecting { .. })));
+    if rewaited {
+        row.waiting = reconnecting;
+    }
+    cleared
+        || rewaited
+        || before
+            != (
+                row.status,
+                row.done,
+                row.total,
+                row.speed,
+                row.connections,
+                row.eta_secs,
+                row.processing,
+            )
 }

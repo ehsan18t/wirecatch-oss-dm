@@ -934,6 +934,9 @@ pub(crate) fn run_panel(
 
 fn panel_label(record: &RunRecord, row: &DownloadSummary, queue: Option<&str>) -> Option<Sentence> {
     match row.status {
+        DownloadStatus::Downloading if text::shown_wait(row).is_some() => {
+            Some(text::status_short(row, queue))
+        }
         DownloadStatus::Downloading if record.stalled(Instant::now()) => {
             Some("Waiting for the server".into())
         }

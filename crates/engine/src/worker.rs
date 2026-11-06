@@ -175,6 +175,7 @@ async fn run_assignment(
                     Next::Retry(delay) | Next::StepBackOrRetry(delay) => delay,
                 };
                 warn!(error = %Chain(&f.error), retry_in = ?delay, "connection failed, retrying");
+                shared.progress.retrying(attempts.retry(), attempts.of());
                 let cancel = &shared.request.cancel;
                 let waited = match next {
                     Next::StepBackOrRetry(_) => {
