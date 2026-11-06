@@ -1542,3 +1542,11 @@ Decided with the maintainer on 2026-11-06. The button sat inside a video's top r
 1. The button has one shape, a tab of the player, 12 pixels in from the media's right edge: on top of its top edge, touching it, with square bottom corners; or, with no room above or a page's fixed bar over a video's top, hanging from that edge (inside a video, under an audio player) with square top corners. There is no other placement and no other shape.
 2. A video's edge is that of the part a person sees: its box cut by every ancestor that hides what overflows it, except the body and the root, whose overflow is the window's, and below any fixed or sticky bar of the page that covers its top (tested along its right edge). A video wholly outside the part its player shows (YouTube before playback) is placed by the player.
 3. A copy of the content script left in an open tab by a reloaded or updated extension removes its button the next time the page's media or pointer reaches it (`ButtonDeps.alive`), since the page cannot be told that a newer copy started.
+
+### D230. One file chooser at a time
+
+Decided on 2026-11-06. Clicking Change again while a folder chooser was open could open another one, and several could stack up, some in a corner of the screen.
+
+1. The app opens at most one system file or folder chooser at a time, across every window (`files::chooser_turn`). Asking for another while one is open does nothing; once it closes, by a choice, a cancel or a failure, the next one can open.
+2. GPUI makes the window that is active when the chooser is asked for its owner, so the chooser is modal to it and Windows disables that window while it is open. A request made while no window of the app is active (input sent to a window in the background, or a second request while the first chooser holds the focus) gets no owner and blocks nothing, so the app keeps the count itself rather than rely on the owner.
+3. It holds on Linux as on Windows: the portal's answer, or its failure, ends the turn the same way.

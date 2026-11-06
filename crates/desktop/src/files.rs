@@ -4,10 +4,12 @@
 use std::fmt::Display;
 use std::future::Future;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::button::ButtonVariant;
-use gpui_kit::{App, PathPromptOptions, Window};
+use gpui_kit::{App, Global, PathPromptOptions, Window};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::wire::ProtocolError;
 use wirecatch_shell::api::{self, ProgramWarning, Reveal, ToOpen};
@@ -20,18 +22,46 @@ const CHOOSER_FAILED: &str = if cfg!(target_os = "linux") {
     "The file chooser could not open. Try again, and restart your computer if this keeps happening."
 };
 
-/// Asks for a folder to save in; `None` when none is picked, or when its name is not valid text,
-/// which the window in front is told.
+/// Whether a system file chooser is open in any window (D230).
+#[derive(Default)]
+struct ChooserOpen(Arc<AtomicBool>);
+
+impl Global for ChooserOpen {}
+
+/// The open file chooser's hold on [`ChooserOpen`], let go when dropped.
+pub struct ChooserTurn(Arc<AtomicBool>);
+
+impl Drop for ChooserTurn {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
+
+/// The turn to open a system file chooser; `None` while one is open. GPUI gives a chooser no owner
+/// when the window that asked is not active, and an unowned one blocks nothing (D230).
+pub fn chooser_turn(cx: &mut App) -> Option<ChooserTurn> {
+    let open = cx.default_global::<ChooserOpen>().0.clone();
+    (!open.swap(true, Ordering::AcqRel)).then(|| ChooserTurn(open))
+}
+
+/// Asks for a folder to save in; `None` when none is picked, while another file chooser is open,
+/// or when its name is not valid text, which the window in front is told.
 pub fn choose_folder(cx: &mut App) -> impl Future<Output = Option<String>> + use<> {
-    let picked = cx.prompt_for_paths(PathPromptOptions {
-        files: false,
-        directories: true,
-        multiple: false,
-        prompt: Some("Save here".into()),
+    let picked = chooser_turn(cx).map(|turn| {
+        let paths = cx.prompt_for_paths(PathPromptOptions {
+            files: false,
+            directories: true,
+            multiple: false,
+            prompt: Some("Save here".into()),
+        });
+        (turn, paths)
     });
     let cx = cx.to_async();
     async move {
-        let folder = chooser_answer(picked.await).and_then(|paths| {
+        let (turn, picked) = picked?;
+        let answer = picked.await;
+        drop(turn);
+        let folder = chooser_answer(answer).and_then(|paths| {
             let Some(folder) = paths.and_then(|paths| paths.into_iter().next()) else {
                 return Ok(None);
             };
@@ -126,7 +156,30 @@ pub fn show_in_folder(id: DownloadId, window: &mut Window, cx: &mut App) {
 
 #[cfg(test)]
 mod tests {
+    use gpui_kit::TestAppContext;
+
     use super::*;
+
+    fn pick(cx: &TestAppContext, folder: &str) {
+        cx.simulate_path_prompt_response(|_| Some(vec![PathBuf::from(folder)]));
+    }
+
+    #[gpui_kit::test]
+    async fn a_second_folder_chooser_opens_only_once_the_first_closes(cx: &mut TestAppContext) {
+        let first = cx.update(choose_folder);
+        let second = cx.update(choose_folder);
+        pick(cx, "first");
+        assert!(
+            !cx.did_prompt_for_paths(),
+            "a second chooser opened over the first"
+        );
+        assert_eq!(first.await.as_deref(), Some("first"));
+        assert_eq!(second.await, None);
+
+        let third = cx.update(choose_folder);
+        pick(cx, "third");
+        assert_eq!(third.await.as_deref(), Some("third"));
+    }
 
     type Answer = Result<Result<Option<u8>, &'static str>, ()>;
 
