@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::button::{Button, ButtonVariant, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::{WindowExt as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
@@ -137,6 +137,15 @@ impl Render for RemoveForm {
     }
 }
 
+/// The remove button's label and look: the danger colour only when files are deleted.
+fn remove_button(deletes: bool) -> (&'static str, ButtonVariant) {
+    if deletes {
+        ("Remove and delete", ButtonVariant::Danger)
+    } else {
+        ("Remove from list", ButtonVariant::Primary)
+    }
+}
+
 /// Asks before removing `ids` from the list; `folded` are the ones the list does not show.
 pub(super) fn remove(
     library: &Entity<Library>,
@@ -165,6 +174,7 @@ pub(super) fn remove(
             let form = form.read(cx);
             form.delete_files && form.asked.finished > 0
         };
+        let (label, variant) = remove_button(deletes);
         let removing = form.clone();
         dialog
             .title(title.clone())
@@ -182,12 +192,8 @@ pub(super) fn remove(
                     )
                     .child(
                         Button::new("remove")
-                            .danger()
-                            .label(if deletes {
-                                "Remove and delete"
-                            } else {
-                                "Remove from list"
-                            })
+                            .with_variant(variant)
+                            .label(label)
                             .on_click(move |_, window, cx| {
                                 let (ids, files) = {
                                     let form = removing.read(cx);
@@ -297,6 +303,12 @@ mod tests {
     use super::*;
     use wirecatch_protocol::app::DownloadSummary;
     use wirecatch_test_support::downloads::download;
+
+    #[test]
+    fn only_removing_with_the_files_is_marked_as_danger() {
+        assert_eq!(remove_button(false).1, ButtonVariant::Primary);
+        assert_eq!(remove_button(true).1, ButtonVariant::Danger);
+    }
 
     #[test]
     fn removing_says_how_much_of_it_is_out_of_sight() {
