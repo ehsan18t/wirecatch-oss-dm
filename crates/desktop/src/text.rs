@@ -235,6 +235,13 @@ pub fn shown_wait(row: &DownloadSummary) -> Option<&WaitReason> {
     }
 }
 
+/// Where "Remove and delete" sends a finished file (D231).
+pub const TRASH: &str = if cfg!(target_os = "linux") {
+    "the trash"
+} else {
+    "the Recycle Bin"
+};
+
 /// The quality window's switch and its setting (D200).
 pub const REMEMBER_CHOICES: &str = "Remember these choices";
 

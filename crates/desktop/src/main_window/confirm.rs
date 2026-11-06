@@ -19,6 +19,7 @@ use super::{applies, selection};
 use crate::backend::command;
 use crate::library::Library;
 use crate::rows::Rows;
+use crate::text::TRASH;
 use crate::ui::{Role, Typed as _};
 
 const WIDTH: f32 = 440.;
@@ -138,9 +139,9 @@ impl Render for RemoveForm {
                 form.child(
                     Checkbox::new("delete-files")
                         .label(if asked.finished == 1 {
-                            "Also delete the file from the disk"
+                            format!("Also move the file to {TRASH}")
                         } else {
-                            "Also delete the finished files from the disk"
+                            format!("Also move the finished files to {TRASH}")
                         })
                         .checked(self.delete_files)
                         .on_click(cx.listener(|form, checked: &bool, _, cx| {

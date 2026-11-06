@@ -115,7 +115,7 @@ pub fn cancel(m: &Manager, id: DownloadId) -> CommandResult<()> {
     plain(m.cancel(id))
 }
 
-/// Removes downloads from the list, and with [`RemoveFiles::Delete`] their files.
+/// Removes downloads from the list, and with [`RemoveFiles::Delete`] moves their finished files to the trash.
 ///
 /// # Errors
 ///

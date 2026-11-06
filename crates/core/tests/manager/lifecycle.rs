@@ -4,6 +4,7 @@
 use std::time::Duration;
 
 use wirecatch_core::{CoreError, DEFAULT_QUEUE_ID, LinkFrom, RemoveFiles};
+use wirecatch_files::discard::test_trash::took;
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{
     AppSettingsPatch, DownloadStatus, FixAction, QueueSettings, UiEvent,
@@ -423,11 +424,19 @@ async fn remove_stops_and_cleans_up() -> TestResult {
         .await
         .unwrap();
     assert!(partial_files(&running.path).iter().all(|p| !exists(p)));
+    assert!(
+        partial_files(&running.path).iter().all(|p| !took(p)),
+        "a partial file went to the trash"
+    );
     h.manager
         .remove(&[finished.id], RemoveFiles::Delete)
         .await
         .unwrap();
     assert!(!exists(&finished.path));
+    assert!(
+        took(std::path::Path::new(&finished.path)),
+        "the finished file was not moved to the trash"
+    );
     assert_eq!(
         h.manager.list_downloads(),
         [] as [wirecatch_protocol::app::DownloadSummary; 0]

@@ -228,7 +228,7 @@ impl Manager {
         Ok(())
     }
 
-    /// Removes downloads from the list, stopping them first. The partial files of an unfinished download are always deleted; the file of a completed download, with its subtitle files, only with [`RemoveFiles::Delete`]. Ids that no longer exist are ignored.
+    /// Removes downloads from the list, stopping them first. The partial files of an unfinished download are always deleted; the file of a completed download, with its subtitle files, goes to the Recycle Bin or the trash only with [`RemoveFiles::Delete`] (D231). Ids that no longer exist are ignored.
     ///
     /// # Errors
     ///
@@ -369,10 +369,7 @@ impl Manager {
             if let Some(hook) = before_deleting {
                 hook();
             }
-            // Never as a folder: by now a folder may have taken the finished file's name.
-            for file in &finished_files {
-                wirecatch_files::discard::file(file);
-            }
+            wirecatch_files::discard::to_trash(&finished_files);
             for partial in &partials {
                 partial.delete();
             }

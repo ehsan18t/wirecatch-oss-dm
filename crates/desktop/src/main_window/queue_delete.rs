@@ -19,6 +19,7 @@ use wirecatch_shell::api;
 use super::{MainWindow, View};
 use crate::backend::command;
 use crate::library::Library;
+use crate::text::TRASH;
 use crate::ui::{Field, Role, Sentence, Typed as _};
 
 const WIDTH: f32 = 440.;
@@ -95,9 +96,9 @@ impl Render for DeleteForm {
                 form.child(
                     Checkbox::new("delete-files")
                         .label(if self.finished == 1 {
-                            "And delete the finished file from the disk"
+                            format!("And move the finished file to {TRASH}")
                         } else {
-                            "And delete the finished files from the disk"
+                            format!("And move the finished files to {TRASH}")
                         })
                         .checked(self.delete_files)
                         .disabled(!self.remove_downloads)

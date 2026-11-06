@@ -1,6 +1,6 @@
 [package]
 name = "wirecatch-files"
-description = "File helpers for Wirecatch: writing a file whole, discarding one, keeping one private to its owner, and marking a download with the zone it came from"
+description = "File helpers for Wirecatch: writing a file whole, discarding one or moving it to the trash, keeping one private to its owner, and marking a download with the zone it came from"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -17,6 +17,7 @@ testing = []
 wirecatch-engine.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+trash.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = [
