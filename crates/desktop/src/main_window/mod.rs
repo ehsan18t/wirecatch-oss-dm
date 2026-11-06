@@ -698,7 +698,12 @@ impl MainWindow {
                 });
             }
             Some(_) => {}
-            None => queue_new::open(cx.entity().downgrade(), window, cx),
+            None => self.leave_queue_page_then(window, cx, |main, window, cx| {
+                if main.page.screen == Screen::QueuePage {
+                    main.show_now(main.view, window, cx);
+                }
+                queue_new::open(cx.entity().downgrade(), window, cx);
+            }),
         }
     }
 

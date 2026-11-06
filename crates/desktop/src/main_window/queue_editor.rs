@@ -405,8 +405,12 @@ impl QueueForm {
                 form.stage = Stage::Editing;
                 match outcome {
                     Ok(saved) => {
+                        let shown = cx.entity_id();
                         crate::closing::may_have_closed(main.update(cx, |main, cx| {
-                            main.leave_queue_page(saved, window, cx);
+                            // The person may have left the page while it saved.
+                            if main.queue_page.as_ref().map(Entity::entity_id) == Some(shown) {
+                                main.leave_queue_page(saved, window, cx);
+                            }
                         }));
                     }
                     Err(problem) => {
