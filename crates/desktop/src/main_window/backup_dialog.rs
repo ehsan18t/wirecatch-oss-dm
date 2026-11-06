@@ -145,10 +145,15 @@ impl BackupForm {
         let folder = dirs::download_dir()
             .or_else(dirs::home_dir)
             .unwrap_or_default();
+        let Some(turn) = files::chooser_turn(cx) else {
+            return;
+        };
         let picked =
             cx.prompt_for_new_path(&folder, Some(&format!("{PRODUCT_SLUG}-settings.json")));
         self.run(window, cx, move |manager| async move {
-            let Some(path) = files::chooser_answer(picked.await)? else {
+            let answer = picked.await;
+            drop(turn);
+            let Some(path) = files::chooser_answer(answer)? else {
                 return Ok(None);
             };
             let path = api::path_text(&path)?;
@@ -158,6 +163,9 @@ impl BackupForm {
     }
 
     fn preview(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
+        let Some(turn) = files::chooser_turn(cx) else {
+            return;
+        };
         let picked = cx.prompt_for_paths(PathPromptOptions {
             files: true,
             directories: false,
@@ -165,7 +173,9 @@ impl BackupForm {
             prompt: Some("Import".into()),
         });
         self.run(window, cx, move |manager| async move {
-            let Some(paths) = files::chooser_answer(picked.await)? else {
+            let answer = picked.await;
+            drop(turn);
+            let Some(paths) = files::chooser_answer(answer)? else {
                 return Ok(None);
             };
             let Some(path) = paths.first() else {
