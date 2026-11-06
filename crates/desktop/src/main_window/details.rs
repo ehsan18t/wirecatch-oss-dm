@@ -80,13 +80,27 @@ impl Details {
             move |manager| async move { api::activity(&manager, id) },
         );
         cx.spawn(async move |details, cx| {
-            let Ok(Ok(activity)) = read.await else {
-                return;
+            let activity = match read.await {
+                Ok(Ok(activity)) => activity,
+                Ok(Err(unopened)) => {
+                    tracing::debug!(
+                        ?unopened,
+                        "no activity to show: the download list is not open"
+                    );
+                    return;
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "reading a download's activity failed");
+                    return;
+                }
             };
-            _ = details.update(cx, |details, cx| {
+            let shown = details.update(cx, |details, cx| {
                 details.activity = activity;
                 cx.notify();
             });
+            if shown.is_err() {
+                tracing::debug!("the details closed before their activity was read");
+            }
         })
         .detach();
     }
