@@ -40,7 +40,7 @@ function discarded() {
   );
   if (hits.length > 0) {
     throw new GateError(
-      `Results dropped with \`_ = expr;\` (docs/ENGINEERING.md, section 4): handle the failure, propagate it, log it, or pass the result to a small function whose name says why it cannot matter (\`browser_may_be_gone\`):\n${hits.join('\n')}`,
+      `Results dropped with \`_ = expr\` (docs/ENGINEERING.md, section 4): handle the failure, propagate it, log it, or pass the result to a small function whose name says why it cannot matter (\`browser_may_be_gone\`):\n${hits.join('\n')}`,
     );
   }
 }
