@@ -26,13 +26,13 @@ pub fn apply(
                 return;
             };
             let refused = answered.err();
-            _ = cx.update(|window, cx| match refused {
+            crate::closing::may_have_closed(cx.update(|window, cx| match refused {
                 None => library.update(cx, |library, cx| {
                     library.reorder(&order);
                     cx.notify();
                 }),
                 Some(message) => window.push_notification(message, cx),
-            });
+            }));
         })
         .detach();
 }

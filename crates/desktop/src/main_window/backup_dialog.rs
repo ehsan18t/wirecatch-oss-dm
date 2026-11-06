@@ -214,7 +214,7 @@ impl BackupForm {
             let Some(outcome) = said(done.await) else {
                 return;
             };
-            _ = form.update(cx, |form, cx| {
+            crate::closing::may_have_closed(form.update(cx, |form, cx| {
                 form.busy = false;
                 match outcome {
                     Ok(Some(step)) => form.step = step,
@@ -222,7 +222,7 @@ impl BackupForm {
                     Err(problem) => form.problem = Some(problem),
                 }
                 cx.notify();
-            });
+            }));
         })
         .detach();
     }

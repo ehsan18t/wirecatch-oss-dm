@@ -291,7 +291,7 @@ fn library(cx: &App) -> Entity<Library> {
 pub fn bring_up_with(cx: &mut App, work: impl FnOnce(&mut Window, &mut App)) {
     bring_up(&Asked::Window, cx);
     if let Some(shown) = cx.global::<Running>().shown.clone() {
-        _ = shown.window.update(cx, |_, window, cx| work(window, cx));
+        crate::closing::may_have_closed(shown.window.update(cx, |_, window, cx| work(window, cx)));
     }
 }
 

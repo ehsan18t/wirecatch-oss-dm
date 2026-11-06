@@ -66,7 +66,7 @@ pub fn add(tell: Tell, cx: &mut App) {
     }
     match cx.global::<Finished>().window.clone() {
         Some((_, view)) if view.upgrade().is_some() => {
-            _ = view.update(cx, |_, cx| cx.notify());
+            crate::closing::may_have_closed(view.update(cx, |_, cx| cx.notify()));
         }
         _ => open(cx),
     }
@@ -92,9 +92,11 @@ fn show_what_is_left(cx: &mut App) {
         return;
     };
     if empty {
-        _ = handle.update(cx, |_, window, cx| crate::closing::close(window, cx));
+        crate::closing::may_have_closed(
+            handle.update(cx, |_, window, cx| crate::closing::close(window, cx)),
+        );
     } else {
-        _ = view.update(cx, |_, cx| cx.notify());
+        crate::closing::may_have_closed(view.update(cx, |_, cx| cx.notify()));
     }
 }
 

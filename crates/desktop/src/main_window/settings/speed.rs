@@ -245,7 +245,9 @@ fn queue_list(
                     .icon(IconName::Plus)
                     .label("New queue")
                     .on_click(move |_, window, cx| {
-                        _ = adding.update(cx, |main, cx| main.edit_queue(None, window, cx));
+                        crate::closing::may_have_closed(
+                            adding.update(cx, |main, cx| main.edit_queue(None, window, cx)),
+                        );
                     }),
             ),
         )
@@ -309,7 +311,9 @@ fn queue_row(queue: &Queue, index: usize, main: &WeakEntity<MainWindow>, cx: &Ap
             .icon(Icon::new(Lucide::Pencil))
             .tooltip(format!("Edit {}", queue.settings.name))
             .on_click(move |_, window, cx| {
-                _ = editing.update(cx, |main, cx| main.edit_queue(Some(id), window, cx));
+                crate::closing::may_have_closed(
+                    editing.update(cx, |main, cx| main.edit_queue(Some(id), window, cx)),
+                );
             }),
         )
         .into_any_element()

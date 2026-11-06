@@ -247,7 +247,7 @@ fn show_set_aside(window: &mut Window, cx: &mut App) {
             let Ok(Ok(Some(path))) = found.await else {
                 return;
             };
-            _ = cx.update(|_, cx| cx.reveal_path(&path));
+            crate::closing::may_have_closed(cx.update(|_, cx| cx.reveal_path(&path)));
         })
         .detach();
 }

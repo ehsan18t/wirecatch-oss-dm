@@ -226,11 +226,11 @@ fn delete(
         (form.queue, removed, form.files())
     };
     window.close_dialog(cx);
-    _ = main.update(cx, |main, cx| {
+    crate::closing::may_have_closed(main.update(cx, |main, cx| {
         if main.view == View::Queue(id) {
             main.show(View::All, window, cx);
         }
-    });
+    }));
     command_saying(
         window.window_handle(),
         cx,

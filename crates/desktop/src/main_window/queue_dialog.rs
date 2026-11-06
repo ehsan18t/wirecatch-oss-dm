@@ -390,15 +390,15 @@ impl QueueForm {
             let Some(outcome) = said(saved.await) else {
                 return;
             };
-            _ = form.update_in(cx, |form, window, cx| {
+            crate::closing::may_have_closed(form.update_in(cx, |form, window, cx| {
                 form.stage = Stage::Editing;
                 match outcome {
                     Ok(saved) => {
                         window.close_dialog(cx);
                         if id.is_none() {
-                            _ = main.update(cx, |main, cx| {
+                            crate::closing::may_have_closed(main.update(cx, |main, cx| {
                                 main.show(View::Queue(saved), window, cx);
-                            });
+                            }));
                         }
                     }
                     Err(problem) => {
@@ -406,7 +406,7 @@ impl QueueForm {
                         cx.notify();
                     }
                 }
-            });
+            }));
         })
         .detach();
     }
@@ -417,9 +417,10 @@ impl QueueForm {
             return;
         };
         window.close_dialog(cx);
-        _ = self
-            .main
-            .update(cx, |main, cx| main.delete_queue(id, window, cx));
+        crate::closing::may_have_closed(
+            self.main
+                .update(cx, |main, cx| main.delete_queue(id, window, cx)),
+        );
     }
 
     fn choose_folder(cx: &mut Context<'_, Self>) {
@@ -428,10 +429,10 @@ impl QueueForm {
             let Some(folder) = picked.await else {
                 return;
             };
-            _ = form.update(cx, |form, cx| {
+            crate::closing::may_have_closed(form.update(cx, |form, cx| {
                 form.folder = Some(folder);
                 cx.notify();
-            });
+            }));
         })
         .detach();
     }

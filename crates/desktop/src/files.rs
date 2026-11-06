@@ -71,9 +71,9 @@ pub fn choose_folder(cx: &mut App) -> impl Future<Output = Option<String>> + use
             .map_err(|refused| {
                 cx.update(|cx| {
                     if let Some(window) = crate::backend::window_in_front(cx) {
-                        _ = window.update(cx, |_, window, cx| {
+                        crate::closing::may_have_closed(window.update(cx, |_, window, cx| {
                             window.push_notification(refused.message, cx);
-                        });
+                        }));
                     }
                 });
             })
@@ -107,11 +107,11 @@ pub fn open(id: DownloadId, window: &mut Window, cx: &mut App) {
             let Some(opened) = answer(found.await) else {
                 return;
             };
-            _ = cx.update(|window, cx| match opened {
+            crate::closing::may_have_closed(cx.update(|window, cx| match opened {
                 Ok(ToOpen::File(path)) => cx.open_with_system(&path),
                 Ok(ToOpen::Program { path, warning }) => ask_to_open(path, warning, window, cx),
                 Err(refused) => window.push_notification(refused.message, cx),
-            });
+            }));
         })
         .detach();
 }
@@ -145,11 +145,11 @@ pub fn show_in_folder(id: DownloadId, window: &mut Window, cx: &mut App) {
             let Some(shown) = answer(found.await) else {
                 return;
             };
-            _ = cx.update(|window, cx| match shown {
+            crate::closing::may_have_closed(cx.update(|window, cx| match shown {
                 Ok(Reveal::File(path)) => cx.reveal_path(&path),
                 Ok(Reveal::Folder(folder)) => cx.open_with_system(&folder),
                 Err(refused) => window.push_notification(refused.message, cx),
-            });
+            }));
         })
         .detach();
 }

@@ -63,7 +63,7 @@ pub fn quit(cx: &mut App) {
     let stopped = Backend::stop(cx);
     tray::remove(cx);
     for window in cx.windows() {
-        _ = window.update(cx, |_, window, _| window.remove_window());
+        crate::closing::may_have_closed(window.update(cx, |_, window, _| window.remove_window()));
     }
     cx.spawn(async move |cx| {
         if let Err(e) = stopped.await {

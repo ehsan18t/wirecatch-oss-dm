@@ -223,10 +223,10 @@ impl Library {
                     events
                 }
                 Err(unopened) => {
-                    _ = this.update(cx, |library, cx| {
+                    crate::closing::may_have_closed(this.update(cx, |library, cx| {
                         library.loaded = Loaded::Failed(unopened.reason);
                         cx.notify();
-                    });
+                    }));
                     return;
                 }
             };
@@ -329,14 +329,14 @@ impl Library {
         });
         cx.spawn(async move |this, cx| {
             let read = read.await;
-            _ = this.update(cx, |library, cx| {
+            crate::closing::may_have_closed(this.update(cx, |library, cx| {
                 if !library.order.end() {
                     library.read_order(cx);
                 } else if let Ok(Ok(ids)) = read {
                     library.downloads.take_order(&ids);
                     cx.notify();
                 }
-            });
+            }));
         })
         .detach();
     }

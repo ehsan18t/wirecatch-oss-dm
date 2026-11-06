@@ -187,7 +187,9 @@ pub fn command_saying<T, F, Fut>(
         let Some(refused) = told else {
             return;
         };
-        _ = window.update(cx, |_, window, cx| window.push_notification(refused, cx));
+        crate::closing::may_have_closed(
+            window.update(cx, |_, window, cx| window.push_notification(refused, cx)),
+        );
     })
     .detach();
 }

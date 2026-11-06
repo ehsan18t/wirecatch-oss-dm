@@ -305,11 +305,11 @@ impl ProxyForm {
             let Some(outcome) = said(tested.await) else {
                 return;
             };
-            _ = form.update(cx, |form, cx| {
+            crate::closing::may_have_closed(form.update(cx, |form, cx| {
                 form.stage = Stage::Editing;
                 form.outcome = Some(outcome);
                 cx.notify();
-            });
+            }));
         })
         .detach();
     }
@@ -334,7 +334,7 @@ impl ProxyForm {
             let Some(outcome) = said(saved.await) else {
                 return;
             };
-            _ = form.update_in(cx, |form, window, cx| {
+            crate::closing::may_have_closed(form.update_in(cx, |form, window, cx| {
                 form.stage = Stage::Editing;
                 match outcome {
                     Ok(made) => {
@@ -348,7 +348,7 @@ impl ProxyForm {
                         cx.notify();
                     }
                 }
-            });
+            }));
         })
         .detach();
     }
