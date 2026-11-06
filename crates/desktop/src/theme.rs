@@ -237,6 +237,7 @@ fn fixed_colors(accent: Accent, dark: bool) -> (Hsla, Hsla) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ui::tokens::CAPTION_OPACITY;
 
     #[test]
     fn every_system_colour_keeps_its_text_readable_in_both_schemes() {
@@ -257,6 +258,25 @@ mod tests {
                 );
                 assert!((shade.h - system.h).abs() < f32::EPSILON);
             }
+        }
+    }
+
+    #[test]
+    fn captions_read_on_the_list_in_both_schemes() {
+        let file: serde_json::Value = serde_json::from_str(THEMES).unwrap();
+        for scheme in file["themes"].as_array().unwrap() {
+            let color = |name: &str| -> Hsla {
+                let hex = scheme["colors"][name].as_str().unwrap();
+                rgb(u32::from_str_radix(&hex[1..], 16).unwrap()).into()
+            };
+            let list = color("list.background");
+            let caption = list.blend(color("muted.foreground").opacity(CAPTION_OPACITY));
+            assert!(
+                contrast(caption, list) >= MIN_CONTRAST,
+                "{}: {}",
+                scheme["name"],
+                contrast(caption, list)
+            );
         }
     }
 
