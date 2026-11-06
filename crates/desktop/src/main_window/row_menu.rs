@@ -8,8 +8,8 @@ use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
 use gpui_kit::component::{Icon, IconName};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    App, Bounds, ClipboardItem, Context, DismissEvent, Entity, Focusable as _, Pixels, WeakEntity,
-    Window, point, px,
+    App, Bounds, Context, DismissEvent, Entity, Focusable as _, Pixels, WeakEntity, Window, point,
+    px,
 };
 use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, FixAction};
 use wirecatch_protocol::{DownloadId, QueueId};
@@ -217,24 +217,19 @@ fn actions(menu: PopupMenu, target: &Target) -> PopupMenu {
     .separator()
 }
 
-/// Show in folder, Copy link and Save to a different folder, for one download.
+/// Show in folder, Copy link and Save to a different folder, for one download; Copy links for
+/// several.
 fn about_one(menu: PopupMenu, target: &Target) -> PopupMenu {
     let Some(row) = target.only.clone() else {
-        return menu;
+        return menu.item(copy_item(&target.rows)).separator();
     };
-    let (id, link) = (row.id, row.url.clone());
+    let id = row.id;
     menu.item(
         PopupMenuItem::new("Show in folder")
             .icon(IconName::FolderOpen)
             .on_click(move |_, window, cx| files::show_in_folder(id, window, cx)),
     )
-    .item(
-        PopupMenuItem::new("Copy link")
-            .icon(IconName::Copy)
-            .on_click(move |_, _, cx| {
-                cx.write_to_clipboard(ClipboardItem::new_string(link.clone()));
-            }),
-    )
+    .item(copy_item(&target.rows))
     .when(
         applies::offers_new_link(&row)
             && row.error.as_ref().and_then(|e| e.fix) != Some(FixAction::RefreshLink),
@@ -256,6 +251,23 @@ fn about_one(menu: PopupMenu, target: &Target) -> PopupMenu {
         )
     })
     .separator()
+}
+
+/// What copying the links of `rows` is called, and the links in list order.
+fn copied(rows: &[DownloadSummary]) -> (&'static str, Vec<String>) {
+    let label = if rows.len() == 1 {
+        "Copy link"
+    } else {
+        "Copy links"
+    };
+    (label, rows.iter().map(|row| row.url.clone()).collect())
+}
+
+fn copy_item(rows: &[DownloadSummary]) -> PopupMenuItem {
+    let (label, links) = copied(rows);
+    PopupMenuItem::new(label)
+        .icon(IconName::Copy)
+        .on_click(move |_, window, cx| details::copy_links(&links, window, cx))
 }
 
 /// Moving to each queue some of the downloads are not in.
@@ -329,4 +341,21 @@ pub(super) fn keyboard_menu(
 ) -> impl gpui_kit::IntoElement {
     use gpui_kit::ParentElement as _;
     gpui_kit::deferred(gpui_kit::anchored().position(at).child(menu.clone())).with_priority(1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wirecatch_test_support::downloads::download;
+
+    #[test]
+    fn a_menu_over_several_rows_copies_every_link_in_list_order() {
+        let rows = [download(2), download(1)];
+        let (label, links) = copied(&rows);
+        assert_eq!(label, "Copy links");
+        assert_eq!(links, [rows[0].url.clone(), rows[1].url.clone()]);
+        assert_ne!(links[0], links[1]);
+        let (label, links) = copied(&rows[1..]);
+        assert_eq!((label, links.len()), ("Copy link", 1));
+    }
 }

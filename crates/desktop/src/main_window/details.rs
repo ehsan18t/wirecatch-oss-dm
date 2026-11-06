@@ -361,6 +361,19 @@ fn failure(
         )
 }
 
+/// Puts downloads' `links` on the clipboard, one per line, and says so.
+pub(super) fn copy_links(links: &[String], window: &mut Window, cx: &mut App) {
+    cx.write_to_clipboard(ClipboardItem::new_string(links.join("\n")));
+    window.push_notification(
+        if links.len() == 1 {
+            "Link copied."
+        } else {
+            "Links copied."
+        },
+        cx,
+    );
+}
+
 /// Where it is saved, with Change until it finishes, and where it came from, with Copy.
 fn places(
     row: &DownloadSummary,
@@ -399,8 +412,7 @@ fn places(
                     .outline()
                     .label("Copy")
                     .on_click(move |_, window, cx| {
-                        cx.write_to_clipboard(ClipboardItem::new_string(copied.clone()));
-                        window.push_notification("Link copied.", cx);
+                        copy_links(std::slice::from_ref(&copied), window, cx);
                     })
                     .into_any_element(),
             ),
