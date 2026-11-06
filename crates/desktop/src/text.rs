@@ -767,7 +767,8 @@ fn hides_spaces(part: &str, at: usize, byte: u8) -> bool {
 }
 
 /// A character that is not drawn as itself: a control, a format mark such as a direction
-/// override, a line or paragraph break, a private or unassigned one, or another default-ignorable.
+/// override, a line or paragraph break, a private or unassigned one, another default-ignorable, or
+/// a blank symbol (U+2800, U+1D159).
 fn misleads(c: char) -> bool {
     use unicode_properties::{GeneralCategory as G, UnicodeGeneralCategory as _};
     matches!(
@@ -787,9 +788,11 @@ fn misleads(c: char) -> bool {
             | '\u{17B4}'
             | '\u{17B5}'
             | '\u{180B}'..='\u{180F}'
+            | '\u{2800}'
             | '\u{3164}'
             | '\u{FE00}'..='\u{FE0F}'
             | '\u{FFA0}'
+            | '\u{1D159}'
             | '\u{E0100}'..='\u{E01EF}'
     )
 }
@@ -1342,6 +1345,9 @@ mod tests {
             "https://example.com/a%C2%A0%C2%A0%C2%A0.pdf.exe",
             "https://example.com/a%E3%80%80%E3%80%80.pdf.exe",
             "https://example.com/a%E2%80%83.pdf.exe",
+            "https://example.com/a.pdf%E2%A0%80%E2%A0%80%E2%A0%80.exe",
+            "https://example.com/a.pdf%F0%9D%85%99.exe",
+            "https://example.com/a.pdf%E3%85%A4.exe",
         ] {
             assert_eq!(readable_link(kept), kept);
         }
