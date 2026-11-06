@@ -1,10 +1,10 @@
 //! A path on one line, cut in the middle so its last folder or file name stays in view (D239).
 
 use gpui_kit::{
-    App, Bounds, Element, ElementId, GlobalElementId, InspectorElementId, InteractiveElement as _,
-    IntoElement, LayoutId, ParentElement as _, Pixels, RenderOnce, ShapedLine, SharedString,
-    StatefulInteractiveElement as _, Style, Styled as _, TextAlign, TextStyle, Window, div, px,
-    relative,
+    App, Bounds, ContentMask, Element, ElementId, GlobalElementId, InspectorElementId,
+    InteractiveElement as _, IntoElement, LayoutId, ParentElement as _, Pixels, RenderOnce,
+    ShapedLine, SharedString, StatefulInteractiveElement as _, Style, Styled as _, TextAlign,
+    TextStyle, Window, div, px, relative,
 };
 
 use super::tooltip;
@@ -87,7 +87,24 @@ fn fit(path: &str, room: f32, measure: impl Fn(&str) -> f32) -> String {
         line.extend(tail.iter().skip(tail.len() - back));
         line
     };
-    cut(most_kept(tail.len(), |kept| measure(&cut(kept)) <= room))
+    let line = cut(most_kept(tail.len(), |kept| measure(&cut(kept)) <= room));
+    if measure(&line) <= room {
+        line
+    } else {
+        String::new()
+    }
+}
+
+/// The width a line `whole` wide asks for: up to the next device pixel, since layout rounds a
+/// set width half toward zero.
+fn asked_width(whole: f32, scale: f32) -> f32 {
+    (whole * scale).ceil() / scale
+}
+
+/// The room a line has in a box `width` wide, with the device pixel that snapping its bounds may
+/// take back.
+fn room(width: f32, scale: f32) -> f32 {
+    width + 1. / scale
 }
 
 /// The largest count up to `most` that `fits`, given that fitting holds for every smaller count.
@@ -162,9 +179,9 @@ impl Element for PathLine {
             line_height: style.line_height_in_pixels(rem),
             style,
         };
-        let whole = measured.shape(&self.path, window).width;
+        let whole = f32::from(measured.shape(&self.path, window).width);
         let mut layout = Style::default();
-        layout.size.width = whole.into();
+        layout.size.width = px(asked_width(whole, window.scale_factor())).into();
         layout.size.height = measured.line_height.into();
         layout.min_size.width = px(0.).into();
         layout.max_size.width = relative(1.).into();
@@ -181,7 +198,8 @@ impl Element for PathLine {
         window: &mut Window,
         _: &mut App,
     ) -> ShapedLine {
-        let shown = fit(&self.path, f32::from(bounds.size.width), |line| {
+        let room = room(f32::from(bounds.size.width), window.scale_factor());
+        let shown = fit(&self.path, room, |line| {
             f32::from(measured.shape(line, window).width)
         });
         measured.shape(&shown, window)
@@ -197,14 +215,17 @@ impl Element for PathLine {
         window: &mut Window,
         cx: &mut App,
     ) {
-        if let Err(error) = line.paint(
-            bounds.origin,
-            measured.line_height,
-            TextAlign::Left,
-            None,
-            window,
-            cx,
-        ) {
+        let painted = window.with_content_mask(Some(ContentMask { bounds }), |window| {
+            line.paint(
+                bounds.origin,
+                measured.line_height,
+                TextAlign::Left,
+                None,
+                window,
+                cx,
+            )
+        });
+        if let Err(error) = painted {
             tracing::warn!("a path could not be drawn: {error}");
         }
     }
@@ -212,7 +233,7 @@ impl Element for PathLine {
 
 #[cfg(test)]
 mod tests {
-    use super::{fit, split};
+    use super::{asked_width, fit, room, split};
 
     fn by_chars(line: &str) -> f32 {
         f32::from(u16::try_from(line.chars().count()).unwrap_or(u16::MAX))
@@ -263,8 +284,19 @@ mod tests {
     }
 
     #[test]
-    fn no_room_leaves_only_the_ellipsis() {
+    fn no_room_leaves_nothing_past_the_box() {
         assert_eq!(fit(r"C:\dl\Video", 1., by_chars), "…");
-        assert_eq!(fit(r"C:\dl\Video", 0., by_chars), "…");
+        assert_eq!(fit(r"C:\dl\Video", 0.5, by_chars), "");
+    }
+
+    #[test]
+    fn a_path_that_fits_stays_whole_after_layout_rounds_its_box() {
+        let path = r"C:\dl\Video";
+        let measure = |line: &str| by_chars(line) * 7.3;
+        let scale = 1.25;
+        let asked = asked_width(measure(path), scale);
+        assert!(asked >= measure(path));
+        let snapped = asked - 1. / scale;
+        assert_eq!(fit(path, room(snapped, scale), measure), path);
     }
 }
