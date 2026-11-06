@@ -191,7 +191,7 @@ fn updates(library: &Entity<Library>) -> SettingGroup {
                 }),
             )
             .description(
-                "Weekly, while nothing downloads. The list tells which sites share an owner; publicsuffix.org sees only your IP address and the app\u{2019}s version.",
+                "Tells sites apart as new domains appear, such as which links may reach your local network. Checked weekly while nothing downloads; publicsuffix.org sees only your IP address and the app\u{2019}s version.",
             )
             .keywords(["psl", "domains", "privacy"]),
         )

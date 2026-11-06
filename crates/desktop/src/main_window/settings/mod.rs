@@ -20,10 +20,9 @@ use gpui_kit::component::input::{InputEvent, Textarea, TextareaState};
 use gpui_kit::component::setting::{SelectIndex, SettingField, SettingPage, Settings};
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, h_flex};
 use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, Div, Entity, Focusable as _,
-    InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
-    StatefulInteractiveElement as _, StyleRefinement, Styled as _, Subscription, Task, WeakEntity,
-    Window, div, px,
+    App, AppContext as _, Context, Div, Entity, Focusable as _, InteractiveElement as _,
+    IntoElement, ParentElement as _, SharedString, StatefulInteractiveElement as _,
+    StyleRefinement, Styled as _, Subscription, Task, WeakEntity, Window, div, px,
 };
 use wirecatch_protocol::app::{AppSettings, AppSettingsPatch};
 use wirecatch_shell::api;
@@ -331,7 +330,7 @@ fn list_field(
     save: impl Fn(Vec<String>, &mut App) + 'static,
     window: &mut Window,
     cx: &mut App,
-) -> AnyElement {
+) -> Textarea {
     struct List {
         input: Entity<TextareaState>,
         pending: Option<Task<()>>,
@@ -389,7 +388,7 @@ fn list_field(
     {
         input.update(cx, |state, cx| state.set_value(shown, window, cx));
     }
-    Textarea::new(&input).into_any_element()
+    Textarea::new(&input)
 }
 
 #[cfg(test)]

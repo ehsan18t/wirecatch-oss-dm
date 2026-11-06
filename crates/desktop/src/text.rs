@@ -178,8 +178,13 @@ pub fn size(row: &DownloadSummary) -> String {
         {
             format_bytes(total)
         }
-        Some(total) => format!("{} of {}", format_bytes(row.done), format_bytes(total)),
+        Some(total) => bytes_of(row.done, total),
     }
+}
+
+/// How much of `total` is done: `1.2 GB of 4.7 GB`.
+pub fn bytes_of(done: u64, total: u64) -> String {
+    format!("{} of {}", format_bytes(done), format_bytes(total))
 }
 
 /// A speed: `4.2 MB/s`.

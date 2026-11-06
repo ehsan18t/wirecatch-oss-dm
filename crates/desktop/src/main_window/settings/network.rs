@@ -67,7 +67,7 @@ fn proxy(library: &Entity<Library>, cx: &App) -> SettingGroup {
         )
         .item(
             SettingItem::new("FTP links skip the proxy", ftp_bypass(library))
-            .description("Only SOCKS5 proxies carry FTP. On, FTP links go direct past other proxies; off, they fail.")
+            .description("On, FTP links connect directly when the proxy cannot carry them; off, they fail. Only SOCKS5 proxies carry FTP.")
             .keywords(["ftp", "ftps", "direct"]),
         )
 }

@@ -15,6 +15,7 @@ use wirecatch_shell::api;
 
 use crate::backend::{command, command_saying};
 use crate::library::Library;
+use crate::text;
 use crate::ui::{Role, Typed as _};
 
 const PER_MILLE: u64 = 1000;
@@ -172,7 +173,7 @@ fn buttons(addon: &AddonInfo, cx: &App) -> Vec<Button> {
 }
 
 /// Install, Update, Try again or Stop, by the add-on's state.
-fn main_button(addon: &AddonInfo) -> Option<Button> {
+pub(super) fn main_button(addon: &AddonInfo) -> Option<Button> {
     let id = addon.id;
     let button = Button::new("addon-main").small();
     match &addon.state {
@@ -226,16 +227,17 @@ fn installing(state: &AddonState) -> Option<Installing> {
 }
 
 /// One line on where the add-on stands.
-fn status(addon: &AddonInfo) -> String {
+pub(super) fn status(addon: &AddonInfo) -> String {
     match &addon.state {
         AddonState::NotInstalled => "Not installed".to_owned(),
-        AddonState::Installing { .. } => match installing(&addon.state) {
-            Some(Installing::Done(done)) if u64::from(done) >= PER_MILLE => {
+        AddonState::Installing { done, total } => match total.filter(|total| *total > 0) {
+            Some(total) if *done >= total => {
                 // Everything is downloaded; the files are being checked and unpacked.
                 "Installing: verifying files".to_owned()
             }
-            Some(Installing::Done(done)) => format!("Installing, {}%", done / 10),
-            Some(Installing::SizeUnknown) | None => "Installing".to_owned(),
+            Some(total) => format!("Installing, {}", text::bytes_of(*done, total)),
+            None if *done > 0 => format!("Installing, {}", format_bytes(*done)),
+            None => "Installing".to_owned(),
         },
         AddonState::Installed => addon.installed_version.as_ref().map_or_else(
             || "Installed".to_owned(),
@@ -309,6 +311,34 @@ mod tests {
             None
         );
         assert_eq!(nothing_to_update(&[], AddonId::Media), None);
+    }
+
+    #[test]
+    fn an_install_says_how_much_is_downloaded() {
+        const MIB: u64 = 1024 * 1024;
+        let at = |done, total| {
+            status(&AddonInfo {
+                id: AddonId::Media,
+                name: "Media add-on".to_owned(),
+                description: String::new(),
+                state: AddonState::Installing { done, total },
+                usable: false,
+                installed_version: None,
+                latest_version: None,
+                size: None,
+                note: None,
+            })
+        };
+        assert_eq!(
+            at(43 * MIB, Some(131 * MIB)),
+            "Installing, 43.0 MB of 131 MB"
+        );
+        assert_eq!(at(43 * MIB, None), "Installing, 43.0 MB");
+        assert_eq!(at(0, None), "Installing");
+        assert_eq!(
+            at(131 * MIB, Some(131 * MIB)),
+            "Installing: verifying files"
+        );
     }
 
     #[test]

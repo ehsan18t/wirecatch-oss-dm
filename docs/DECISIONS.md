@@ -1628,3 +1628,12 @@ Decided with the maintainer on 2026-11-06. It amends D47.5: the details stay a d
 2. Where it is saved has Copy beside it, and Change until it finishes. Its buttons, the queue menu among the facts included, are the size of the foot's, and a fact's value keeps to one line.
 3. The actions at the foot are labelled, in the row menu's order: Progress window, Show in folder and More (Cancel and Remove), with the one action its state calls for on the right. A failure's callout offers only its fix, since Try again is that action.
 4. A side panel beside the list was tried and rejected: a click must never shrink or reflow the list.
+
+### D259. The media settings wait for the add-on
+
+Decided with the maintainer on 2026-11-06. The media settings stayed switched on and editable while the add-on was missing, though nothing reads them until it is installed, and About said "Not installed" with no way to install it.
+
+1. Settings, Media dims and locks the Video, Video subtitles and Audio groups while the media add-on does not work (`AddonInfo::usable`), and the Video group says to install it from the card above. Until the add-ons are known the groups stay as they are, so the page does not open dimmed for a moment.
+2. "Ask before each video" comes before "Remember these choices": whether the quality window opens decides what remembering its picks means.
+3. An install says how much is downloaded ("Installing, 43.0 MB of 131 MB"), not a percentage.
+4. About's media add-on row carries the add-on card's main button (Install, Update, Try again or Stop, by its state) and shows an install's progress in place of the versions.

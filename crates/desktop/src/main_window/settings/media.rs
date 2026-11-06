@@ -2,14 +2,14 @@
 //! whether a pick in the quality window is kept (D200), the resolution and what to do when a
 //! video lacks it, and what videos and audio alone are saved as, each with its own choices.
 
-use gpui_kit::component::IndexPath;
 use gpui_kit::component::combobox::{Combobox, ComboboxEvent, ComboboxState};
 use gpui_kit::component::searchable_list::{SearchableListItem, SearchableVec};
 use gpui_kit::component::setting::{SettingField, SettingGroup, SettingItem, SettingPage};
+use gpui_kit::component::{Disableable as _, IndexPath};
 use gpui_kit::{App, Axis, Entity, IntoElement as _, SharedString, Styled as _, px};
 use wirecatch_protocol::app::{
-    AddonId, AppSettings, AppSettingsPatch, MediaDefaultsPatch, OutputDefaultsPatch, OutputFormat,
-    QualityFallback, SubtitleChoice, UnembeddedSubtitles, Update, VideoQuality,
+    AddonId, AddonInfo, AppSettings, AppSettingsPatch, MediaDefaultsPatch, OutputDefaultsPatch,
+    OutputFormat, QualityFallback, SubtitleChoice, UnembeddedSubtitles, Update, VideoQuality,
 };
 use wirecatch_protocol::extension::ExtensionSettingsPatch;
 use wirecatch_protocol::languages::LANGUAGES;
@@ -40,19 +40,42 @@ const UNEMBEDDED: &[(UnembeddedSubtitles, &str)] = &[
     (UnembeddedSubtitles::Skip, "Leave them out"),
 ];
 const USUAL: &str = "usual";
+const NEEDS_ADDON: &str = "Install the media add-on above to use these settings.";
 const SUBTITLE_LANGUAGES_HELP: &str = "The creator's subtitles, or auto-generated ones if allowed. Languages a video doesn't have are skipped. With none chosen, the video's own language is used.";
 
 pub(super) fn page(library: &Entity<Library>, cx: &App) -> SettingPage {
+    let ready = addon_ready(&library.read(cx).addons);
+    let video = needing_addon("Video", video(library, cx), ready);
     SettingPage::new(super::Page::Media.title())
         .resettable(false)
         .groups([
             SettingGroup::new()
                 .title("Add-on")
                 .item(super::addon::item(library, AddonId::Media)),
-            video(library, cx),
-            video_subtitles(library, cx),
-            audio(library, cx),
+            if ready {
+                video
+            } else {
+                video.description(NEEDS_ADDON)
+            },
+            needing_addon("Video subtitles", video_subtitles(library, cx), ready),
+            needing_addon("Audio", audio(library, cx), ready),
         ])
+}
+
+/// Whether the media add-on works; true until the add-ons are known, so the page does not open
+/// dimmed for a moment.
+fn addon_ready(addons: &[AddonInfo]) -> bool {
+    addons
+        .iter()
+        .find(|addon| addon.id == AddonId::Media)
+        .is_none_or(|addon| addon.usable)
+}
+
+/// `items` under `title`, dimmed and locked until the add-on works.
+fn needing_addon(title: &'static str, items: Vec<SettingItem>, ready: bool) -> SettingGroup {
+    SettingGroup::new()
+        .title(title)
+        .items(items.into_iter().map(|item| item.disabled(!ready)))
 }
 
 fn media(patch: MediaDefaultsPatch) -> AppSettingsPatch {
@@ -131,87 +154,103 @@ fn quality_field(library: &Entity<Library>, cx: &App) -> SettingField<SharedStri
     )
 }
 
-fn video(library: &Entity<Library>, cx: &App) -> SettingGroup {
+/// A switch about the quality window.
+struct WindowSwitch {
+    title: &'static str,
+    description: &'static str,
+    keywords: &'static [&'static str],
+    read: fn(&AppSettings) -> bool,
+    patch: fn(bool) -> AppSettingsPatch,
+}
+
+/// Asking first: whether the quality window opens decides what remembering its picks means.
+const QUALITY_WINDOW: [WindowSwitch; 2] = [
+    WindowSwitch {
+        title: ASK_EACH_VIDEO,
+        description: "Opens the quality window for each video. Off, videos start at once with the settings below.",
+        keywords: &["ask", "quality window", "prompt"],
+        read: |s| s.media.ask_each_time,
+        patch: |on| {
+            media(MediaDefaultsPatch {
+                ask_each_time: Some(on),
+                ..MediaDefaultsPatch::default()
+            })
+        },
+    },
+    WindowSwitch {
+        title: REMEMBER_CHOICES,
+        description: "Saves your quality window picks as the settings below. Off, they apply to that video only.",
+        keywords: &["remember", "save", "last", "quality window"],
+        read: |s| s.media.remember_choices,
+        patch: |on| {
+            media(MediaDefaultsPatch {
+                remember_choices: Some(on),
+                ..MediaDefaultsPatch::default()
+            })
+        },
+    },
+];
+
+fn video(library: &Entity<Library>, cx: &App) -> Vec<SettingItem> {
     let by_height = current(
         library,
         cx,
         |s| matches!(s.media.quality, VideoQuality::Height(_)),
         false,
     );
-    let mut group = SettingGroup::new()
-        .title("Video")
-        .item(
-            SettingItem::new(
-                REMEMBER_CHOICES,
-                switch(library, |s| s.media.remember_choices, |on| {
-                    media(MediaDefaultsPatch {
-                        remember_choices: Some(on),
-                        ..MediaDefaultsPatch::default()
-                    })
-                }),
-            )
-            .description("Saves your quality window picks as the settings below. Off, they apply to that video only.")
-            .keywords(["remember", "save", "last", "quality window"]),
-        )
-        .item(
-            SettingItem::new(
-                ASK_EACH_VIDEO,
-                switch(library, |s| s.media.ask_each_time, |on| {
-                    media(MediaDefaultsPatch {
-                        ask_each_time: Some(on),
-                        ..MediaDefaultsPatch::default()
-                    })
-                }),
-            )
-            .description("Opens the quality window for each video. Off, videos start at once with the settings below.")
-            .keywords(["ask", "quality window", "prompt"]),
-        )
-        .item(
-            SettingItem::new(
-                "Resolution",
-                quality_field(library, cx),
-            )
+    let mut items: Vec<SettingItem> = QUALITY_WINDOW
+        .iter()
+        .map(|it| {
+            SettingItem::new(it.title, switch(library, it.read, it.patch))
+                .description(it.description)
+                .keywords(it.keywords.iter().copied())
+        })
+        .collect();
+    items.push(
+        SettingItem::new("Resolution", quality_field(library, cx))
             .description(format!("Used when {} doesn't ask, and chosen first in the quality window. Audio-only downloads use the audio settings.", host::CHANNEL.name()))
             .keywords(["quality", "1080p", "4k", "720p", "best"]),
-        );
+    );
     if by_height {
-        group = group.item(fallback(library));
+        items.push(fallback(library));
     }
-    group
-        .item(
-            SettingItem::new(
-                "Save videos as",
-                choice(
-                    library,
-                    VIDEO_FORMATS,
-                    |s| s.media.video.format,
-                    |format| {
-                        video_patch(OutputDefaultsPatch {
-                            format: Some(format),
-                            ..OutputDefaultsPatch::default()
-                        })
-                    },
-                ),
-            )
-            .description(
-                "Original keeps the site's format. Other formats convert only when needed.",
-            )
-            .keywords(["format", "mp4", "mkv", "webm", "convert"]),
+    items.extend([
+        SettingItem::new(
+            "Save videos as",
+            choice(
+                library,
+                VIDEO_FORMATS,
+                |s| s.media.video.format,
+                |format| {
+                    video_patch(OutputDefaultsPatch {
+                        format: Some(format),
+                        ..OutputDefaultsPatch::default()
+                    })
+                },
+            ),
         )
-        .item(
-            SettingItem::new(
-                "Add chapters",
-                switch(library, |s| s.media.video.chapters, |on| {
+        .description("Original keeps the site's format. Other formats convert only when needed.")
+        .keywords(["format", "mp4", "mkv", "webm", "convert"]),
+        SettingItem::new(
+            "Add chapters",
+            switch(
+                library,
+                |s| s.media.video.chapters,
+                |on| {
                     video_patch(OutputDefaultsPatch {
                         chapters: Some(on),
                         ..OutputDefaultsPatch::default()
                     })
-                }),
-            )
-            .description("Adds a video's chapters to MP4, MKV and WebM files, so players can jump between them.")
-            .keywords(["chapters"]),
+                },
+            ),
         )
-        .item(video_sites(library))
+        .description(
+            "Adds a video's chapters to MP4, MKV and WebM files, so players can jump between them.",
+        )
+        .keywords(["chapters"]),
+        video_sites(library),
+    ]);
+    items
 }
 
 /// What is picked when a video lacks the saved resolution.
@@ -238,7 +277,7 @@ fn fallback(library: &Entity<Library>) -> SettingItem {
 fn video_sites(library: &Entity<Library>) -> SettingItem {
     let sites = {
         let library = library.clone();
-        SettingField::render(move |_, window, cx| {
+        SettingField::render(move |options, window, cx| {
             list_field(
                 "video-sites".into(),
                 &current(
@@ -264,6 +303,7 @@ fn video_sites(library: &Entity<Library>) -> SettingItem {
                 window,
                 cx,
             )
+            .disabled(options.is_disabled())
         })
     };
     SettingItem::new("Additional video sites", sites)
@@ -281,7 +321,7 @@ fn subtitle_field(
     patch: fn(SubtitleChoice) -> AppSettingsPatch,
 ) -> SettingField<SharedString> {
     let library = library.clone();
-    SettingField::render(move |_, _, cx| {
+    SettingField::render(move |options, _, cx| {
         let shown = current(&library, cx, read, SubtitleChoice::Off);
         subtitle_toggle(
             id,
@@ -290,6 +330,7 @@ fn subtitle_field(
             move |pick, _, cx| change(patch(*pick), cx),
             cx,
         )
+        .disabled(options.is_disabled())
         .into_any_element()
     })
 }
@@ -317,14 +358,14 @@ fn auto_subtitles_item(
 }
 
 /// How a video keeps its subtitles, then what only applies when it keeps them.
-fn video_subtitles(library: &Entity<Library>, cx: &App) -> SettingGroup {
+fn video_subtitles(library: &Entity<Library>, cx: &App) -> Vec<SettingItem> {
     let choice_now = current(
         library,
         cx,
         |s| s.media.video.subtitles,
         SubtitleChoice::Off,
     );
-    let group = SettingGroup::new().title("Video subtitles").item(
+    let mut items = vec![
         SettingItem::new(
             "Subtitles",
             subtitle_field(
@@ -342,12 +383,12 @@ fn video_subtitles(library: &Entity<Library>, cx: &App) -> SettingGroup {
         )
         .description("In the video file, where players show them, or as .srt files next to it.")
         .keywords(["subtitles", "captions", "srt", "embed", "off"]),
-    );
+    ];
     if choice_now == SubtitleChoice::Off {
-        return group;
+        return items;
     }
-    let group = group
-        .item(languages_item(
+    items.extend([
+        languages_item(
             library,
             "video-languages",
             |s| s.media.video.subtitle_languages.clone(),
@@ -357,8 +398,8 @@ fn video_subtitles(library: &Entity<Library>, cx: &App) -> SettingGroup {
                     ..OutputDefaultsPatch::default()
                 })
             },
-        ))
-        .item(auto_subtitles_item(
+        ),
+        auto_subtitles_item(
             library,
             |s| s.media.video.auto_subtitles,
             |on| {
@@ -367,10 +408,11 @@ fn video_subtitles(library: &Entity<Library>, cx: &App) -> SettingGroup {
                     ..OutputDefaultsPatch::default()
                 })
             },
-        ));
+        ),
+    ]);
     // Asked only while subtitles go inside the video (D93).
     if choice_now == SubtitleChoice::Inside {
-        return group.item(
+        items.push(
             SettingItem::new(
                 "If the format can't hold subtitles",
                 choice(
@@ -389,29 +431,30 @@ fn video_subtitles(library: &Entity<Library>, cx: &App) -> SettingGroup {
             .keywords(["subtitles", "srt"]),
         );
     }
-    group
+    items
 }
 
-fn audio(library: &Entity<Library>, cx: &App) -> SettingGroup {
+fn audio(library: &Entity<Library>, cx: &App) -> Vec<SettingItem> {
     let format = current(
         library,
         cx,
         |s| s.media.audio.format,
         OutputFormat::Original,
     );
-    let mut group = SettingGroup::new().title("Audio").item(
+    let mut items = vec![
         SettingItem::new("Save audio as", audio_format(library))
             .description("Downloaded audio is converted to this format. MP3, M4A and FLAC files include the title, artist and cover art.")
             .keywords(["audio", "music", "mp3", "m4a", "opus", "flac", "wav"]),
-    );
+    ];
     if !format.kbps_choices().is_empty() {
-        group = group.item(
+        items.push(
             SettingItem::new("Audio quality", audio_quality(library, format))
                 .description("Higher bit rates sound better and make larger files.")
                 .keywords(["bitrate", "kbps", "quality"]),
         );
     }
-    audio_subtitles(group, library, cx).item(
+    audio_subtitles(&mut items, library, cx);
+    items.push(
         SettingItem::new(
             "Add chapters",
             switch(
@@ -427,18 +470,19 @@ fn audio(library: &Entity<Library>, cx: &App) -> SettingGroup {
         )
         .description("Adds the video's chapters to M4A files.")
         .keywords(["chapters"]),
-    )
+    );
+    items
 }
 
 /// How audio keeps its subtitles, then what only applies when it keeps them.
-fn audio_subtitles(mut group: SettingGroup, library: &Entity<Library>, cx: &App) -> SettingGroup {
+fn audio_subtitles(items: &mut Vec<SettingItem>, library: &Entity<Library>, cx: &App) {
     let on = current(
         library,
         cx,
         |s| audio_subtitles_shown(s) != SubtitleChoice::Off,
         false,
     );
-    group = group.item(
+    items.push(
         SettingItem::new(
             "Subtitles",
             subtitle_field(
@@ -460,8 +504,8 @@ fn audio_subtitles(mut group: SettingGroup, library: &Entity<Library>, cx: &App)
         .keywords(["subtitles", "captions", "srt", "off"]),
     );
     if on {
-        group = group
-            .item(languages_item(
+        items.extend([
+            languages_item(
                 library,
                 "audio-languages",
                 |s| s.media.audio.subtitle_languages.clone(),
@@ -471,8 +515,8 @@ fn audio_subtitles(mut group: SettingGroup, library: &Entity<Library>, cx: &App)
                         ..OutputDefaultsPatch::default()
                     })
                 },
-            ))
-            .item(auto_subtitles_item(
+            ),
+            auto_subtitles_item(
                 library,
                 |s| s.media.audio.auto_subtitles,
                 |on| {
@@ -481,9 +525,9 @@ fn audio_subtitles(mut group: SettingGroup, library: &Entity<Library>, cx: &App)
                         ..OutputDefaultsPatch::default()
                     })
                 },
-            ));
+            ),
+        ]);
     }
-    group
 }
 
 /// What the saved audio choice comes to: no audio format holds subtitles.
@@ -627,7 +671,7 @@ fn languages(
     patch: fn(Vec<String>) -> AppSettingsPatch,
 ) -> SettingField<SharedString> {
     let library = library.clone();
-    SettingField::render(move |_, window, cx| {
+    SettingField::render(move |options, window, cx| {
         let saved = current(&library, cx, read, Vec::new());
         let state = window.use_keyed_state(SharedString::from(key), cx, |window, cx| {
             let choices = language_choices(&saved);
@@ -664,6 +708,7 @@ fn languages(
             }
         }
         Combobox::new(&state)
+            .disabled(options.is_disabled())
             .w(px(280.))
             .placeholder("The video's language")
             .search_placeholder("Search languages")
@@ -673,6 +718,8 @@ fn languages(
 
 #[cfg(test)]
 mod tests {
+    use wirecatch_protocol::app::AddonState;
+
     use super::*;
 
     #[test]
@@ -683,6 +730,30 @@ mod tests {
         assert_eq!(place, Some(3));
         assert_eq!(options[3].1.as_ref(), "1200p");
         assert_eq!(options.len(), QUALITIES.len() + 1);
+    }
+
+    #[test]
+    fn the_video_settings_wait_only_for_an_add_on_that_does_not_work() {
+        let media = |usable| AddonInfo {
+            id: AddonId::Media,
+            name: "Media add-on".to_owned(),
+            description: String::new(),
+            state: AddonState::NotInstalled,
+            usable,
+            installed_version: None,
+            latest_version: None,
+            size: None,
+            note: None,
+        };
+        assert!(addon_ready(&[]));
+        assert!(addon_ready(&[media(true)]));
+        assert!(!addon_ready(&[media(false)]));
+    }
+
+    #[test]
+    fn asking_comes_before_remembering() {
+        let titles = QUALITY_WINDOW.map(|it| it.title);
+        assert_eq!(titles, [ASK_EACH_VIDEO, REMEMBER_CHOICES]);
     }
 
     #[test]
