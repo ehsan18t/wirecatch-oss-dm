@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::button::{Button, ButtonVariant, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::{WindowExt as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
@@ -12,7 +12,7 @@ use gpui_kit::{
 };
 use wirecatch_core::RemoveFiles;
 use wirecatch_protocol::DownloadId;
-use wirecatch_protocol::app::DownloadStatus;
+use wirecatch_protocol::app::{DownloadStatus, DownloadSummary};
 use wirecatch_shell::api;
 
 use super::{applies, selection};
@@ -30,6 +30,8 @@ struct Asked {
     one: Option<String>,
     finished: usize,
     started: bool,
+    /// Some unfinished one has a partial file.
+    partial: bool,
     running: bool,
 }
 
@@ -50,6 +52,10 @@ impl Asked {
             .iter()
             .filter(|row| ids.contains(&row.id))
             .collect();
+        Self::of(&rows)
+    }
+
+    fn of(rows: &[&DownloadSummary]) -> Self {
         Self {
             ids: rows.iter().map(|row| row.id).collect(),
             one: (rows.len() == 1).then(|| rows[0].file_name.clone()),
@@ -58,6 +64,9 @@ impl Asked {
                 .filter(|row| row.status == DownloadStatus::Completed)
                 .count(),
             started: rows.iter().any(|row| row.done > 0),
+            partial: rows
+                .iter()
+                .any(|row| row.status != DownloadStatus::Completed && row.done > 0),
             running: rows.iter().any(|row| {
                 matches!(
                     row.status,
@@ -69,6 +78,12 @@ impl Asked {
 
     fn count(&self) -> usize {
         self.ids.len()
+    }
+
+    /// Whether removing them deletes files: an unfinished one's partial file always goes, the
+    /// finished files when the person asks.
+    fn removal_deletes(&self, delete_finished: bool) -> bool {
+        self.partial || (delete_finished && self.finished > 0)
     }
 }
 
@@ -137,6 +152,22 @@ impl Render for RemoveForm {
     }
 }
 
+/// The remove button's label, by whether the finished files go, and its look: the danger colour
+/// only when files are deleted, partial ones included.
+fn remove_button(asked: &Asked, delete_finished: bool) -> (&'static str, ButtonVariant) {
+    let label = if delete_finished && asked.finished > 0 {
+        "Remove and delete"
+    } else {
+        "Remove from list"
+    };
+    let variant = if asked.removal_deletes(delete_finished) {
+        ButtonVariant::Danger
+    } else {
+        ButtonVariant::Primary
+    };
+    (label, variant)
+}
+
 /// Asks before removing `ids` from the list; `folded` are the ones the list does not show.
 pub(super) fn remove(
     library: &Entity<Library>,
@@ -161,9 +192,9 @@ pub(super) fn remove(
         delete_files: false,
     });
     crate::ui::dialog::open(window, cx, move |dialog, _, cx| {
-        let deletes = {
+        let (label, variant) = {
             let form = form.read(cx);
-            form.delete_files && form.asked.finished > 0
+            remove_button(&form.asked, form.delete_files)
         };
         let removing = form.clone();
         dialog
@@ -182,12 +213,8 @@ pub(super) fn remove(
                     )
                     .child(
                         Button::new("remove")
-                            .danger()
-                            .label(if deletes {
-                                "Remove and delete"
-                            } else {
-                                "Remove from list"
-                            })
+                            .with_variant(variant)
+                            .label(label)
                             .on_click(move |_, window, cx| {
                                 let (ids, files) = {
                                     let form = removing.read(cx);
@@ -297,6 +324,33 @@ mod tests {
     use super::*;
     use wirecatch_protocol::app::DownloadSummary;
     use wirecatch_test_support::downloads::download;
+
+    #[test]
+    fn only_a_removal_that_deletes_files_is_marked_as_danger() {
+        let row = |id, status, done| DownloadSummary {
+            status,
+            done,
+            ..download(id)
+        };
+        let finished = row(1, DownloadStatus::Completed, 10);
+        let partial = row(2, DownloadStatus::Paused, 10);
+        let empty = row(3, DownloadStatus::Queued, 0);
+        let button = |rows: &[&DownloadSummary], delete_finished| {
+            remove_button(&Asked::of(rows), delete_finished)
+        };
+
+        let keep = ("Remove from list", ButtonVariant::Primary);
+        assert_eq!(button(&[&finished, &empty], false), keep);
+        assert_eq!(
+            button(&[&finished], true),
+            ("Remove and delete", ButtonVariant::Danger)
+        );
+        assert_eq!(
+            button(&[&finished, &partial], false),
+            ("Remove from list", ButtonVariant::Danger)
+        );
+        assert_eq!(button(&[&empty], true), keep);
+    }
 
     #[test]
     fn removing_says_how_much_of_it_is_out_of_sight() {
