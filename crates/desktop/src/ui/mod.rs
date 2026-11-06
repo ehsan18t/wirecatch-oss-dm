@@ -2,6 +2,7 @@
 //! and the layouts they are arranged in. Screens draw with these, never with sizes of their own.
 
 pub mod callout;
+pub mod chip;
 pub mod choice;
 pub mod dialog;
 pub mod field;
@@ -21,6 +22,7 @@ pub mod tokens;
 pub mod tooltip;
 
 pub use callout::Callout;
+pub use chip::Chip;
 pub use field::Field;
 pub use file_tile::FileTile;
 pub use folder_row::FolderRow;

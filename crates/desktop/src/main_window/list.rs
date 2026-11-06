@@ -1,7 +1,7 @@
 //! The download list: one line per download, grouped by status in the order [`Group::ALL`] gives,
 //! each group under a heading that folds it; finished downloads in queue order sit under the day
-//! they finished. Every row shares one grid: a circle that picks it, its time to the second, its
-//! file tile, then its name over the lines the View menu keeps (link, save folder), and one figure.
+//! they finished. Every row shares one grid: a circle that picks it, its time to the second (or
+//! time left), its file tile, its name over one line of its state, link and folder, and a figure.
 
 use std::rc::Rc;
 
@@ -31,7 +31,7 @@ use crate::backend::act;
 use crate::rows::Tally;
 use crate::text;
 use crate::ui::select_circle::{Picked, SelectCircle};
-use crate::ui::{FileTile, PathText, Role, Typed as _, icon, tokens, tooltip};
+use crate::ui::{Chip, FileTile, Role, Typed as _, icon, tokens, tooltip};
 
 /// Space before the circle column and after the figure.
 pub(super) const PAD: f32 = 12.;
@@ -42,11 +42,11 @@ const TILE_WIDTH: f32 = 32.;
 const GAP: f32 = 12.;
 /// Every line's left border, which marks a selected row.
 const BORDER: f32 = 2.;
-/// Where a row's text starts, which its progress line follows.
-const TEXT_START: f32 = BORDER + PAD + CIRCLE_WIDTH + GAP + TIME_WIDTH + GAP + TILE_WIDTH + GAP;
 /// The figure at a row's end, and the buttons that take its place on hover.
 const END_WIDTH: f32 = 112.;
-const PROGRESS_HEIGHT: f32 = 2.;
+const PROGRESS_HEIGHT: f32 = 3.;
+const ONE_LINE_HEIGHT: f32 = 36.;
+const TWO_LINES_HEIGHT: f32 = 56.;
 /// How far past the visible lines the list lays out, so scrolling shows no gaps.
 const OVERDRAW: f32 = 400.;
 const HEADING_HEIGHT: f32 = 32.;
@@ -175,13 +175,18 @@ fn splice_keeping_place(
     }
 }
 
-/// How tall a row is, by how many lines it shows under its name.
+/// How tall a row is: its name alone, or over a second line when the View menu keeps the link or
+/// the folder.
 fn line_height(shown: ListLines) -> f32 {
-    match usize::from(shown.link) + usize::from(shown.folder) {
-        0 => 36.,
-        1 => 52.,
-        _ => 68.,
+    if has_second_line(shown) {
+        TWO_LINES_HEIGHT
+    } else {
+        ONE_LINE_HEIGHT
     }
+}
+
+fn has_second_line(shown: ListLines) -> bool {
+    shown.link || shown.folder
 }
 
 impl MainWindow {
@@ -446,7 +451,7 @@ impl MainWindow {
         let selected = self.selected.contains(&id);
         let hovered = self.hovered == Some(id);
         let tone = status_tone(&row, cx);
-        let compact = !shown.link && !shown.folder;
+        let compact = !has_second_line(shown);
         let shows_circle = hovered || (self.picked && self.selection_facts(cx).count > 0);
         let shows_actions = hovered || (selected && !self.picked);
         let main = cx.entity().downgrade();
@@ -483,9 +488,6 @@ impl MainWindow {
                     .flex_shrink_0()
                     .child(row_end(&row, shows_actions, tone, cx)),
             )
-            .when_some(progress_line(&row, tone, cx), |line, progress| {
-                line.child(progress)
-            })
             .when(self.cursor == Some(id), |line| {
                 line.child(marker(cursor_bounds))
             })
@@ -591,7 +593,31 @@ fn circle_cell() -> gpui_kit::Div {
         .justify_center()
 }
 
-/// When a row happened, to the second, or the word for a download under way.
+/// What a row's time column shows.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Gutter {
+    /// The time left of a running download.
+    Left(u64),
+    Paused,
+    /// Its place in a queue's line.
+    Place(usize),
+    /// When it finished, failed or was added.
+    Clock,
+    /// Nothing the row's heading does not already say.
+    Blank,
+}
+
+fn gutter_of(row: &DownloadSummary, place: Option<usize>) -> Gutter {
+    match (Group::of(row.status), place) {
+        (Group::Downloading, _) => row.eta_secs.map_or(Gutter::Blank, Gutter::Left),
+        (Group::Paused, _) => Gutter::Paused,
+        (_, Some(place)) => Gutter::Place(place),
+        (Group::UpNext, None) => Gutter::Blank,
+        _ => Gutter::Clock,
+    }
+}
+
+/// When a row happened, to the second; a running download's time left; a paused one's state.
 fn time_cell(row: &DownloadSummary, place: Option<usize>, dated: bool, cx: &App) -> AnyElement {
     let theme = cx.theme();
     let cell = v_flex().w(px(TIME_WIDTH)).flex_shrink_0().justify_center();
@@ -600,14 +626,16 @@ fn time_cell(row: &DownloadSummary, place: Option<usize>, dated: bool, cx: &App)
             .text_role(Role::Strong, cx)
             .text_color(color)
             .child(said)
-            .into_any_element()
     };
-    let shown = match (Group::of(row.status), place) {
-        (Group::Downloading, _) => word("now".to_owned(), theme.primary),
-        (Group::Paused, _) => word("paused".to_owned(), theme.warning),
-        (_, Some(place)) => word(place.to_string(), theme.muted_foreground),
-        (Group::UpNext, None) => word("queued".to_owned(), theme.muted_foreground),
-        _ => {
+    let shown = match gutter_of(row, place) {
+        Gutter::Left(left) => word(text::eta(left), theme.primary),
+        Gutter::Paused => word(
+            text::status_label(DownloadStatus::Paused).to_owned(),
+            theme.warning,
+        ),
+        Gutter::Place(place) => word(place.to_string(), theme.muted_foreground),
+        Gutter::Blank => return cell.into_any_element(),
+        Gutter::Clock => {
             let at = row.completed_at.unwrap_or(row.added_at);
             let (clock, seconds) = text::clock_parts(at);
             let day = (!dated).then(|| text::local_day(at)).flatten();
@@ -631,25 +659,14 @@ fn time_cell(row: &DownloadSummary, place: Option<usize>, dated: bool, cx: &App)
     cell.child(shown).into_any_element()
 }
 
-/// The name over what the row says under it: its state while that matters, then the link and the
-/// folder the View menu keeps, as many lines as the settings give.
+/// The name, over one line of what matters for the row's state, then the link and the folder the
+/// View menu keeps; a progress bar under them while work is under way or paused.
 fn text_column(row: &DownloadSummary, shown: ListLines, tone: Hsla, cx: &App) -> gpui_kit::Div {
-    let danger = cx.theme().danger;
+    let second_line = has_second_line(shown);
     let failed = row.status == DownloadStatus::Failed;
-    let room = usize::from(shown.link) + usize::from(shown.folder);
-    let mut under: Vec<AnyElement> = Vec::new();
-    under.extend(status_line(row, tone, cx));
-    if shown.link {
-        under.push(link_line(row, cx));
-    }
-    if shown.folder {
-        under.push(folder_line(row, cx));
-    }
-    under.truncate(room);
     v_flex()
         .flex_1()
         .min_w_0()
-        .items_start()
         .justify_center()
         .gap_0p5()
         .child(
@@ -663,109 +680,115 @@ fn text_column(row: &DownloadSummary, shown: ListLines, tone: Hsla, cx: &App) ->
                         .text_role(Role::Strong, cx)
                         .child(row.file_name.clone()),
                 )
-                .when(failed && room == 0, |line| {
+                .when(failed && !second_line, |line| {
                     line.child(
                         div()
                             .flex_shrink_0()
                             .text_role(Role::Meta, cx)
-                            .text_color(danger)
+                            .text_color(cx.theme().danger)
                             .child("Failed"),
                     )
                 }),
         )
-        .children(under)
+        .when(second_line, |column| {
+            column.child(second_line_of(row, shown, tone, cx))
+        })
+        .children(progress_bar(row, tone, cx))
 }
 
-/// What a row says of its state under its name, when its state is not plain finished.
-fn status_line(row: &DownloadSummary, tone: Hsla, cx: &App) -> Option<AnyElement> {
-    let theme = cx.theme();
-    let line = || {
-        h_flex()
-            .max_w_full()
-            .gap_3()
-            .overflow_hidden()
-            .text_role(Role::Meta, cx)
-    };
+/// The row's second line: its state while that matters, then the link's host (with its path once
+/// the download is over) and the folder as a chip.
+fn second_line_of(row: &DownloadSummary, shown: ListLines, tone: Hsla, cx: &App) -> AnyElement {
+    let state = state_part(row, tone, cx);
+    let dot = state.is_some() && shown.link;
+    h_flex()
+        .w_full()
+        .min_w_0()
+        .gap_2()
+        .overflow_hidden()
+        .text_role(Role::Meta, cx)
+        .children(state)
+        .when(dot, |line| line.child(div().flex_shrink_0().child("·")))
+        .when(shown.link, |line| line.child(link_part(row, cx)))
+        .when(shown.folder, |line| line.child(folder_chip(row, cx)))
+        .into_any_element()
+}
+
+/// What a row says of its state, when its state is not plain finished: a failure's first
+/// sentence, a running download's speed and size, how far a paused one got, or a word for the rest.
+fn state_part(row: &DownloadSummary, tone: Hsla, cx: &App) -> Option<AnyElement> {
+    let part = || h_flex().min_w_0().gap_2();
     let said = match row.status {
         DownloadStatus::Completed | DownloadStatus::Cancelled => return None,
-        DownloadStatus::Failed => line()
-            .text_color(theme.danger)
-            .child(div().truncate().child(row.error.as_ref().map_or_else(
-                || text::status_short(row),
-                |error| text::first_sentence(&error.message).to_owned(),
-            ))),
-        DownloadStatus::Downloading if row.speed > 0 && text::shown_wait(row).is_none() => line()
-            .child(
-                div()
-                    .flex_shrink_0()
-                    .text_color(tone)
-                    .child(text::speed(row.speed)),
-            )
-            .when_some(row.eta_secs, |line, left| {
-                line.child(
-                    div()
-                        .flex_shrink_0()
-                        .child(format!("{} left", text::eta(left))),
-                )
-            })
-            .child(div().truncate().child(text::size(row))),
-        DownloadStatus::Paused => line().child(div().truncate().child(text::paused_at(row))),
-        _ => line().child(div().truncate().child(text::status_short(row))),
+        DownloadStatus::Failed => {
+            part()
+                .text_color(cx.theme().danger)
+                .child(div().truncate().child(row.error.as_ref().map_or_else(
+                    || text::status_short(row),
+                    |error| text::first_sentence(&error.message).to_owned(),
+                )))
+        }
+        DownloadStatus::Downloading if row.speed > 0 && text::shown_wait(row).is_none() => part()
+            .flex_shrink_0()
+            .child(div().text_color(tone).child(text::speed(row.speed)))
+            .child(text::size(row)),
+        DownloadStatus::Paused => part().flex_shrink_0().child(text::paused_at(row)?),
+        _ => part().child(div().truncate().child(text::status_short(row))),
     };
     Some(said.into_any_element())
 }
 
-/// The full link, its host brighter; hovering shows it whole.
-fn link_line(row: &DownloadSummary, cx: &App) -> AnyElement {
-    let theme = cx.theme();
+/// The link's host, brighter, and once the download is over its path; hovering shows it whole.
+fn link_part(row: &DownloadSummary, cx: &App) -> AnyElement {
     let link = row.url.clone();
-    let (scheme, rest) = link
-        .split_once("://")
-        .map_or(("", link.as_str()), |(scheme, rest)| (scheme, rest));
-    let host_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
-    let scheme = if scheme.is_empty() {
-        String::new()
-    } else {
-        format!("{scheme}://")
-    };
-    let (host, path) = (rest[..host_end].to_owned(), rest[host_end..].to_owned());
+    let host = text::host(&link).to_owned();
+    let path = Group::of(row.status)
+        .is_over()
+        .then(|| link_path(&link).to_owned());
     h_flex()
         .id(row_id("link", row.id))
-        .max_w_full()
+        .min_w_0()
         .overflow_hidden()
-        .text_role(Role::Meta, cx)
-        .child(div().flex_shrink_0().child(scheme))
         .child(
             div()
                 .flex_shrink_0()
-                .text_color(theme.foreground.opacity(0.8))
+                .text_color(cx.theme().foreground.opacity(0.8))
                 .child(host),
         )
-        .child(div().min_w_0().truncate().child(path))
+        .children(path.map(|path| div().min_w_0().truncate().child(path)))
         .tooltip(move |window, cx| whole(link.clone(), window, cx))
         .into_any_element()
 }
 
-/// The folder the file is saved in; hovering shows it whole.
-fn folder_line(row: &DownloadSummary, cx: &App) -> AnyElement {
-    let folder = std::path::Path::new(&text::folder(&row.path))
-        .parent()
-        .map_or_else(String::new, |folder| folder.display().to_string());
-    let shown = PathText::new(folder.clone());
-    h_flex()
-        .id(row_id("folder", row.id))
-        .max_w_full()
-        .gap_1()
-        .overflow_hidden()
-        .text_role(Role::Caption, cx)
-        .child(
-            Icon::new(IconName::Folder)
-                .with_size(px(12.))
-                .flex_shrink_0(),
-        )
-        .child(div().min_w_0().truncate().child(shown))
-        .tooltip(move |window, cx| whole(folder.clone(), window, cx))
+/// What follows a link's host: its path, query and fragment.
+fn link_path(link: &str) -> &str {
+    let rest = link.split_once("://").map_or(link, |(_, rest)| rest);
+    rest.find(['/', '?', '#']).map_or("", |at| &rest[at..])
+}
+
+/// The folder the file is saved in, by its last name; hovering shows it whole.
+fn folder_chip(row: &DownloadSummary, _: &App) -> AnyElement {
+    let folder = saved_folder(&row.path);
+    Chip::new(row_id("folder", row.id), last_name(&folder).to_owned())
+        .whole(folder)
         .into_any_element()
+}
+
+/// The folder a saved file is in, as Settings shows folders.
+fn saved_folder(path: &str) -> String {
+    std::path::Path::new(&text::folder(path))
+        .parent()
+        .map_or_else(String::new, |folder| folder.display().to_string())
+}
+
+/// A folder's last name: `Video` of `D:\Downloads\Video`.
+fn last_name(folder: &str) -> &str {
+    let trimmed = folder.trim_end_matches(['\\', '/']);
+    trimmed
+        .rsplit(['\\', '/'])
+        .next()
+        .filter(|name| !name.is_empty())
+        .unwrap_or(trimmed)
 }
 
 /// A popover with a line's whole text, wrapped.
@@ -809,8 +832,8 @@ fn figure(row: &DownloadSummary, tone: Hsla, cx: &App) -> impl IntoElement {
         )
 }
 
-/// The thin line along a row's bottom while work is under way or paused, from its text on.
-fn progress_line(row: &DownloadSummary, tone: Hsla, cx: &App) -> Option<impl IntoElement> {
+/// The bar under a row's text while work is under way or paused.
+fn progress_bar(row: &DownloadSummary, tone: Hsla, cx: &App) -> Option<impl IntoElement> {
     if !matches!(
         row.status,
         DownloadStatus::Connecting
@@ -823,10 +846,8 @@ fn progress_line(row: &DownloadSummary, tone: Hsla, cx: &App) -> Option<impl Int
     let done = text::per_mille(row).map_or(0., |done| f32::from(done) / f32::from(PER_MILLE_DONE));
     Some(
         div()
-            .absolute()
-            .bottom_0()
-            .left(px(TEXT_START))
-            .right(px(PAD))
+            .mt_0p5()
+            .w_full()
             .h(px(PROGRESS_HEIGHT))
             .rounded_full()
             .bg(cx.theme().muted_foreground.opacity(0.15))
@@ -1183,15 +1204,52 @@ mod tests {
     }
 
     #[gpui_kit::test]
-    fn a_click_on_the_link_line_selects_the_row_and_copies_nothing(
-        cx: &mut gpui_kit::TestAppContext,
-    ) {
-        assert_eq!(click_on(link_line, cx), (1, None));
+    fn a_click_on_the_link_selects_the_row_and_copies_nothing(cx: &mut gpui_kit::TestAppContext) {
+        assert_eq!(click_on(link_part, cx), (1, None));
     }
 
     #[gpui_kit::test]
-    fn a_click_on_the_folder_line_selects_the_row(cx: &mut gpui_kit::TestAppContext) {
-        assert_eq!(click_on(folder_line, cx), (1, None));
+    fn a_click_on_the_folder_selects_the_row(cx: &mut gpui_kit::TestAppContext) {
+        assert_eq!(click_on(folder_chip, cx), (1, None));
+    }
+
+    #[test]
+    fn the_time_column_says_what_the_heading_does_not() {
+        let row = |status, eta_secs| DownloadSummary {
+            status,
+            eta_secs,
+            ..download(1)
+        };
+        let running = row(DownloadStatus::Downloading, Some(90));
+        assert_eq!(gutter_of(&running, None), Gutter::Left(90));
+        let connecting = row(DownloadStatus::Connecting, None);
+        assert_eq!(gutter_of(&connecting, None), Gutter::Blank);
+        let paused = row(DownloadStatus::Paused, None);
+        assert_eq!(gutter_of(&paused, None), Gutter::Paused);
+        let queued = row(DownloadStatus::Queued, None);
+        assert_eq!(gutter_of(&queued, None), Gutter::Blank);
+        assert_eq!(gutter_of(&queued, Some(2)), Gutter::Place(2));
+        let finished = row(DownloadStatus::Completed, None);
+        assert_eq!(gutter_of(&finished, None), Gutter::Clock);
+        let failed = row(DownloadStatus::Failed, None);
+        assert_eq!(gutter_of(&failed, None), Gutter::Clock);
+    }
+
+    #[test]
+    fn a_folder_chip_names_the_last_folder() {
+        assert_eq!(last_name(r"D:\Downloads\Video"), "Video");
+        assert_eq!(last_name("/home/me/Downloads/"), "Downloads");
+        assert_eq!(last_name("Downloads"), "Downloads");
+        assert_eq!(last_name(r"C:\"), "C:");
+        assert_eq!(last_name(""), "");
+    }
+
+    #[test]
+    fn a_link_path_follows_its_host() {
+        assert_eq!(link_path("https://example.com/f/a.zip?x=1"), "/f/a.zip?x=1");
+        assert_eq!(link_path("https://example.com?x=1"), "?x=1");
+        assert_eq!(link_path("https://example.com"), "");
+        assert_eq!(link_path("example.com/a"), "/a");
     }
 
     /// A list of `keys` scrolled to `top`.
