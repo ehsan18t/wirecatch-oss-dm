@@ -695,6 +695,85 @@ fn split_seconds(time: &str) -> (String, String) {
     (time[..at].to_owned(), time[at..].to_owned())
 }
 
+/// The escapes a shown link keeps, as address bars do: decoded, each would change where the link
+/// seems to point (`example.com%2F@evil.test`).
+const KEPT_ESCAPES: [u8; 6] = [b'/', b'?', b'#', b'@', b'%', b':'];
+
+/// `url` as a browser's address bar shows it, its path, query and fragment each decoded on its own;
+/// the scheme and host never are. Copying keeps `url`.
+pub fn readable_link(url: &str) -> String {
+    let after_scheme = url.find("://").map_or(0, |at| at + 3);
+    let path_at = url[after_scheme..]
+        .find(['/', '?', '#'])
+        .map_or(url.len(), |at| after_scheme + at);
+    let (start, rest) = url.split_at(path_at);
+    let (rest, fragment) = rest.find('#').map_or((rest, ""), |at| rest.split_at(at));
+    let (path, query) = rest.find('?').map_or((rest, ""), |at| rest.split_at(at));
+    [path, query, fragment]
+        .into_iter()
+        .fold(start.to_owned(), |mut shown, part| {
+            shown.push_str(&readable_part(part));
+            shown
+        })
+}
+
+/// `part` with its escapes decoded but [`KEPT_ESCAPES`]; as it is when that gives no UTF-8 or a
+/// character that could break the line or make a name read as another (`%E2%80%AE` turns `exe`
+/// around).
+fn readable_part(part: &str) -> std::borrow::Cow<'_, str> {
+    let bytes = part.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut at = 0;
+    while at < bytes.len() {
+        let escaped = (bytes[at] == b'%')
+            .then(|| part.get(at + 1..at + 3))
+            .flatten()
+            .and_then(|hex| u8::from_str_radix(hex, 16).ok());
+        match escaped {
+            Some(byte) if !KEPT_ESCAPES.contains(&byte) => {
+                decoded.push(byte);
+                at += 3;
+            }
+            _ => {
+                decoded.push(bytes[at]);
+                at += 1;
+            }
+        }
+    }
+    match String::from_utf8(decoded) {
+        Ok(shown) if !shown.chars().any(misleads) => shown.into(),
+        _ => part.into(),
+    }
+}
+
+/// A character that is not drawn as itself: a control, a format mark such as a direction
+/// override, a line or paragraph break, a private or unassigned one, or another default-ignorable.
+fn misleads(c: char) -> bool {
+    use unicode_properties::{GeneralCategory as G, UnicodeGeneralCategory as _};
+    matches!(
+        c.general_category(),
+        G::Control
+            | G::Format
+            | G::LineSeparator
+            | G::ParagraphSeparator
+            | G::PrivateUse
+            | G::Surrogate
+            | G::Unassigned
+    ) || matches!(
+        c,
+        '\u{034F}'
+            | '\u{115F}'
+            | '\u{1160}'
+            | '\u{17B4}'
+            | '\u{17B5}'
+            | '\u{180B}'..='\u{180F}'
+            | '\u{3164}'
+            | '\u{FE00}'..='\u{FE0F}'
+            | '\u{FFA0}'
+            | '\u{E0100}'..='\u{E01EF}'
+    )
+}
+
 /// The host of a link, for the line under a running download's name.
 pub fn host(url: &str) -> &str {
     let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
@@ -1212,5 +1291,52 @@ mod tests {
             "example.com:8080"
         );
         assert_eq!(host("example.com/file"), "example.com");
+    }
+
+    #[test]
+    fn a_link_shows_its_escapes_decoded() {
+        assert_eq!(
+            readable_link("https://example.com/f/%E6%97%A5%E6%9C%AC%E8%AA%9E.zip?q=a%20b"),
+            "https://example.com/f/日本語.zip?q=a b"
+        );
+        assert_eq!(
+            readable_link("https://example.com/plain.zip"),
+            "https://example.com/plain.zip"
+        );
+    }
+
+    #[test]
+    fn a_link_keeps_escapes_that_would_mislead_or_break_the_line() {
+        for kept in [
+            "https://example.com/a%FFb.zip",
+            "https://example.com/line%0Abreak.zip",
+            "https://example.com/flip%E2%80%AEpiz.exe",
+            "https://example.com/mark%E2%80%8F.zip",
+            "https://example.com/zero%E2%80%8Bwidth.zip",
+            "https://example.com/line%E2%80%A8sep.zip",
+            "https://example.com/arabic%D8%9Cmark.zip",
+            "https://example.com/private%EE%80%80.zip",
+            "https://example.com/selector%EF%B8%8F.zip",
+            "https://ex%61mple.com/host-stays.zip",
+            "https://example.com%2F@evil.test/x.zip",
+        ] {
+            assert_eq!(readable_link(kept), kept);
+        }
+    }
+
+    #[test]
+    fn a_link_keeps_the_escapes_that_change_where_it_points() {
+        assert_eq!(
+            readable_link("https://example.com/a%2F..%2Fb%3Fc%23d%40e%3Af%25g%20h"),
+            "https://example.com/a%2F..%2Fb%3Fc%23d%40e%3Af%25g h"
+        );
+    }
+
+    #[test]
+    fn each_part_of_a_link_is_decoded_on_its_own() {
+        assert_eq!(
+            readable_link("https://example.com/%E6%97%A5?bad=%FF#%E6%9C%AC"),
+            "https://example.com/日?bad=%FF#本"
+        );
     }
 }
