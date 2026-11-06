@@ -61,10 +61,13 @@ fn queues_line(queues: &[Queue]) -> String {
         .iter()
         .map(|queue| queue.settings.name.as_str())
         .collect();
-    format!(
-        "{}. Create, edit and order queues in the sidebar.",
-        names.join(", ")
-    )
+    let listed = names.join(", ");
+    let stop = if listed.ends_with(['.', '!', '?']) {
+        ""
+    } else {
+        "."
+    };
+    format!("{listed}{stop} Create, edit and order queues in the sidebar.")
 }
 
 fn limits(library: &Entity<Library>, cx: &App) -> SettingGroup {
@@ -238,6 +241,10 @@ mod tests {
         assert_eq!(
             queues_line(&[queue(1, "Main"), queue(2, "Videos")]),
             "Main, Videos. Create, edit and order queues in the sidebar."
+        );
+        assert_eq!(
+            queues_line(&[queue(1, "Main"), queue(2, "Done by 6 a.m.")]),
+            "Main, Done by 6 a.m. Create, edit and order queues in the sidebar."
         );
     }
 }
