@@ -13,7 +13,7 @@ use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, Context, ElementId, Hsla, InteractiveElement as _, IntoElement, ListAlignment,
-    ListOffset, ListState, MouseButton, ParentElement as _, SharedString,
+    ListOffset, ListState, MouseButton, ParentElement as _, Pixels, SharedString,
     StatefulInteractiveElement as _, Styled as _, Window, canvas, div, list, px, relative,
 };
 use wirecatch_protocol::DownloadId;
@@ -107,6 +107,13 @@ pub(super) enum GroupCommand {
 }
 
 impl GroupCommand {
+    pub(super) fn icon(self) -> IconName {
+        match self {
+            Self::PauseAll => IconName::Pause,
+            Self::ResumeAll => IconName::Play,
+        }
+    }
+
     pub(super) fn run(self, window: &Window, cx: &mut App) {
         let work = match self {
             Self::PauseAll => api::pause_all,
@@ -199,28 +206,67 @@ impl MainWindow {
         }
         self.sync_scroll(&laid, cx);
         let top = self.scroll.state.logical_scroll_top();
-        list(
+        let pinned = laid.pinned(top, px(HEADING_SPACE)).map(|line| {
+            let next = laid.heading_after(line).and_then(|next| {
+                let drawn = self.scroll.state.bounds_for_item(next)?;
+                Some(drawn.origin.y - self.scroll.state.viewport_bounds().origin.y)
+            });
+            (self.line(&laid, line, top, cx), pushed_up(next))
+        });
+        let drawn = laid.clone();
+        let lines = list(
             self.scroll.state.clone(),
-            cx.processor(move |this, index: usize, _, cx| {
-                let shown = this.list_lines(cx);
-                match laid.lines.get(index).copied() {
-                    Some(Line::Heading(group, count)) => {
-                        this.heading(group, count, laid.group_ids(group), cx)
-                    }
-                    Some(Line::Day(day)) => match laid.day(index) {
-                        Some(facts) => this.day_heading(day, facts, cx),
-                        None => div().into_any_element(),
-                    },
-                    Some(Line::Row(row, place, dated)) => {
-                        this.row(row, place, dated, shown, InView { index, top }, cx)
-                    }
-                    None => div().into_any_element(),
-                }
-            }),
+            cx.processor(move |this, index: usize, _, cx| this.line(&drawn, index, top, cx)),
         )
         .flex_1()
-        .pb_4()
-        .into_any_element()
+        .pb_4();
+        let Some((pinned, lift)) = pinned else {
+            return lines.into_any_element();
+        };
+        v_flex()
+            .flex_1()
+            .min_h_0()
+            .relative()
+            .overflow_hidden()
+            .child(lines)
+            .child(
+                div()
+                    .id("pinned-heading")
+                    .block_mouse_except_scroll()
+                    .absolute()
+                    .top(px(-HEADING_SPACE) - lift)
+                    .left_0()
+                    .right_0()
+                    .bg(cx.theme().background)
+                    .border_b_1()
+                    .border_color(cx.theme().border)
+                    .child(pinned),
+            )
+            .into_any_element()
+    }
+
+    /// Line `index` of `laid`: a heading, a day or a row.
+    fn line(
+        &self,
+        laid: &Laid,
+        index: usize,
+        top: ListOffset,
+        cx: &mut Context<'_, Self>,
+    ) -> AnyElement {
+        let shown = self.list_lines(cx);
+        match laid.lines.get(index).copied() {
+            Some(Line::Heading(group, count)) => {
+                self.heading(group, count, laid.group_ids(group), cx)
+            }
+            Some(Line::Day(day)) => match laid.day(index) {
+                Some(facts) => self.day_heading(day, facts, cx),
+                None => div().into_any_element(),
+            },
+            Some(Line::Row(row, place, dated)) => {
+                self.row(row, place, dated, shown, InView { index, top }, cx)
+            }
+            None => div().into_any_element(),
+        }
     }
 
     /// Keeps the list's state on `laid`: only the lines that changed are laid out again, so the
@@ -405,8 +451,9 @@ impl MainWindow {
             .when_some(command, |line, (label, command)| {
                 line.child(
                     Button::new(ElementId::Name(SharedString::new(format!("all-{group:?}"))))
-                        .xsmall()
-                        .ghost()
+                        .small()
+                        .outline()
+                        .icon(command.icon())
                         .label(label)
                         .on_click(cx.listener(move |_, _, window, cx| command.run(window, cx))),
                 )
@@ -420,6 +467,7 @@ impl MainWindow {
             1 => "1 file".to_owned(),
             n => format!("{n} files"),
         };
+        let (library, ids) = (self.library.clone(), facts.ids.clone());
         heading_line()
             .child(self.heading_circle(format!("pick-day-{day}").into(), facts.ids.clone(), cx))
             .child(
@@ -429,8 +477,20 @@ impl MainWindow {
             )
             .child(
                 div()
+                    .flex_1()
                     .text_role(Role::Meta, cx)
                     .child(format!("{files}, {}", format_bytes(facts.bytes))),
+            )
+            .child(
+                Button::new(ElementId::Name(SharedString::new(format!(
+                    "remove-day-{day}"
+                ))))
+                .small()
+                .outline()
+                .label("Remove from list")
+                .on_click(move |_, window, cx| {
+                    super::confirm::remove(&library, &ids, &[], window, cx);
+                }),
             )
             .into_any_element()
     }
@@ -580,6 +640,14 @@ fn tile(row: &DownloadSummary, compact: bool, tone: Hsla) -> AnyElement {
         .text_color(tone)
         .child(Icon::new(icon::category(row.category)).with_size(tokens::ICON))
         .into_any_element()
+}
+
+/// How far the pinned heading moves up so the next heading, whose line starts `next` below the
+/// list's top, pushes it away instead of sliding under it.
+fn pushed_up(next: Option<Pixels>) -> Pixels {
+    next.map_or(px(0.), |next| {
+        (px(HEADING_HEIGHT) - (next + px(HEADING_SPACE))).max(px(0.))
+    })
 }
 
 /// A heading's line, in the rows' grid, with room above it to set it apart from the rows before.
@@ -1374,6 +1442,18 @@ mod tests {
                 ..reading
             }
         );
+    }
+
+    #[test]
+    fn the_next_heading_pushes_the_pinned_one_up() {
+        assert_eq!(pushed_up(None), px(0.));
+        assert_eq!(pushed_up(Some(px(200.))), px(0.));
+        assert_eq!(pushed_up(Some(px(HEADING_HEIGHT - HEADING_SPACE))), px(0.));
+        assert_eq!(
+            pushed_up(Some(px(10.))),
+            px(HEADING_HEIGHT - HEADING_SPACE - 10.)
+        );
+        assert_eq!(pushed_up(Some(px(-HEADING_SPACE))), px(HEADING_HEIGHT));
     }
 
     #[test]

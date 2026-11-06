@@ -1699,3 +1699,10 @@ Decided with the maintainer on 2026-11-07. Once the sidebar had been folded and 
 1. Below 1100 pixels wide the sidebar folds to the icon rail by itself, and above it unfolds by itself (`rail::Nav::Auto`).
 2. Folding it with the title bar's button keeps the rail at any width. Unfolding it hands it back to the window's width.
 3. In a narrow window the button opens and closes the full navigation as a drawer over the list instead.
+
+### D246. Group headings stay in view and their actions are buttons
+
+Decided with the maintainer on 2026-11-06. In a long list nothing said which day or state the rows in view belonged to, and Pause all and Resume all read as plain text.
+
+1. The heading of the group or day the top of the list is in stays pinned over the list while its rows scroll under it, with its circle, count, size and action, until the next heading pushes it up and away. Clicks on it reach only the heading.
+2. Pause all and Resume all are outlined buttons with their icons. A day heading offers Remove from list, which asks first as Remove does.

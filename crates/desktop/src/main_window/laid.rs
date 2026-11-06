@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use chrono::NaiveDate;
+use gpui_kit::{ListOffset, Pixels};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::DownloadSummary;
 
@@ -153,6 +154,35 @@ impl Laid {
         self.groups[group.place()].clone()
     }
 
+    /// The heading `line` sits under: that line itself when it is one, else the last before it.
+    pub fn heading_over(&self, line: usize) -> Option<usize> {
+        self.lines
+            .get(..=line)?
+            .iter()
+            .rposition(|line| matches!(line, Line::Heading(..) | Line::Day(_)))
+    }
+
+    /// The first heading after `line`.
+    pub fn heading_after(&self, line: usize) -> Option<usize> {
+        let from = line + 1;
+        self.lines
+            .get(from..)?
+            .iter()
+            .position(|line| matches!(line, Line::Heading(..) | Line::Day(_)))
+            .map(|at| from + at)
+    }
+
+    /// The heading to pin over the list whose top is `top`: the one its top line sits under, once
+    /// that heading's text, `text_from` down its own line, has begun to scroll away, so the pinned
+    /// copy always covers it. Until then the heading before stays pinned, being pushed away.
+    pub fn pinned(&self, top: ListOffset, text_from: Pixels) -> Option<usize> {
+        let heading = self.heading_over(top.item_ix)?;
+        if heading < top.item_ix || top.offset_in_item >= text_from {
+            return Some(heading);
+        }
+        self.heading_over(heading.checked_sub(1)?)
+    }
+
     /// What the day heading on `line` tells.
     pub fn day(&self, line: usize) -> Option<&Day> {
         self.days.get(&line)
@@ -233,6 +263,7 @@ fn finished_day(row: &DownloadSummary) -> Option<NaiveDate> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gpui_kit::px;
     use wirecatch_protocol::QueueId;
     use wirecatch_protocol::app::DownloadStatus;
     use wirecatch_test_support::downloads::download;
@@ -374,6 +405,56 @@ mod tests {
                     Line::Row(4, Some(2), false),
                 ]
         );
+    }
+
+    #[test]
+    fn a_line_sits_under_the_last_heading_before_it() {
+        let downloads = [
+            row(1, 1, DownloadStatus::Downloading),
+            row(2, 1, DownloadStatus::Paused),
+            row(3, 1, DownloadStatus::Paused),
+        ];
+        let shown = laid(asked(View::All, "", &[]), &downloads);
+        assert_eq!(shown.heading_over(0), Some(0));
+        assert_eq!(shown.heading_over(1), Some(0));
+        assert_eq!(shown.heading_over(2), Some(2));
+        assert_eq!(shown.heading_over(4), Some(2));
+        assert_eq!(shown.heading_over(5), None);
+        let page = laid(asked(View::Group(Group::Paused), "", &[]), &downloads);
+        assert_eq!(page.heading_over(1), None);
+    }
+
+    #[test]
+    fn the_next_heading_is_found_after_a_line() {
+        let downloads = [
+            row(1, 1, DownloadStatus::Downloading),
+            row(2, 1, DownloadStatus::Paused),
+        ];
+        let shown = laid(asked(View::All, "", &[]), &downloads);
+        assert_eq!(shown.heading_after(0), Some(2));
+        assert_eq!(shown.heading_after(2), None);
+    }
+
+    #[test]
+    fn a_heading_is_pinned_only_once_its_text_scrolls_away() {
+        let downloads = [
+            row(1, 1, DownloadStatus::Downloading),
+            row(2, 1, DownloadStatus::Downloading),
+            row(3, 1, DownloadStatus::Paused),
+        ];
+        let shown = laid(asked(View::All, "", &[]), &downloads);
+        let at = |item_ix, offset| ListOffset {
+            item_ix,
+            offset_in_item: px(offset),
+        };
+        let text_from = px(12.);
+        assert_eq!(shown.pinned(at(0, 0.), text_from), None);
+        assert_eq!(shown.pinned(at(0, 11.), text_from), None);
+        assert_eq!(shown.pinned(at(0, 12.), text_from), Some(0));
+        assert_eq!(shown.pinned(at(1, 0.), text_from), Some(0));
+        assert_eq!(shown.pinned(at(3, 0.), text_from), Some(0));
+        assert_eq!(shown.pinned(at(3, 11.), text_from), Some(0));
+        assert_eq!(shown.pinned(at(3, 12.), text_from), Some(3));
     }
 
     #[test]
