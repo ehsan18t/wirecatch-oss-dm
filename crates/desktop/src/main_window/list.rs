@@ -1156,11 +1156,11 @@ mod tests {
         assert_eq!(label(Group::Paused, &[]), None);
         assert_eq!(label(Group::UpNext, &[]), None);
         let paused = [row(DownloadStatus::Paused)];
-        assert_eq!(label(Group::Paused, &paused), Some("Resume all"));
+        assert_eq!(label(Group::Paused, &paused), Some(text::RESUME_ALL));
         let waiting = [row(DownloadStatus::Queued)];
-        assert_eq!(label(Group::UpNext, &waiting), Some("Pause all"));
+        assert_eq!(label(Group::UpNext, &waiting), Some(text::PAUSE_ALL));
         let running = [row(DownloadStatus::Downloading)];
-        assert_eq!(label(Group::Downloading, &running), Some("Pause all"));
+        assert_eq!(label(Group::Downloading, &running), Some(text::PAUSE_ALL));
     }
 
     /// One of a row's lines under its name, inside a row that counts its clicks.

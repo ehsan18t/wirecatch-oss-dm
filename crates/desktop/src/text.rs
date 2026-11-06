@@ -187,9 +187,7 @@ pub fn speed(bytes_per_second: u64) -> String {
     format!("{}/s", format_bytes(bytes_per_second))
 }
 
-/// Pauses or resumes every download: the list's headings and the command palette.
-pub const PAUSE_ALL: &str = "Pause all";
-pub const RESUME_ALL: &str = "Resume all";
+pub use wirecatch_shell::tray::{PAUSE_ALL, RESUME_ALL};
 
 /// Pauses or resumes one queue: its header and its menu.
 pub const PAUSE_QUEUE: &str = "Pause queue";
@@ -277,7 +275,7 @@ pub fn wait_short(wait: &WaitReason) -> String {
             starts_at: Some(at),
         } => format!("Starts {}", time(*at)),
         WaitReason::QueueSchedule { starts_at: None } => "Outside schedule".to_owned(),
-        WaitReason::QueueFull { .. } => "Waiting for a slot".to_owned(),
+        WaitReason::QueueFull { .. } => "Waiting for a free slot".to_owned(),
         WaitReason::GlobalLimit { .. } => "Next, waiting for a free slot".to_owned(),
         WaitReason::InLine { position } => format!("{} in line", ordinal(*position)),
         WaitReason::ServerRefused { retry_at } => format!("Retrying at {}", clock(*retry_at)),
@@ -877,6 +875,11 @@ mod tests {
             limit: 5,
         };
         assert_eq!(wait_short(&first), "Next, waiting for a free slot");
+        let full = WaitReason::QueueFull {
+            running: 2,
+            limit: 2,
+        };
+        assert_eq!(wait_short(&full), "Waiting for a free slot");
         assert_eq!(
             wait_short(&WaitReason::InLine { position: 2 }),
             "2nd in line"
