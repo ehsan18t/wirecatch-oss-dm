@@ -1637,3 +1637,14 @@ Decided with the maintainer on 2026-11-06. The media settings stayed switched on
 2. "Ask before each video" comes before "Remember these choices": whether the quality window opens decides what remembering its picks means.
 3. An install says how much is downloaded ("Installing, 43.0 MB of 131 MB"), not a percentage.
 4. About's media add-on row carries the add-on card's main button (Install, Update, Try again or Stop, by its state) and shows an install's progress in place of the versions.
+
+### D270. Type folders follow the download folder
+
+Decided with the maintainer on 2026-11-06. Type folders were stored as `{Downloads}/Video` and so on, apart from the download folder, so changing the download folder left nearly every file going to the old place.
+
+1. A type folder written as plain folder names (`Video`), none of them hidden (starting with a dot), or left empty, lies in the download folder and moves with it (`wirecatch_settings::follows_download_folder`, `in_download_folder`). The defaults are written so, and a type that gets a rule in Settings starts empty, in the download folder itself.
+2. A folder picked by hand is a full path and stays where it is when the download folder changes. Asking whether to move such folders too is left for a later change.
+3. Settings stored by an older build are rewritten once, by a store migration: a type folder inside the download folder's own placeholder (`{Downloads}/Video` while the download folder is `{Downloads}`) becomes `Video`, since those builds wrote only their defaults so and a folder picked by hand as a full path. Hidden folders are left as they are. A type folder an older build left at `{Downloads}/Video` after the download folder had already moved stays as it is: nothing tells it from a folder picked there on purpose.
+4. A profile keeps each type folder as it is written. Export writes a folder picked by hand inside Downloads as `{Downloads}/Music` (D6), and an import keeps it there; only the plain form follows the download folder, on the other machine too. An imported type folder that cannot be used falls back to the download folder itself.
+5. A plain type folder from a settings file was judged only under the download folder of then. Whenever the settings change, a type folder that the download folder takes into a folder where a downloaded file could run by itself (`KnownFolders::is_protected`) goes back to the download folder itself, unless the download folder is such a folder already, which the person chose.
+6. Settings shows the real path a type folder resolves to.

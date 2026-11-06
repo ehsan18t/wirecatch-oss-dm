@@ -56,7 +56,7 @@ pub fn default_settings() -> AppSettings {
             .iter()
             .map(std::string::ToString::to_string)
             .collect(),
-        folder: PortablePath(format!("{{Downloads}}/{folder}")),
+        folder: PortablePath(folder.to_owned()),
     };
     AppSettings {
         default_folder: PortablePath("{Downloads}".into()),
@@ -276,9 +276,13 @@ pub fn validate(
         )));
     }
     for rule in &mut settings.categories {
-        check_folder(&rule.folder, folders)?;
+        check_folder(
+            &in_download_folder(&rule.folder, &settings.default_folder),
+            folders,
+        )?;
         rule.extensions = clean_extensions(&rule.extensions)?;
     }
+    keep_type_folders_safe(&mut settings, folders);
     check_connections(settings.connections_per_download)?;
     check_concurrency(
         settings.max_concurrent_downloads,
@@ -563,7 +567,64 @@ pub fn type_folder(
         .iter()
         .find(|rule| rule.category == category)
         .map_or(&settings.default_folder, |rule| &rule.folder);
-    Ok(folders.resolve(folder)?)
+    Ok(folders.resolve(&in_download_folder(folder, &settings.default_folder))?)
+}
+
+/// Whether a type folder lies in the download folder and moves with it (D270): written as plain
+/// folder names (`Video`), or empty for the download folder itself.
+#[must_use]
+pub fn follows_download_folder(folder: &PortablePath) -> bool {
+    let raw = folder.0.trim();
+    !raw.starts_with(['{', '/', '\\'])
+        && raw
+            .split(['/', '\\'])
+            .filter(|s| !s.is_empty())
+            .all(|name| folders::is_plain_name(name) && !name.starts_with('.'))
+}
+
+/// A type folder as a full folder setting: one that follows the download folder is placed in
+/// `download_folder`, any other is returned as it is.
+#[must_use]
+pub fn in_download_folder(folder: &PortablePath, download_folder: &PortablePath) -> PortablePath {
+    if !follows_download_folder(folder) {
+        return folder.clone();
+    }
+    let mut full = download_folder.0.trim().to_owned();
+    for name in folder.0.trim().split(['/', '\\']).filter(|s| !s.is_empty()) {
+        if !full.ends_with(['/', '\\']) {
+            full.push('/');
+        }
+        full.push_str(name);
+    }
+    PortablePath(full)
+}
+
+/// Puts a type folder that follows the download folder back in it when the download folder takes
+/// it somewhere a downloaded file could run by itself: such a tail may come from a settings file,
+/// and was judged only under the download folder of then. Blocks on the disk.
+fn keep_type_folders_safe(settings: &mut AppSettings, folders: &KnownFolders) {
+    let Ok(base) = folders.resolve(&settings.default_folder) else {
+        return;
+    };
+    if folders.is_protected(&base) {
+        return;
+    }
+    for rule in &mut settings.categories {
+        if rule.folder.0.trim().is_empty() || !follows_download_folder(&rule.folder) {
+            continue;
+        }
+        let full = in_download_folder(&rule.folder, &settings.default_folder);
+        if folders
+            .resolve(&full)
+            .is_ok_and(|path| folders.is_protected(&path))
+        {
+            tracing::warn!(
+                category = ?rule.category,
+                "a type folder would be in a protected folder; it is the download folder instead"
+            );
+            rule.folder = PortablePath(String::new());
+        }
+    }
 }
 
 fn check_connections(value: u8) -> Result<()> {
@@ -1055,6 +1116,48 @@ mod tests {
             folder_for(&s, &queue, Category::Video, &f).unwrap(),
             f.downloads.join("Night")
         );
+    }
+
+    #[test]
+    fn type_folders_follow_the_download_folder_unless_picked_by_hand() {
+        let f = folders();
+        let mut s = default_settings();
+        let picked = f.music.join("Albums");
+        s.categories[1].folder = PortablePath(picked.to_string_lossy().into_owned());
+        s.default_folder = PortablePath(f.documents.join("Saved").to_string_lossy().into_owned());
+        let s = validate(s, &[default_queue()], &f, &SuffixList::built_in()).unwrap();
+        assert_eq!(
+            type_folder(&s, Category::Video, &f).unwrap(),
+            f.documents.join("Saved").join("Video")
+        );
+        assert_eq!(type_folder(&s, Category::Audio, &f).unwrap(), picked);
+    }
+
+    #[test]
+    fn a_type_folder_in_the_download_folder_is_checked_there() {
+        let f = folders();
+        let check = |folder: &str| {
+            let mut s = default_settings();
+            s.categories[0].folder = PortablePath(folder.into());
+            validate(s, &[default_queue()], &f, &SuffixList::built_in())
+        };
+        assert!(check("Video/Clips").is_ok());
+        assert!(check("../Video").is_err());
+        assert!(check("Video/C:").is_err());
+        assert!(check(".ssh").is_err());
+        assert!(check("Video/.hidden").is_err());
+    }
+
+    #[test]
+    fn a_type_folder_the_download_folder_takes_into_a_protected_place_goes_back_to_it() {
+        let f = folders();
+        let f = f.clone().protecting(f.home.join("Apps"));
+        let mut s = default_settings();
+        s.categories[0].folder = PortablePath("Apps/Run".into());
+        s.default_folder = PortablePath(f.home.to_string_lossy().into_owned());
+        let s = validate(s, &[default_queue()], &f, &SuffixList::built_in()).unwrap();
+        assert_eq!(s.categories[0].folder, PortablePath(String::new()));
+        assert_eq!(s.categories[1].folder, PortablePath("Music".into()));
     }
 
     #[test]

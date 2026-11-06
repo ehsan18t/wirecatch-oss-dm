@@ -146,11 +146,22 @@ fn download_folder(library: &Entity<Library>, cx: &App) -> AnyElement {
         .into_any_element()
 }
 
+/// The real path of a type folder, which may lie in the download folder (D270).
+fn shown_type_folder(rule: &CategoryRule, cx: &App) -> String {
+    Backend::now(cx)
+        .0
+        .and_then(|manager| manager.type_folder(rule.category).ok())
+        .map_or_else(
+            || text::folder(&rule.folder.0),
+            |path| path.display().to_string(),
+        )
+}
+
 /// Where a type of file goes.
 fn type_folder_path(index: usize, rule: Option<&CategoryRule>, cx: &App) -> AnyElement {
     let folder = rule.map_or_else(
         || "Download folder".to_owned(),
-        |rule| shown_folder(&rule.folder, cx),
+        |rule| shown_type_folder(rule, cx),
     );
     let tone = if rule.is_some() {
         Role::Body
@@ -254,7 +265,7 @@ fn change_rule(
         rules.push(CategoryRule {
             category,
             extensions: Vec::new(),
-            folder: settings.default_folder.clone(),
+            folder: PortablePath(String::new()),
         });
         rules.len() - 1
     };
