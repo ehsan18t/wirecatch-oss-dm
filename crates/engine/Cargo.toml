@@ -27,8 +27,9 @@ httpdate = "1.0.3"
 # the engine reads NO_PROXY exactly as reqwest does; reqwest already builds it.
 hyper-util = { version = "0.1.12", default-features = false, features = ["client-proxy"] }
 # Only to tell, from the HTTP client's error, a reply that is not HTTP from a dropped connection
-# (`NetworkError::failure`); reqwest already builds it.
+# (`NetworkError::failure`); reqwest already builds both.
 hyper = { version = "1.4.0", default-features = false }
+h2 = { version = "0.4.4", default-features = false }
 percent-encoding.workspace = true
 # Only the HTTP client: TLS comes preconfigured from the rustls dependency below,
 # so reqwest needs no crypto provider. The platform verifier its rustls feature

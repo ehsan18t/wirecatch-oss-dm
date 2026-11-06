@@ -1,6 +1,18 @@
 //! URL rules, and FTPS against the scripted server with its test certificate
 //! trusted (plain FTP is tested through the public API in `tests/ftp.rs`).
 
+#[test]
+fn a_reply_that_cannot_be_read_is_unreadable() {
+    let reply = Reply {
+        code: 227,
+        text: "227 Entering Passive Mode (no port)".into(),
+    };
+    let Error::Network(error) = unexpected(&reply).error else {
+        panic!("not a network error");
+    };
+    assert_eq!(error.failure(), crate::error::NetworkFailure::Unreadable);
+}
+
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
