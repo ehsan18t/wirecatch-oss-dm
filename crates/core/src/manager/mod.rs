@@ -15,6 +15,7 @@ mod handovers;
 mod media;
 
 mod media_run;
+mod page_readings;
 mod placement;
 mod policy;
 mod preferences;
@@ -327,6 +328,8 @@ struct Inner {
     suffix_checking: tokio::sync::Mutex<()>,
     media_timeout: Duration,
     media_refresh_delays: Arc<[Duration]>,
+    /// Each reading of a page is a request to its site, and many soon after one another get the app refused as a bot.
+    page_readings: Arc<page_readings::PageReadings>,
     retry_backoff: Backoff,
     /// Shared by every download for the global speed limit.
     global_limiter: Arc<RateLimiter>,
@@ -445,6 +448,7 @@ impl Manager {
             suffix_checking: tokio::sync::Mutex::new(()),
             media_timeout: config.media_timeout,
             media_refresh_delays: config.media_refresh_delays.into(),
+            page_readings: Arc::default(),
             retry_backoff: config.retry_backoff,
             global_limiter,
             ui_events,

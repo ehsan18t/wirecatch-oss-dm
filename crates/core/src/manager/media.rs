@@ -17,7 +17,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-
+use std::sync::Arc;
 use std::time::Duration;
 use tracing::warn;
 use wirecatch_addons::Check;
@@ -960,6 +960,12 @@ impl Manager {
         let info = ytdlp::extract(&ctx, token)
             .await
             .map_err(|e| describe::ytdlp(&e, tools))?;
+        let info = Arc::new(info);
+        self.inner.page_readings.put(
+            &source.fetch.url,
+            self.inner.clock.unix_millis(),
+            info.clone(),
+        );
         Ok(Found {
             title: info.title.clone(),
             offers: choice::from_page(&info)?,

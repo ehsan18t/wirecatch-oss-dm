@@ -1517,3 +1517,12 @@ Decided on 2026-11-05. It completes D137, which covers only a signal the app can
 1. Each started program's process group holds a small watcher, a shell waiting on a pipe whose other end only the app holds. When the app dies, a crash or `SIGKILL` included, the system closes that end and the watcher kills its group, as closing a job does on Windows.
 2. `PR_SET_PDEATHSIG` does not do this: it fires when the thread that started the program exits, and it reaches only the program itself, not what that program started.
 3. A watcher that cannot start is logged and the program runs without it.
+
+### D223. A recent reading of a video page serves its next start
+
+Decided on 2026-11-06. Every start of a page video read the page with yt-dlp again, so the choice, the start and each resume each cost a request to the site. Sites such as YouTube answer many readings soon after one another with a bot check, which then refuses every video.
+
+1. The manager keeps each page's latest reading in memory, by page link, for 30 minutes (`READING_LIFETIME`, at most 32 readings). The reading made for the quality choice serves the start, and a pause and resume within that time read nothing again.
+2. A reading serves only a pause. An attempt that ends any other way (finished, failed, or refused by a format's server) drops it, so the next try reads fresh addresses; the waits before those tries are unchanged.
+3. Readings stay in memory, never in the work folder: they hold signed format addresses and sometimes cookies, which no folder keeps. A restart therefore reads the page again.
+4. Formats yt-dlp downloads itself are still read again by yt-dlp; the reading only spares the app's own read.

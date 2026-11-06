@@ -35,7 +35,12 @@ pub(super) async fn run_page(
 ) -> Result<MediaDone, UserError> {
     let mut delays = job.refresh_delays.iter();
     loop {
-        let status = match page_attempt(job, page, progress, cancel).await {
+        let attempt = page_attempt(job, page, progress, cancel).await;
+        // A reading serves only a pause: a refusal needs fresh addresses, and an end needs none.
+        if !matches!(attempt, Ok(MediaDone::Paused)) {
+            job.readings.forget(&job.url);
+        }
+        let status = match attempt {
             Ok(done) => return Ok(done),
             Err(PageError::Failed(error)) => return Err(error),
             Err(PageError::Refused { status }) => status,
@@ -57,8 +62,8 @@ pub(super) async fn run_page(
 }
 
 /// One attempt at a page's video. Unless an earlier attempt downloaded
-/// everything (its list is in the work folder), the page is read again for fresh
-/// format addresses and what is not finished yet is downloaded: the formats,
+/// everything (its list is in the work folder), the page's format addresses come from a reading of the last [`READING_LIFETIME`](crate::manager::page_readings::READING_LIFETIME), else the page is read again,
+/// and what is not finished yet is downloaded: the formats,
 /// and the subtitles, cover picture and metadata the output wants. Then the
 /// file is saved; a conversion that was paused or failed starts again from the
 /// downloaded parts, never from the download.
@@ -91,10 +96,7 @@ pub(super) async fn page_attempt(
         proxy: proxy.as_deref(),
         rate_limit: tightest_limit(job),
     };
-    // Format addresses expire: read the page again on every start.
-    let info = ytdlp::extract(&ctx, cancel)
-        .await
-        .map_err(|e| describe::ytdlp(&e, tools))?;
+    let info = reading(job, &ctx, cancel).await?;
     // What an earlier attempt showed goes; this one adds its own parts.
     progress.start_over();
     let (video, audio) = &formats_now(job, page, &info, &work).await?;
@@ -145,6 +147,24 @@ pub(super) async fn page_attempt(
         .await
         .map_err(|e| disk(&e, &job.output))?;
     Ok(save(job, page, tools, &downloaded, &work, progress, cancel).await?)
+}
+
+/// The page's recent reading, else a new one, kept for the next start.
+async fn reading(
+    job: &Job,
+    ctx: &ytdlp::Context<'_>,
+    cancel: &CancellationToken,
+) -> Result<Arc<Info>, UserError> {
+    if let Some(info) = job.readings.fresh(&job.url, job.clock.unix_millis()) {
+        return Ok(info);
+    }
+    let info = ytdlp::extract(ctx, cancel)
+        .await
+        .map_err(|e| describe::ytdlp(&e, ctx.tools))?;
+    let info = Arc::new(info);
+    job.readings
+        .put(&job.url, job.clock.unix_millis(), info.clone());
+    Ok(info)
 }
 
 /// The formats this attempt downloads: the saved ones while the page lists them, else what it offers now at the row's quality. A page with none of that quality ends the download, since no try can change it.
