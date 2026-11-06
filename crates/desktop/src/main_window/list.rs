@@ -13,8 +13,8 @@ use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, Context, ElementId, Hsla, InteractiveElement as _, IntoElement, ListAlignment,
-    ListState, MouseButton, ParentElement as _, SharedString, StatefulInteractiveElement as _,
-    Styled as _, Window, canvas, div, list, px, relative,
+    ListOffset, ListState, MouseButton, ParentElement as _, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Window, canvas, div, list, px, relative,
 };
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{
@@ -99,6 +99,17 @@ fn command_for(group: Group, tally: &Tally) -> Option<(&'static str, GroupComman
     }
 }
 
+/// Replaces the lines in `old` with `count` new ones. A list scrolled into its first line stays
+/// at the top, so lines added above show; further down, the lines in view stay put.
+fn splice_keeping_top(state: &ListState, old: std::ops::Range<usize>, count: usize) {
+    // GPUI moves its anchor past lines inserted at or before it, even at the very top.
+    let at_top = state.logical_scroll_top().item_ix == 0;
+    state.splice(old, count);
+    if at_top {
+        state.scroll_to(ListOffset::default());
+    }
+}
+
 /// How tall a row is, by how many lines it shows under its name.
 fn line_height(shown: ListLines) -> f32 {
     match usize::from(shown.link) + usize::from(shown.folder) {
@@ -157,7 +168,8 @@ impl MainWindow {
                 .take_while(|(a, b)| a == b)
                 .count();
             if same_start < drawn.len() || drawn.len() != lines.len() {
-                scroll.state.splice(
+                splice_keeping_top(
+                    &scroll.state,
                     same_start..drawn.len() - same_end,
                     lines.len() - same_start - same_end,
                 );
@@ -926,6 +938,36 @@ mod tests {
     #[gpui_kit::test]
     fn a_click_on_the_folder_line_selects_the_row(cx: &mut gpui_kit::TestAppContext) {
         assert_eq!(click_on(folder_line, cx), (1, None));
+    }
+
+    #[test]
+    fn lines_added_above_a_list_at_its_top_show() {
+        let state = ListState::new(3, ListAlignment::Top, px(OVERDRAW));
+        state.scroll_to(ListOffset::default());
+
+        splice_keeping_top(&state, 0..0, 2);
+
+        assert_eq!(state.logical_scroll_top(), ListOffset::default());
+    }
+
+    #[test]
+    fn lines_added_above_a_scrolled_list_leave_the_lines_in_view() {
+        let state = ListState::new(10, ListAlignment::Top, px(OVERDRAW));
+        let reading = ListOffset {
+            item_ix: 5,
+            offset_in_item: px(4.),
+        };
+        state.scroll_to(reading);
+
+        splice_keeping_top(&state, 0..0, 2);
+
+        assert_eq!(
+            state.logical_scroll_top(),
+            ListOffset {
+                item_ix: 7,
+                ..reading
+            }
+        );
     }
 
     #[test]
