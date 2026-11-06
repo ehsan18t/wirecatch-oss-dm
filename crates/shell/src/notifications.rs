@@ -149,15 +149,20 @@ fn retry_helps(row: &DownloadSummary) -> bool {
 
 const ADDED: &str = "Download added";
 
-/// For a browser download that started without a window of its own (D63): it `stays` briefly, since
-/// the person is still browsing.
+/// For browser downloads that started without a window of their own (D63), close together: it
+/// `stays` briefly, since the person is still browsing.
 #[must_use]
-pub fn started(row: &DownloadSummary, stays: std::time::Duration) -> Notification {
+pub fn started(rows: &[DownloadSummary], stays: std::time::Duration) -> Notification {
+    let rows: Vec<&DownloadSummary> = rows.iter().collect();
+    let title = match rows.len() {
+        1 => ADDED.to_owned(),
+        n => format!("{} added", downloads(n)),
+    };
     Notification {
-        title: ADDED.to_owned(),
-        body: row.file_name.clone(),
+        title,
+        body: names(&rows),
         buttons: Vec::new(),
-        click: show(None, &[row]),
+        click: show(None, &rows),
         lasts: Lasts::Brief(stays),
         important: false,
     }
@@ -355,7 +360,7 @@ pub(crate) mod tests {
     #[test]
     fn a_download_from_the_browser_is_told_briefly_as_added() {
         let started = row(1, "videos", DownloadStatus::Downloading);
-        let notification = super::started(&started, BRIEFLY);
+        let notification = super::started(std::slice::from_ref(&started), BRIEFLY);
         assert_eq!(notification.title, "Download added");
         assert_eq!(notification.body, "file-1.zip");
         assert_eq!(notification.buttons, []);
@@ -373,6 +378,15 @@ pub(crate) mod tests {
             ("Download added", "Keynote: getting video details")
         );
         assert_eq!(video.lasts, Lasts::Brief(BRIEFLY));
+
+        let many: Vec<_> = (1..=4)
+            .map(|id| row(id, "downloads", DownloadStatus::Queued))
+            .collect();
+        let together = super::started(&many, BRIEFLY);
+        assert_eq!(together.title, "4 downloads added");
+        assert_eq!(together.body, "file-1.zip, file-2.zip and 2 more");
+        assert_eq!(together.click, reveal(Some(QueueId(1)), &[1, 2, 3, 4]));
+        assert_eq!(together.lasts, Lasts::Brief(BRIEFLY));
     }
 
     /// A click shows the downloads in the queue they share, so the list opens where they are.

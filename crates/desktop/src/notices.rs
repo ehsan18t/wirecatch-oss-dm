@@ -9,7 +9,7 @@ use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 use wirecatch_core::Manager;
-use wirecatch_protocol::app::{AppSettings, UiEvent};
+use wirecatch_protocol::app::{AppSettings, DownloadSummary, UiEvent};
 use wirecatch_protocol::extension::NoticeKind;
 use wirecatch_protocol::wire::ProtocolError;
 use wirecatch_shell::activity::Activity;
@@ -132,9 +132,9 @@ async fn watch(manager: Manager, tellers: Arc<Tellers>) {
                             }
                         }
                         UiEvent::Captured(row) if teller::told_as_started(&row) => {
-                            tell_added(&manager, &tellers, &settings, |stays| {
-                                notifications::started(&row, stays)
-                            });
+                            if let Some(rows) = teller.added(row, Instant::now()) {
+                                tell_started(&manager, &tellers, &settings, &rows);
+                            }
                         }
                         UiEvent::MediaCaptured { title, .. } => {
                             tell_added(&manager, &tellers, &settings, |stays| {
@@ -158,8 +158,12 @@ async fn watch(manager: Manager, tellers: Arc<Tellers>) {
                 Err(RecvError::Closed) => return,
             },
             () = due(teller.due()) => {
-                for now in teller.take_due(Instant::now()) {
-                    tell(&manager, &tellers, &settings, &now);
+                let now = Instant::now();
+                for due in teller.take_due(now) {
+                    tell(&manager, &tellers, &settings, &due);
+                }
+                if let Some(rows) = teller.take_added(now) {
+                    tell_started(&manager, &tellers, &settings, &rows);
                 }
             }
         }
@@ -198,6 +202,17 @@ fn tell(manager: &Manager, tellers: &Arc<Tellers>, settings: &AppSettings, now: 
             stays,
         } => ask_browser(manager, tellers, settings, notification, kind, stays),
     }
+}
+
+fn tell_started(
+    manager: &Manager,
+    tellers: &Arc<Tellers>,
+    settings: &AppSettings,
+    rows: &[DownloadSummary],
+) {
+    tell_added(manager, tellers, settings, |stays| {
+        notifications::started(rows, stays)
+    });
 }
 
 /// Tells the start notice `made` gives, while the settings tell what started.
