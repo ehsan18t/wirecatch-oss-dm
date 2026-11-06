@@ -7,29 +7,40 @@ const MOST_CLIPPING_ANCESTORS = 32;
 
 /**
  * The part of `el` its ancestors show: its box cut by every ancestor that hides what overflows it.
- * A player may size its video larger than itself (YouTube does before playback), and the button
- * belongs on what is seen.
+ * A player may size its video larger than itself, and the button belongs on what is seen. When none
+ * of the video shows (YouTube keeps it outside the player before playback, which shows a picture of
+ * it), the innermost such ancestor, its player, stands in for it.
  */
 function visibleBox(el: Element): Box {
-  const own = el.getBoundingClientRect();
-  let { top, left, right, bottom } = own;
-  const view = el.ownerDocument.defaultView;
+  const doc = el.ownerDocument;
+  let shown = boxOf(el.getBoundingClientRect());
+  let player: Box | null = null;
   let ancestor = el.parentElement;
   for (let level = 0; ancestor !== null && level < MOST_CLIPPING_ANCESTORS; level += 1) {
-    if (ancestor === el.ownerDocument.documentElement) break;
-    const style = view?.getComputedStyle(ancestor);
-    if (
-      style !== undefined &&
-      (clips(style.overflow) || clips(style.overflowX) || clips(style.overflowY))
-    ) {
-      const clip = ancestor.getBoundingClientRect();
-      top = Math.max(top, clip.top);
-      left = Math.max(left, clip.left);
-      right = Math.min(right, clip.right);
-      bottom = Math.min(bottom, clip.bottom);
+    // The body's and the root's overflow is the window's (CSS Overflow 3, 3.3): the body itself
+    // clips nothing, and YouTube's body box is 0 pixels tall.
+    if (ancestor === doc.body || ancestor === doc.documentElement) break;
+    if (hidesOverflow(ancestor)) {
+      const clip = boxOf(ancestor.getBoundingClientRect());
+      player ??= clip;
+      shown = cut(shown, clip);
     }
     ancestor = ancestor.parentElement;
   }
+  return shown.height === 0 && player !== null ? player : shown;
+}
+
+function boxOf(rect: Box): Box {
+  const { top, left, right, bottom } = rect;
+  return { top, left, right, bottom, width: right - left, height: bottom - top };
+}
+
+/** `box` cut to `clip`, empty when they do not meet. */
+function cut(box: Box, clip: Box): Box {
+  const top = Math.max(box.top, clip.top);
+  const left = Math.max(box.left, clip.left);
+  const right = Math.min(box.right, clip.right);
+  const bottom = Math.min(box.bottom, clip.bottom);
   return {
     top,
     left,
@@ -38,6 +49,13 @@ function visibleBox(el: Element): Box {
     width: Math.max(0, right - left),
     height: Math.max(0, bottom - top),
   };
+}
+
+/** Whether `el` hides what overflows it, in either direction. */
+function hidesOverflow(el: Element): boolean {
+  const style = el.ownerDocument.defaultView?.getComputedStyle(el);
+  if (style === undefined) return false;
+  return clips(style.overflow) || clips(style.overflowX) || clips(style.overflowY);
 }
 
 function clips(overflow: string): boolean {

@@ -228,6 +228,46 @@ describe('MediaButton', () => {
     expect(b.host.style.getPropertyValue('left')).toBe('616px');
   });
 
+  // YouTube sets overflow on its body, whose box is 0 pixels tall: taken as a clip, it hid the button on every video.
+  it("is not hidden by the page body's overflow, which the window takes", async () => {
+    const fake = fakeDeps();
+    document.body.style.overflow = 'auto';
+    document.body.getBoundingClientRect = () => {
+      const rect = box(0, 0, 1024, 0);
+      return { ...rect, x: 0, y: 0, toJSON: () => rect };
+    };
+    const video = media('video', box(100, 50, 640, 360), { src: 'https://cdn.example.com/a.mp4' });
+    const b = start(fake);
+    video.dispatchEvent(new Event('play'));
+    await settle();
+    Reflect.deleteProperty(document.body, 'getBoundingClientRect');
+    document.body.style.overflow = '';
+    expect(b.state).toBe('shown');
+    expect(b.host.style.getPropertyValue('top')).toBe('18px');
+  });
+
+  // Before playback YouTube keeps its video element wholly outside the player, which shows a picture of it.
+  it('sits on the player when the video element is outside the part the player shows', async () => {
+    const fake = fakeDeps();
+    const player = document.createElement('div');
+    player.style.overflow = 'hidden';
+    player.getBoundingClientRect = () => {
+      const rect = box(100, 80, 640, 360);
+      return { ...rect, x: rect.left, y: rect.top, toJSON: () => rect };
+    };
+    document.body.append(player);
+    const video = media('video', box(100, -280, 640, 360), {
+      src: 'https://cdn.example.com/a.mp4',
+    });
+    player.append(video);
+    const b = start(fake);
+    video.dispatchEvent(new Event('play'));
+    await settle();
+    expect(b.state).toBe('shown');
+    expect(b.host.style.getPropertyValue('top')).toBe('48px');
+    expect(b.host.style.getPropertyValue('left')).toBe('616px');
+  });
+
   it('stays hidden where nothing downloadable was detected, and asks again a little later', async () => {
     const fake = fakeDeps();
     fake.show = false;
