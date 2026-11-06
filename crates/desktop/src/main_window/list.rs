@@ -138,7 +138,7 @@ fn splice_keeping_place(
     // GPUI moves its anchor past lines inserted at or before it, even at the very top, and to the
     // start of the range when the range holds it.
     let top = state.logical_scroll_top();
-    let near_top = top.item_ix < NEAR_TOP_LINES;
+    let near_top = top.item_ix < NEAR_TOP_LINES && old.start <= top.item_ix;
     let kept = old
         .contains(&top.item_ix)
         .then(|| drawn.get(top.item_ix))
@@ -1014,6 +1014,21 @@ mod tests {
 
             assert_eq!(state.logical_scroll_top(), ListOffset::default(), "{top}");
         }
+    }
+
+    #[test]
+    fn lines_changed_below_a_list_near_its_top_leave_its_top() {
+        let drawn = rows(1..11);
+        let reading = ListOffset {
+            item_ix: 1,
+            offset_in_item: px(4.),
+        };
+        let state = scrolled(&drawn, reading);
+        let lines = [rows(1..6), rows(20..22), rows(6..11)].concat();
+
+        splice_keeping_place(&state, 5..5, 2, &drawn, &lines);
+
+        assert_eq!(state.logical_scroll_top(), reading);
     }
 
     #[test]
