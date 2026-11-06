@@ -115,13 +115,13 @@ impl MainWindow {
                         PopupMenuItem::new(label)
                             .checked(key == chosen.key)
                             .on_click(move |_, _, cx| {
-                                _ = main.update(cx, |main, cx| {
+                                crate::closing::may_have_closed(main.update(cx, |main, cx| {
                                     main.sort = sort::Sort {
                                         key,
                                         descending: key == main.sort.key && !main.sort.descending,
                                     };
                                     cx.notify();
-                                });
+                                }));
                             }),
                     )
                 })

@@ -511,11 +511,11 @@ impl MediaForm {
                 Ok(Err(unopened)) => unopened.reason.message,
                 Err(e) => format!("The install stopped unexpectedly ({e})."),
             };
-            _ = form.update(cx, |form: &mut Self, cx| {
+            crate::closing::may_have_closed(form.update(cx, |form: &mut Self, cx| {
                 form.awaiting_addon = None;
                 form.install_problem = Some(refused);
                 cx.notify();
-            });
+            }));
         })
         .detach();
     }
@@ -673,10 +673,10 @@ impl MediaForm {
                 let Some(folder) = picked.await else {
                     return;
                 };
-                _ = form.update(cx, |form: &mut Self, cx| {
+                crate::closing::may_have_closed(form.update(cx, |form: &mut Self, cx| {
                     form.folder = (folder != form.app_folder(cx)).then_some(folder);
                     cx.notify();
-                });
+                }));
             })
             .detach();
         });
@@ -687,10 +687,10 @@ impl MediaForm {
         let busy = self.busy || self.awaiting_addon.is_some();
         let form = cx.entity().downgrade();
         let choose = Rc::new(move |queue: Option<QueueId>, cx: &mut App| {
-            _ = form.update(cx, |form, cx| {
+            crate::closing::may_have_closed(form.update(cx, |form, cx| {
                 form.queue = queue;
                 cx.notify();
-            });
+            }));
         });
         h_flex()
             .w_full()

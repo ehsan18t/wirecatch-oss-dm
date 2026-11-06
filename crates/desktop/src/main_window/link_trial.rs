@@ -102,14 +102,14 @@ impl LinkTrial {
             let Some(found) = said(tried.await) else {
                 return;
             };
-            _ = trial.update(cx, |trial, cx| {
+            crate::closing::may_have_closed(trial.update(cx, |trial, cx| {
                 trial.trying = false;
                 trial.answer = Some(match found {
                     Ok(found) => Answer::Lines(trial.lines(&found, draft.as_ref(), cx)),
                     Err(problem) => Answer::Problem(problem),
                 });
                 cx.notify();
-            });
+            }));
         })
         .detach();
     }

@@ -302,5 +302,5 @@ fn settings_pages() -> Vec<Entry> {
 /// Runs `run` on the main window `main`.
 fn run_on(main: &WeakEntity<MainWindow>, run: &Run, window: &mut Window, cx: &mut App) {
     let run = run.clone();
-    _ = main.update(cx, |main, cx| run(main, window, cx));
+    crate::closing::may_have_closed(main.update(cx, |main, cx| run(main, window, cx)));
 }

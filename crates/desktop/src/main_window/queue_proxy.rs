@@ -151,14 +151,14 @@ impl ProxyForm {
     fn new_proxy(&self, window: &mut Window, cx: &mut Context<'_, Self>) {
         let form = cx.entity().downgrade();
         let use_it: proxy_dialog::Created = Rc::new(move |id, window, cx| {
-            _ = form.update(cx, |form, cx| {
+            crate::closing::may_have_closed(form.update(cx, |form, cx| {
                 form.proxy = Setting::Own(ProxyUse::Server(id));
                 let picked = form.proxy;
                 form.choices.update(cx, |state, cx| {
                     state.set_selected_value(&picked, window, cx);
                 });
                 cx.notify();
-            });
+            }));
         });
         proxy_dialog::open(&self.library, None, Some(use_it), window, cx);
     }

@@ -45,14 +45,14 @@ impl ProposedName {
         self.proposed = Some(name.to_owned());
         let (state, name) = (self.field.clone(), name.to_owned());
         cx.defer(move |cx| {
-            _ = window.update(cx, |_, window, cx| {
+            crate::closing::may_have_closed(window.update(cx, |_, window, cx| {
                 state.update(cx, |state, cx| {
                     state.set_placeholder(name.clone(), window, cx);
                     if takes_it {
                         state.set_value(name, window, cx);
                     }
                 });
-            });
+            }));
         });
     }
 

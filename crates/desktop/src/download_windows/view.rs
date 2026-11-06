@@ -173,7 +173,7 @@ impl DownloadWindow {
             let Ok(Ok((question, earlier))) = read.await else {
                 return;
             };
-            _ = view.update(cx, |view, cx| {
+            crate::closing::may_have_closed(view.update(cx, |view, cx| {
                 // This window's own answer closed it: the form stays until the answer says what follows.
                 if matches!(view.shows, Shows::Download(_)) || (view.busy && question.is_none()) {
                     return;
@@ -196,7 +196,7 @@ impl DownloadWindow {
                 }
                 view.question = question;
                 cx.notify();
-            });
+            }));
         })
         .detach();
     }
@@ -238,7 +238,7 @@ impl DownloadWindow {
             let Some(answer) = said(done.await) else {
                 return;
             };
-            _ = view.update(cx, |view, cx| {
+            crate::closing::may_have_closed(view.update(cx, |view, cx| {
                 view.busy = false;
                 match answer {
                     Ok(Some(_)) if later => view.close(cx),
@@ -250,7 +250,7 @@ impl DownloadWindow {
                     }
                 }
                 cx.notify();
-            });
+            }));
         })
         .detach();
     }
@@ -282,7 +282,9 @@ impl DownloadWindow {
                 .map(|(handle, _)| *handle);
             super::gone(&label, cx);
             if let Some(handle) = handle {
-                _ = handle.update(cx, |_, window, _| window.remove_window());
+                crate::closing::may_have_closed(
+                    handle.update(cx, |_, window, _| window.remove_window()),
+                );
             }
         });
     }
@@ -579,10 +581,10 @@ impl DownloadWindow {
                 let Some(folder) = picked.await else {
                     return;
                 };
-                _ = view.update(cx, |view, cx| {
+                crate::closing::may_have_closed(view.update(cx, |view, cx| {
                     view.folder = Some(folder);
                     cx.notify();
-                });
+                }));
             })
             .detach();
         });
@@ -594,10 +596,10 @@ impl DownloadWindow {
     fn queue_picker(&self, capture: &PendingCapture, cx: &mut Context<'_, Self>) -> AnyElement {
         let view = cx.entity().downgrade();
         let choose = Rc::new(move |queue: Option<QueueId>, cx: &mut App| {
-            _ = view.update(cx, |view, cx| {
+            crate::closing::may_have_closed(view.update(cx, |view, cx| {
                 view.queue = queue;
                 cx.notify();
-            });
+            }));
         });
         queue_badge_picker(
             "capture-queue",
@@ -1488,11 +1490,11 @@ impl DownloadWindow {
                 Some(Err(message)) => message,
                 None => "The install stopped unexpectedly.".to_owned(),
             };
-            _ = view.update(cx, |view: &mut Self, cx| {
+            crate::closing::may_have_closed(view.update(cx, |view: &mut Self, cx| {
                 view.addon_asked = None;
                 view.problem = Some(refused);
                 cx.notify();
-            });
+            }));
         })
         .detach();
     }

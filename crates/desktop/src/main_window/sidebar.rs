@@ -703,7 +703,9 @@ fn queue_menu(
         PopupMenuItem::new("Edit queue")
             .icon(Icon::new(Lucide::Pencil))
             .on_click(move |_, window, cx| {
-                _ = main.update(cx, |main, cx| main.edit_queue(Some(id), window, cx));
+                crate::closing::may_have_closed(
+                    main.update(cx, |main, cx| main.edit_queue(Some(id), window, cx)),
+                );
             }),
     )
     .separator()
@@ -756,7 +758,9 @@ fn queue_menu(
             PopupMenuItem::new("Delete queue")
                 .icon(Icon::new(Lucide::Trash))
                 .on_click(move |_, window, cx| {
-                    _ = delete.update(cx, |main, cx| main.delete_queue(id, window, cx));
+                    crate::closing::may_have_closed(
+                        delete.update(cx, |main, cx| main.delete_queue(id, window, cx)),
+                    );
                 }),
         )
     })

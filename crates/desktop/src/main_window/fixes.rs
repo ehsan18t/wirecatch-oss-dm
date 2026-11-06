@@ -60,7 +60,7 @@ pub fn choose_folder(id: DownloadId, retry: bool, window: &mut Window, cx: &mut 
             let Some(folder) = picked.await else {
                 return;
             };
-            _ = cx.update(|window, cx| {
+            crate::closing::may_have_closed(cx.update(|window, cx| {
                 command(window.window_handle(), cx, move |manager| async move {
                     api::set_download_folder(&manager, id, &folder).await?;
                     if retry {
@@ -69,7 +69,7 @@ pub fn choose_folder(id: DownloadId, retry: bool, window: &mut Window, cx: &mut 
                         Ok(())
                     }
                 });
-            });
+            }));
         })
         .detach();
 }

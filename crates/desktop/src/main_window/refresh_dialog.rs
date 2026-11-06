@@ -119,7 +119,7 @@ impl RefreshForm {
             let Some(answer) = said(saved.await) else {
                 return;
             };
-            _ = form.update_in(cx, |form, window, cx| {
+            crate::closing::may_have_closed(form.update_in(cx, |form, window, cx| {
                 form.busy = false;
                 match answer {
                     Ok(()) => {
@@ -132,7 +132,7 @@ impl RefreshForm {
                     Err(message) => form.problem = Some(message),
                 }
                 cx.notify();
-            });
+            }));
         })
         .detach();
     }

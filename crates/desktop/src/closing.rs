@@ -1,8 +1,10 @@
 //! A window's step before it closes, run however it closes: by the system, or by the title bar's
 //! Close button, which on Linux takes the window away itself and so skips
-//! `on_window_should_close`.
+//! `on_window_should_close`. Also the one place an update of a window or view that may have
+//! closed meanwhile is let go.
 
 use std::collections::HashMap;
+use std::panic::Location;
 use std::rc::Rc;
 
 use gpui_kit::{App, Global, Subscription, Window, WindowId};
@@ -48,5 +50,15 @@ pub fn close(window: &mut Window, cx: &mut App) {
         .cloned();
     if step.is_none_or(|step| step(window, cx)) {
         window.remove_window();
+    }
+}
+
+/// Lets go of an update whose window or view may have closed while work for it ran: the work's
+/// result has nowhere to go, so it is logged with the caller's place and dropped.
+#[track_caller]
+pub fn may_have_closed<T>(update: gpui_kit::Result<T>) {
+    if let Err(error) = update {
+        let at = Location::caller();
+        tracing::debug!(%at, "update skipped, its window or view is gone: {error:#}");
     }
 }

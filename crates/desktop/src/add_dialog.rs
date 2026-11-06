@@ -246,7 +246,7 @@ impl AddForm {
             let Ok(Ok(matched)) = matched.await else {
                 return;
             };
-            _ = form.update(cx, |form, cx| {
+            crate::closing::may_have_closed(form.update(cx, |form, cx| {
                 if form.tried != tried {
                     return;
                 }
@@ -255,7 +255,7 @@ impl AddForm {
                     .map(|found| form.route_of(found.and_then(|m| m.matched), cx))
                     .collect();
                 cx.notify();
-            });
+            }));
         })
         .detach();
     }
@@ -330,10 +330,10 @@ impl AddForm {
             let Some(folder) = picked.await else {
                 return;
             };
-            _ = form.update(cx, |form, cx| {
+            crate::closing::may_have_closed(form.update(cx, |form, cx| {
                 form.folder = Some(folder);
                 cx.notify();
-            });
+            }));
         })
         .detach();
     }
@@ -403,9 +403,9 @@ impl AddForm {
                 ),
                 Err(_) => return,
             };
-            _ = form.update_in(cx, |form, window, cx| {
+            crate::closing::may_have_closed(form.update_in(cx, |form, window, cx| {
                 form.sent(urls.len(), added, &failed, window, cx);
-            });
+            }));
         })
         .detach();
     }

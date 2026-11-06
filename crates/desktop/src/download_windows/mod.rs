@@ -55,7 +55,9 @@ pub fn follow(event: &UiEvent, cx: &mut App) {
         UiEvent::MediaAnalysing { id, url } => {
             ask(*id, cx);
             if let Some(view) = view_showing(Shows::Question(*id), cx) {
-                _ = view.update(cx, |view, cx| view.reading_from(url, cx));
+                crate::closing::may_have_closed(
+                    view.update(cx, |view, cx| view.reading_from(url, cx)),
+                );
             }
         }
         UiEvent::AddonRequired { id, .. } => ask(*id, cx),
@@ -156,7 +158,7 @@ fn update<T>(cx: &mut App, change: impl FnOnce(&mut Registry) -> T) -> T {
 /// Asks the window showing `shows`, if one is open, to read its question again.
 fn refresh(shows: Shows, cx: &mut App) {
     if let Some(view) = view_showing(shows, cx) {
-        _ = view.update(cx, view::DownloadWindow::reload);
+        crate::closing::may_have_closed(view.update(cx, view::DownloadWindow::reload));
     }
 }
 
@@ -178,13 +180,17 @@ fn run(steps: Vec<Step>, cx: &mut App) {
                     .get(&label)
                     .map(|(handle, _)| *handle);
                 if let Some(handle) = handle {
-                    _ = handle.update(cx, |_, window, _| window.activate_window());
+                    crate::closing::may_have_closed(
+                        handle.update(cx, |_, window, _| window.activate_window()),
+                    );
                 }
             }
             Step::Close(label) => {
                 let opened = cx.global_mut::<Windows>().open.remove(&label);
                 if let Some((handle, _)) = opened {
-                    _ = handle.update(cx, |_, window, _| window.remove_window());
+                    crate::closing::may_have_closed(
+                        handle.update(cx, |_, window, _| window.remove_window()),
+                    );
                 }
             }
         }
@@ -234,7 +240,9 @@ fn open(opened: &OpenWindow, cx: &mut App) {
                 .insert(opened.label.clone(), (handle, view.downgrade()));
             // Opening alone leaves it behind the browser: Windows brings a background app's new
             // window forward only through activation.
-            _ = handle.update(cx, |_, window, _| window.activate_window());
+            crate::closing::may_have_closed(
+                handle.update(cx, |_, window, _| window.activate_window()),
+            );
         }
         Err(e) => {
             tracing::error!("could not open a download window: {e}");
