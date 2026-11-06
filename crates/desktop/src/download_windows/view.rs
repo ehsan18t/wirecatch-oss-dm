@@ -972,7 +972,8 @@ impl DownloadWindow {
                 Some(("Size", format_bytes(row.total.unwrap_or(row.done)))),
                 ran.map(|secs| ("Took", text::eta(secs))),
                 average,
-                row.completed_at.map(|at| ("Finished at", text::clock(at))),
+                row.completed_at
+                    .map(|at| ("Finished at", text::clock_to_second(at))),
             ],
             DownloadStatus::Paused => vec![
                 Some(("Downloaded", format_bytes(row.done))),

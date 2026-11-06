@@ -743,7 +743,7 @@ fn time_field(
     let time =
         NaiveTime::from_hms_opt(u32::from(at.hour), u32::from(at.minute), 0).unwrap_or_default();
     cx.new(|cx| {
-        let mut state = TimeFieldState::new(window, cx);
+        let mut state = TimeFieldState::new(window, cx).hour_cycle(text::hour_cycle());
         state.set_time(time, window, cx);
         state
     })

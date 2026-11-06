@@ -3,6 +3,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::{Datelike as _, Local, NaiveDate, NaiveTime, TimeZone as _};
+use gpui_kit::component::time_field::HourCycle;
 use wirecatch_protocol::UnixMillis;
 use wirecatch_protocol::app::{
     Category, ClockFormat, DownloadStatus, DownloadSummary, FileExistsQuestion, FileTypeQuestion,
@@ -34,6 +35,18 @@ fn clock_format() -> ClockFormat {
         ClockFormat::TwentyFourHour
     } else {
         ClockFormat::TwelveHour
+    }
+}
+
+/// How a time field counts the hours, in the chosen clock format.
+pub fn hour_cycle() -> HourCycle {
+    hour_cycle_of(clock_format())
+}
+
+fn hour_cycle_of(format: ClockFormat) -> HourCycle {
+    match format {
+        ClockFormat::TwelveHour => HourCycle::H12,
+        ClockFormat::TwentyFourHour => HourCycle::H23,
     }
 }
 
@@ -673,12 +686,19 @@ pub fn time(at: TimeOfDay) -> String {
 
 /// The local clock time of a moment: `7:05 AM` or `07:05`.
 pub fn clock(at: UnixMillis) -> String {
+    clock_in(at, false, clock_format())
+}
+
+/// The local clock time of a moment to the second, as the list shows it: `7:05:31 AM` or `07:05:31`.
+pub fn clock_to_second(at: UnixMillis) -> String {
+    clock_in(at, true, clock_format())
+}
+
+fn clock_in(at: UnixMillis, seconds: bool, format: ClockFormat) -> String {
     Local
         .timestamp_millis_opt(at.0)
         .single()
-        .map_or_else(String::new, |at| {
-            format_time(at.time(), false, clock_format())
-        })
+        .map_or_else(String::new, |at| format_time(at.time(), seconds, format))
 }
 
 fn ordinal(n: u32) -> String {
@@ -793,6 +813,21 @@ mod tests {
             split_seconds("15:42:07"),
             ("15:42".to_owned(), ":07".to_owned())
         );
+    }
+
+    #[test]
+    fn a_time_field_counts_the_hours_of_the_chosen_clock() {
+        assert_eq!(hour_cycle_of(ClockFormat::TwelveHour), HourCycle::H12);
+        assert_eq!(hour_cycle_of(ClockFormat::TwentyFourHour), HourCycle::H23);
+    }
+
+    #[test]
+    fn a_moment_to_the_second_keeps_its_seconds() {
+        let at = UnixMillis(1_780_000_000_000);
+        for format in [ClockFormat::TwelveHour, ClockFormat::TwentyFourHour] {
+            let said = clock_in(at, true, format);
+            assert_eq!(said.matches(':').count(), 2, "{said}");
+        }
     }
 
     #[test]
