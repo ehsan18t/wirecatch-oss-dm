@@ -17,8 +17,6 @@ use crate::text;
 use crate::ui::switch_row::panel;
 use crate::ui::{Field, FolderRow, Role, SwitchRow, Typed as _, choice};
 
-/// The widest the page's fields run, so a wide window does not stretch them.
-const CONTENT_WIDTH: f32 = 720.;
 /// The dot on a tab whose subject has something switched on.
 const DOT: f32 = 6.;
 const NUMBER_WIDTH: f32 = 132.;
@@ -47,7 +45,7 @@ impl Render for QueueForm {
                     .overflow_y_scroll()
                     .px_5()
                     .py_5()
-                    .child(div().max_w(px(CONTENT_WIDTH)).child(content)),
+                    .child(content),
             )
     }
 }

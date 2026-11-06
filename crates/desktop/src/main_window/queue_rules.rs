@@ -376,6 +376,7 @@ impl RulesForm {
         let picker = Button::new(("rule-kind", index))
             .outline()
             .w(px(KIND_WIDTH))
+            .flex_shrink_0()
             .label(kind.label())
             .dropdown_caret(true)
             .dropdown_menu(move |menu, _, _| {
@@ -406,6 +407,7 @@ impl RulesForm {
                 Button::new(("remove-rule", index))
                     .ghost()
                     .small()
+                    .flex_shrink_0()
                     .icon(IconName::Close)
                     .tooltip("Remove rule")
                     .on_click(cx.listener(move |form, _, _, cx| form.remove_row(index, cx))),
