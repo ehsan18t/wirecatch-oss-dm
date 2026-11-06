@@ -60,11 +60,11 @@ pub fn to_trash(paths: &[PathBuf]) -> usize {
     }
 }
 
-/// Whether `path` went to the trash; a file the trash cannot take beside it stays.
+/// Whether `path` went to the trash.
 fn trashed(path: &Path) -> bool {
     #[cfg(target_os = "linux")]
-    if !beside::has_trash_beside(path) {
-        warn!(path = %path.display(), "no trash on the file's own drive; it is left in place");
+    if !home_trash::holds_its_drive(path) {
+        warn!(path = %path.display(), "the file is not on the home trash's drive; it is left in place");
         return false;
     }
     match trash::delete(path) {
@@ -76,66 +76,93 @@ fn trashed(path: &Path) -> bool {
     }
 }
 
-/// Whether a file has a trash on its own device. Across devices `trash` copies the
-/// file and then deletes it, which takes long for a large file and leaves half a
-/// copy when it fails.
+/// Whether a file shares the home trash's mount and device (D231). On another
+/// mount `trash` picks the drive's own trash, which it accepts without checking
+/// who owns it, or copies the file across drives to the home trash.
 #[cfg(target_os = "linux")]
-mod beside {
-    use std::os::unix::fs::{DirBuilderExt as _, MetadataExt as _};
+mod home_trash {
+    use std::os::unix::fs::MetadataExt as _;
     use std::path::{Path, PathBuf};
 
-    pub fn has_trash_beside(path: &Path) -> bool {
-        let Some(path) = path
-            .parent()
-            .and_then(|parent| std::fs::canonicalize(parent).ok())
-            .zip(path.file_name())
-            .map(|(parent, name)| parent.join(name))
-        else {
+    pub fn holds_its_drive(path: &Path) -> bool {
+        let (Some(file), Some(trash)) = (
+            path.parent()
+                .and_then(existing)
+                .zip(path.file_name())
+                .map(|(parent, name)| parent.join(name)),
+            location().and_then(|trash| existing(&trash)),
+        ) else {
             return false;
         };
-        let Ok(file) = std::fs::symlink_metadata(&path) else {
+        let Ok(mounts) = std::fs::read_to_string("/proc/mounts") else {
             return false;
         };
-        let device = file.dev();
-        if home_trash().is_some_and(|trash| device_of_nearest(&trash) == Some(device)) {
-            return true;
-        }
-        // `trash` uses the drive's own trash, `.Trash-<uid>` at its top, before the home one.
-        let (Some(top), Ok(me)) = (drive_top(&path, device), std::fs::metadata("/proc/self"))
-        else {
-            return false;
+        let mounts = super::mount_points(&mounts);
+        let device = |path: &Path| {
+            std::fs::symlink_metadata(path)
+                .map(|found| found.dev())
+                .ok()
         };
-        let own = top.join(format!(".Trash-{}", me.uid()));
-        let mut folder = std::fs::DirBuilder::new();
-        folder.recursive(true).mode(0o700);
-        ["files", "info"]
-            .iter()
-            .all(|part| folder.create(own.join(part)).is_ok())
-            && device_of_nearest(&own) == Some(device)
+        super::mount_of(&file, &mounts) == super::mount_of(&trash, &mounts)
+            && device(&file).is_some()
+            && device(&file) == trash.ancestors().find_map(device)
     }
 
     /// Where `trash` keeps the home trash.
-    fn home_trash() -> Option<PathBuf> {
+    fn location() -> Option<PathBuf> {
         let set = |name: &str| std::env::var_os(name).filter(|value| !value.is_empty());
         set("XDG_DATA_HOME")
             .map(|data| PathBuf::from(data).join("Trash"))
             .or_else(|| set("HOME").map(|home| PathBuf::from(home).join(".local/share/Trash")))
     }
 
-    fn device_of_nearest(path: &Path) -> Option<u64> {
-        path.ancestors()
-            .find_map(|folder| std::fs::metadata(folder).ok())
-            .map(|found| found.dev())
+    /// `path` with its nearest existing folder resolved, as `trash` resolves it.
+    fn existing(path: &Path) -> Option<PathBuf> {
+        let found = path.ancestors().find(|folder| folder.exists())?;
+        let rest = path.strip_prefix(found).ok()?;
+        Some(std::fs::canonicalize(found).ok()?.join(rest))
     }
+}
 
-    /// The highest folder above `path` still on `device`: the top of its drive.
-    fn drive_top(path: &Path, device: u64) -> Option<PathBuf> {
-        path.ancestors()
-            .skip(1)
-            .take_while(|folder| std::fs::metadata(folder).is_ok_and(|found| found.dev() == device))
-            .last()
-            .map(Path::to_path_buf)
-    }
+/// Every mount point `/proc/mounts` lists, its octal escapes read.
+#[cfg(any(target_os = "linux", test))]
+fn mount_points(table: &str) -> Vec<PathBuf> {
+    table
+        .lines()
+        .filter_map(|line| line.split(' ').nth(1))
+        .map(|field| {
+            let mut point = String::new();
+            let mut rest = field;
+            while let Some(at) = rest.find('\\') {
+                point.push_str(&rest[..at]);
+                let code = rest
+                    .get(at + 1..at + 4)
+                    .and_then(|digits| u8::from_str_radix(digits, 8).ok());
+                match code {
+                    Some(byte) => {
+                        point.push(char::from(byte));
+                        rest = &rest[at + 4..];
+                    }
+                    None => {
+                        point.push('\\');
+                        rest = &rest[at + 1..];
+                    }
+                }
+            }
+            point.push_str(rest);
+            PathBuf::from(point)
+        })
+        .collect()
+}
+
+/// The mount `path` is on: the longest mount point it lies under, as `trash` finds it.
+#[cfg(any(target_os = "linux", test))]
+fn mount_of<'a>(path: &Path, mounts: &'a [PathBuf]) -> Option<&'a Path> {
+    mounts
+        .iter()
+        .filter(|point| path.starts_with(point))
+        .max_by_key(|point| point.as_os_str().len())
+        .map(PathBuf::as_path)
 }
 
 /// What tests use instead of the trash, which is the person's own: a file is deleted and noted.
@@ -182,6 +209,31 @@ mod tests {
     use std::ffi::OsStr;
 
     use super::*;
+
+    #[test]
+    fn a_file_is_on_the_longest_mount_point_above_it() {
+        let table = "/dev/sda1 / ext4 rw 0 0\n/dev/sdb1 /mnt/my\\040drive ext4 rw 0 0\n/dev/sda2 /home ext4 rw 0 0\n";
+        let mounts = mount_points(table);
+        assert_eq!(
+            mounts,
+            [
+                PathBuf::from("/"),
+                PathBuf::from("/mnt/my drive"),
+                PathBuf::from("/home")
+            ]
+        );
+        let on = |path: &str| mount_of(Path::new(path), &mounts).map(Path::to_path_buf);
+        assert_eq!(
+            on("/home/a/.local/share/Trash"),
+            Some(PathBuf::from("/home"))
+        );
+        assert_eq!(on("/home/a/Downloads/x.bin"), Some(PathBuf::from("/home")));
+        assert_eq!(
+            on("/mnt/my drive/x.bin"),
+            Some(PathBuf::from("/mnt/my drive"))
+        );
+        assert_eq!(on("/homework/x.bin"), Some(PathBuf::from("/")));
+    }
 
     #[test]
     fn a_file_moved_to_the_trash_can_be_restored_from_there() {
