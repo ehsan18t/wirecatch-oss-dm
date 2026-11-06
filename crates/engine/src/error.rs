@@ -577,7 +577,11 @@ impl NetworkError {
                 if let Some(io) = h2.get_io() {
                     return socket_failure(io, true).unwrap_or(NetworkFailure::Dropped);
                 }
-                if h2.is_reset() || h2.is_go_away() {
+                // A reset or GOAWAY of h2's own answers a frame or header the server should not have sent.
+                if h2.is_library() {
+                    return NetworkFailure::Unreadable;
+                }
+                if h2.is_remote() {
                     return NetworkFailure::Dropped;
                 }
             }

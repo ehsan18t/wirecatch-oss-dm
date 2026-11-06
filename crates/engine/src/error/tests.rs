@@ -23,6 +23,8 @@ const ACK: u8 = 1;
 const END_HEADERS: u8 = 4;
 /// `:status: 200`, entry 8 of HPACK's static table.
 const STATUS_200: u8 = 0x88;
+/// `:status: 200`, then `content-length: abc` as a literal whose name is static entry 28.
+const BAD_LENGTH_HEADERS: [u8; 7] = [STATUS_200, 0x0f, 0x0d, 3, b'a', b'b', b'c'];
 const INTERNAL_ERROR: [u8; 4] = [0, 0, 0, 2];
 const STREAM: u32 = 1;
 
@@ -33,6 +35,8 @@ enum End {
     /// A `GOAWAY` with an error that still lets the stream finish, then the connection closes.
     GoAway,
     CloseSocket,
+    /// No end: the headers' `content-length: abc` is what is wrong.
+    BadLength,
 }
 
 fn frame(kind: u8, flags: u8, stream: u32, payload: &[u8]) -> Vec<u8> {
@@ -66,9 +70,14 @@ async fn serve(
             _ => {}
         }
     }
-    tls.write_all(&frame(HEADERS, END_HEADERS, STREAM, &[STATUS_200]))
+    let headers: &[u8] = match end {
+        End::BadLength => &BAD_LENGTH_HEADERS,
+        _ => &[STATUS_200],
+    };
+    tls.write_all(&frame(HEADERS, END_HEADERS, STREAM, headers))
         .await?;
     match end {
+        End::BadLength => {}
         End::ResetStream => {
             tls.write_all(&frame(RST_STREAM, 0, STREAM, &INTERNAL_ERROR))
                 .await?;
@@ -132,4 +141,10 @@ async fn a_connection_the_server_sends_away_dropped() {
 async fn an_http2_connection_closed_mid_answer_dropped() {
     let failure = failure_over_http2(End::CloseSocket, "h2-closed").await;
     assert_eq!(failure, NetworkFailure::Dropped);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_size_that_is_not_a_number_could_not_be_read() {
+    let failure = failure_over_http2(End::BadLength, "h2-bad-length").await;
+    assert_eq!(failure, NetworkFailure::Unreadable);
 }
