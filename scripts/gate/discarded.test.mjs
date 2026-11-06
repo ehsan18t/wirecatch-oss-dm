@@ -19,6 +19,19 @@ test('a result dropped with `_ =` is reported', () => {
   );
 });
 
+test('a result dropped inside a line is reported', () => {
+  assert.deepEqual(lines('match x {\n    Some(x) => _ = tx.send(x),\n    None => {}\n}'), [2]);
+  assert.deepEqual(lines('match x {\n    Some(x) =>\n        _ = tx.send(x),\n}'), [3]);
+  assert.deepEqual(lines('xs.iter().for_each(|x| _ = tx.send(x));'), [1]);
+  assert.deepEqual(lines('if ok { _ = tx.send(x); }'), [1]);
+  assert.deepEqual(lines('a(); _ = tx.send(x);'), [1]);
+});
+
+test('a pattern or binding named `_` is not', () => {
+  assert.deepEqual(lines('let _ = keep;\nlet (a, _) = pair;\n(_, b) = pair;'), []);
+  assert.deepEqual(lines('select! { biased; _ = stop.cancelled() => {}, _ = tick => {} }'), []);
+});
+
 test('a select arm, a comparison and text are not', () => {
   assert.deepEqual(
     lines('tokio::select! {\n    _ = tick.tick() => {}\n    _ = stop => break,\n}'),

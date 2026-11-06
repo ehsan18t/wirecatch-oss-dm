@@ -1,10 +1,10 @@
-// `discarded`: refuses a Rust statement `_ = expr;`, which drops a result without a word, and which clippy's `let_underscore_must_use` does not see since it is no `let` (ENGINEERING section 4). A `tokio::select!` arm (`_ = tick.tick() => ..`) is not one.
+// `discarded`: refuses `_ = expr` in Rust, as a statement, a match arm or a closure's body, which drops a result without a word, and which clippy's `let_underscore_must_use` does not see since it is no `let` (ENGINEERING section 4). A `tokio::select!` pattern (`_ = tick.tick() => ..`) is not one.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { filesMatching, GateError, ROOT } from './process.mjs';
 import { codeOnly } from './rust-attributes.mjs';
 
-/** What ends the expression starting at `start`: `;` or a closing bracket for a statement, `=>` or `,` for a `select!` arm. */
+/** What ends the expression starting at `start`: `=>` only for a `select!` pattern. */
 function ending(code, start) {
   let depth = 0;
   for (let at = start; at < code.length; at += 1) {
@@ -20,12 +20,12 @@ function ending(code, start) {
   return ';';
 }
 
-/** The lines of one Rust file that drop a result with `_ = expr;`, as `{ line, code }`. */
+/** The lines of one Rust file that drop a result with `_ = expr`, as `{ line, code }`. */
 export function discardedResults(text) {
   const code = codeOnly(text);
   const lines = text.split('\n');
-  return [...code.matchAll(/^[ \t]*_ =(?![=>])\s*/gm)]
-    .filter((match) => !['=>', ','].includes(ending(code, match.index + match[0].length)))
+  return [...code.matchAll(/(?<=(?:^|[{};|>(,])\s*)_ =(?![=>])\s*/g)]
+    .filter((match) => ending(code, match.index + match[0].length) !== '=>')
     .map((match) => {
       const line = code.slice(0, match.index).split('\n').length;
       return { line, code: lines[line - 1].trim() };
@@ -33,7 +33,7 @@ export function discardedResults(text) {
 }
 
 function discarded() {
-  const hits = filesMatching(String.raw`^\s*_ =`, ['*.rs']).flatMap((file) =>
+  const hits = filesMatching(String.raw`\b_ =`, ['*.rs']).flatMap((file) =>
     discardedResults(readFileSync(join(ROOT, file), 'utf8')).map(
       (hit) => `${file}:${String(hit.line)}: ${hit.code}`,
     ),
