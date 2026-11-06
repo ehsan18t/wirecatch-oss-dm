@@ -31,7 +31,7 @@ use crate::backend::act;
 use crate::rows::Tally;
 use crate::text;
 use crate::ui::select_circle::{Picked, SelectCircle};
-use crate::ui::{FileTile, Role, Typed as _, icon, tokens, tooltip};
+use crate::ui::{FileTile, PathText, Role, Typed as _, icon, tokens, tooltip};
 
 /// Space before the circle column and after the figure.
 pub(super) const PAD: f32 = 12.;
@@ -660,7 +660,7 @@ fn folder_line(row: &DownloadSummary, cx: &App) -> AnyElement {
     let folder = std::path::Path::new(&text::folder(&row.path))
         .parent()
         .map_or_else(String::new, |folder| folder.display().to_string());
-    let shown = folder.clone();
+    let shown = PathText::new(folder.clone());
     h_flex()
         .id(row_id("folder", row.id))
         .max_w_full()

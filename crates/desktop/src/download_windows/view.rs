@@ -48,7 +48,7 @@ use crate::main_window::fixes::run_from_download_window;
 use crate::text::{ASK_EACH_VIDEO, REMEMBER_CHOICES};
 use crate::ui::small_title_bar::small_title_bar;
 use crate::ui::speed_graph::run_graph;
-use crate::ui::{Callout, Field, Role, Typed as _, tokens};
+use crate::ui::{Callout, Field, PathText, Role, Typed as _, tokens, tooltip};
 use crate::{files, text};
 
 type ChooseQueue = Rc<dyn Fn(Option<QueueId>, &mut App)>;
@@ -821,7 +821,12 @@ impl DownloadWindow {
                                 .with_size(tokens::ICON)
                                 .text_color(theme.muted_foreground),
                         )
-                        .child(div().flex_1().min_w_0().truncate().child(folder)),
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .child(PathText::new(folder).tooltip("run-folder")),
+                        ),
                 )
             })
             .child(
@@ -1121,6 +1126,7 @@ pub(super) fn folder_box(
     cx: &App,
 ) -> AnyElement {
     let theme = cx.theme();
+    let shown = text::folder(shown);
     h_flex()
         .id(id)
         .w_full()
@@ -1132,18 +1138,13 @@ pub(super) fn folder_box(
         .rounded(theme.radius)
         .cursor_pointer()
         .hover(|field| field.bg(theme.list_hover))
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .truncate()
-                .child(text::folder(shown)),
-        )
+        .child(div().flex_1().min_w_0().child(PathText::new(shown.clone())))
         .child(
             Icon::new(Lucide::Folder)
                 .with_size(tokens::ICON)
                 .text_color(theme.muted_foreground),
         )
+        .tooltip(tooltip::plain(shown))
         .on_click(pick)
         .into_any_element()
 }
