@@ -221,8 +221,6 @@ fn sample(entry: &mut Entry, now: Instant) -> bool {
     row.connections = saturating_cast(reading.connections);
     row.speed = run.meter.sample(row.done, now);
     row.eta_secs = speed::eta(row.total, row.done, row.speed);
-    // Trying again after a connection failed or dropped: nothing arrives, so no speed or time
-    // left (D271).
     let reconnecting = reading
         .retry
         .filter(|_| row.status == DownloadStatus::Downloading)
@@ -230,15 +228,7 @@ fn sample(entry: &mut Entry, now: Instant) -> bool {
             attempt: retry.attempt,
             of: retry.of,
         });
-    if reconnecting.is_some() {
-        row.speed = 0;
-        row.eta_secs = None;
-    }
-    let rewaited = row.waiting != reconnecting
-        && (reconnecting.is_some() || matches!(row.waiting, Some(WaitReason::Reconnecting { .. })));
-    if rewaited {
-        row.waiting = reconnecting;
-    }
+    let rewaited = show_reconnecting(row, reconnecting);
     cleared
         || rewaited
         || before
@@ -251,4 +241,60 @@ fn sample(entry: &mut Entry, now: Instant) -> bool {
                 row.eta_secs,
                 row.processing,
             )
+}
+
+/// Shows `reconnecting` on a running row, or takes it away once data flows again. While trying
+/// again nothing arrives, so the row has no speed or time left (D271). Returns whether the wait
+/// changed.
+fn show_reconnecting(row: &mut DownloadSummary, reconnecting: Option<WaitReason>) -> bool {
+    if reconnecting.is_some() {
+        row.speed = 0;
+        row.eta_secs = None;
+    }
+    let rewaited = row.waiting != reconnecting
+        && (reconnecting.is_some() || matches!(row.waiting, Some(WaitReason::Reconnecting { .. })));
+    if rewaited {
+        row.waiting = reconnecting;
+    }
+    rewaited
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_row_reconnecting_shows_it_until_data_flows_again() {
+        let mut row = DownloadSummary {
+            status: DownloadStatus::Downloading,
+            speed: 500,
+            eta_secs: Some(60),
+            ..wirecatch_test_support::downloads::download(1)
+        };
+        let try_two = WaitReason::Reconnecting { attempt: 2, of: 6 };
+        assert!(show_reconnecting(&mut row, Some(try_two.clone())));
+        assert_eq!(row.waiting, Some(try_two.clone()));
+        assert_eq!((row.speed, row.eta_secs), (0, None));
+        assert!(!show_reconnecting(&mut row, Some(try_two)), "nothing new");
+
+        // Data again: the meter's speed and time left stay, and the wait goes.
+        (row.speed, row.eta_secs) = (400, Some(75));
+        assert!(show_reconnecting(&mut row, None));
+        assert_eq!(row.waiting, None);
+        assert_eq!((row.speed, row.eta_secs), (400, Some(75)));
+        assert!(!show_reconnecting(&mut row, None));
+    }
+
+    #[test]
+    fn a_wait_the_run_did_not_set_is_left_alone() {
+        let refused = Some(WaitReason::ServerRefused {
+            retry_at: wirecatch_protocol::UnixMillis(1),
+        });
+        let mut row = DownloadSummary {
+            waiting: refused.clone(),
+            ..wirecatch_test_support::downloads::download(1)
+        };
+        assert!(!show_reconnecting(&mut row, None));
+        assert_eq!(row.waiting, refused);
+    }
 }

@@ -83,7 +83,8 @@ impl Progress {
     /// arrived since on any connection; `None` while data flows.
     pub fn retry(&self) -> Option<Retry> {
         let attempt = self.retry.load(Ordering::Relaxed);
-        (attempt > 0).then(|| Retry {
+        // Another connection still receiving clears the try only with its next chunk.
+        (attempt > 0 && self.connections() == 0).then(|| Retry {
             attempt,
             of: self.retries.load(Ordering::Relaxed),
         })
@@ -176,5 +177,28 @@ pub(crate) struct ConnectionGuard<'a>(&'a Progress);
 impl Drop for ConnectionGuard<'_> {
     fn drop(&mut self) {
         self.0.connections.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_retry_shows_only_while_no_connection_receives() {
+        let progress = Progress::default();
+        let receiving = progress.connection_opened();
+        progress.retrying(1, 3);
+        assert_eq!(progress.retry(), None, "another connection still receives");
+        drop(receiving);
+        assert_eq!(progress.retry(), Some(Retry { attempt: 1, of: 3 }));
+    }
+
+    #[test]
+    fn new_data_clears_the_retry() {
+        let progress = Progress::default();
+        progress.retrying(2, 3);
+        progress.add(10);
+        assert_eq!(progress.retry(), None);
     }
 }
