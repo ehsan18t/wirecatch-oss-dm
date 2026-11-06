@@ -9,7 +9,8 @@
   { "at": 1762400060000, "event": { "kind": "retried" } },
   { "at": 1762400120000, "event": { "kind": "paused" } },
   { "at": 1762400180000, "event": { "kind": "resumed" } },
-  { "at": 1762400240000, "event": { "kind": "link_changed", "host": "files.example.com" } },
+  { "at": 1762400240000, "event": { "kind": "link_changed", "from": "example.com", "to": "files.example.com" } },
+  { "at": 1762400270000, "event": { "kind": "started" } },
   { "at": 1762400300000, "event": { "kind": "moved", "folder": "/home/me/Downloads/Video" } },
   { "at": 1762400360000, "event": { "kind": "cancelled" } }
 ]

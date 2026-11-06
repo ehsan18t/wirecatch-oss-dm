@@ -15,14 +15,17 @@ pub enum Event {
         message: String,
     },
     Paused,
+    /// It went in line for the first time, added paused.
+    Started,
     /// It went back in line after a pause.
     Resumed,
     /// It went back in line after it failed or was cancelled.
     Retried,
     Cancelled,
-    /// It was given a new link, on this host.
+    /// It was given a new link: the hosts of the link before and after.
     LinkChanged {
-        host: String,
+        from: String,
+        to: String,
     },
     /// Its files moved to this folder.
     Moved {
@@ -55,6 +58,16 @@ impl Activity {
     #[must_use]
     pub fn events(&self) -> &[Happened] {
         &self.0
+    }
+
+    /// Whether the last pause, start or stop it records is a pause.
+    #[must_use]
+    pub fn paused_last(&self) -> bool {
+        self.0
+            .iter()
+            .rev()
+            .find(|h| !matches!(h.event, Event::LinkChanged { .. } | Event::Moved { .. }))
+            .is_some_and(|h| h.event == Event::Paused)
     }
 }
 

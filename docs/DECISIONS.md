@@ -1566,7 +1566,7 @@ Decided on 2026-11-06. Details' Activity showed only when a download was added a
 
 1. Each download keeps its activity (`wirecatch_records::activity`): failures with the message the person was shown, pauses, resumes, tries again after a failure or a cancel, cancels, new links (by host) and moves (by folder), each with its time. It is saved with the download (the `activity` column, a JSON list; a row stored before it was kept has none) and keeps the latest 50 events.
 2. The manager's save of a download, which every change of a download goes through, compares the row with what the last save saw and records what changed (`Entry::note_changes`), so no caller has to remember to. A move is recorded where it finishes, since a folder also changes when a server's answer settles the name. A move a restart finished, and states that change and change back between two saves, are not recorded.
-3. The activity stays out of `DownloadSummary`, which every progress event carries: Details reads it with `Manager::activity` when it opens, and again when the row's status, link or path changes. Adding and finishing are still shown from the row's own times.
+3. The activity stays out of `DownloadSummary`, which every progress event carries: Details reads it with `Manager::activity` when it opens, and again on every update of the list while it is open, since a try again that fails between two updates leaves the row as it was. Adding and finishing are still shown from the row's own times; the host it was added from is the one before its first new link (`LinkChanged` keeps both hosts). A download added paused is `Started` when it first goes in line; `Resumed` follows only a recorded pause.
 
 ### D239. A path is cut in the middle
 

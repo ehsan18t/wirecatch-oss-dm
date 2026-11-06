@@ -796,11 +796,14 @@ impl Entry {
             Cancelled, Connecting, Downloading, Failed, Paused, Processing, Queued,
         };
         if self.row.url != self.seen.url {
-            let host = Url::parse(&self.row.url)
-                .ok()
-                .and_then(|url| url.host_str().map(str::to_owned))
-                .unwrap_or_default();
-            self.activity.record(now, Event::LinkChanged { host });
+            let host = |link: &str| {
+                Url::parse(link)
+                    .ok()
+                    .and_then(|url| url.host_str().map(str::to_owned))
+                    .unwrap_or_default()
+            };
+            let (from, to) = (host(&self.seen.url), host(&self.row.url));
+            self.activity.record(now, Event::LinkChanged { from, to });
         }
         let event = match (self.seen.status, self.row.status) {
             (before, after) if before == after => None,
@@ -811,7 +814,14 @@ impl Entry {
             }),
             (_, Paused) => Some(Event::Paused),
             (_, Cancelled) => Some(Event::Cancelled),
-            (Paused, Queued | Connecting | Downloading | Processing) => Some(Event::Resumed),
+            // One added paused has no pause on record: its first start is not a resume.
+            (Paused, Queued | Connecting | Downloading | Processing) => {
+                Some(if self.activity.paused_last() {
+                    Event::Resumed
+                } else {
+                    Event::Started
+                })
+            }
             (Failed | Cancelled, Queued | Connecting | Downloading | Processing) => {
                 Some(Event::Retried)
             }

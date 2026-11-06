@@ -48,32 +48,18 @@ pub struct Details {
     id: DownloadId,
     /// The speeds seen while the dialog is open, oldest first, for the graph.
     speeds: SpeedHistory,
-    /// What happened to it, read from the manager whenever `changes` do.
+    /// What happened to it, read from the manager whenever the list changes: a try again that
+    /// fails between two of the list's updates leaves the row as it was.
     activity: Vec<Happened>,
-    changes: Option<Changes>,
+    /// Reads asked and the newest applied, so an earlier read that ends later is dropped.
+    reads: (u64, u64),
     _subscriptions: Vec<Subscription>,
-}
-
-/// What the activity records, so a change to any of it reads the activity again.
-#[derive(PartialEq, Eq)]
-struct Changes {
-    status: DownloadStatus,
-    url: String,
-    path: String,
-}
-
-impl Changes {
-    fn of(row: &DownloadSummary) -> Self {
-        Self {
-            status: row.status,
-            url: row.url.clone(),
-            path: row.path.clone(),
-        }
-    }
 }
 
 impl Details {
     fn read_activity(&mut self, cx: &mut Context<'_, Self>) {
+        self.reads.0 += 1;
+        let read_no = self.reads.0;
         let id = self.id;
         let read = Backend::run(
             cx,
@@ -95,8 +81,13 @@ impl Details {
                 }
             };
             let shown = details.update(cx, |details, cx| {
-                details.activity = activity;
-                cx.notify();
+                if read_no > details.reads.1 {
+                    details.reads.1 = read_no;
+                    if details.activity != activity {
+                        details.activity = activity;
+                        cx.notify();
+                    }
+                }
             });
             if shown.is_err() {
                 tracing::debug!("the details closed before their activity was read");
@@ -120,16 +111,13 @@ pub(super) fn open(library: Entity<Library>, id: DownloadId, window: &mut Window
                     .read(cx)
                     .downloads
                     .find(details.id)
-                    .map(|row| (row.status, row.speed, Changes::of(row)));
+                    .map(|row| (row.status, row.speed));
                 match row {
-                    Some((status, speed, changes)) => {
+                    Some((status, speed)) => {
                         if Group::of(status) == Group::Downloading {
                             details.speeds.keep(speed, Instant::now());
                         }
-                        if details.changes.as_ref() != Some(&changes) {
-                            details.changes = Some(changes);
-                            details.read_activity(cx);
-                        }
+                        details.read_activity(cx);
                         cx.notify();
                     }
                     None => window.close_dialog(cx),
@@ -137,11 +125,11 @@ pub(super) fn open(library: Entity<Library>, id: DownloadId, window: &mut Window
             },
         );
         let mut details = Details {
-            changes: library.read(cx).downloads.find(id).map(Changes::of),
             library,
             id,
             speeds: SpeedHistory::default(),
             activity: Vec::new(),
+            reads: (0, 0),
             _subscriptions: vec![follow],
         };
         details.read_activity(cx);
@@ -529,7 +517,15 @@ fn place(
 
 /// What happened to it.
 fn activity(row: &DownloadSummary, happened: &[Happened], cx: &App) -> impl IntoElement {
-    let mut lines = vec![(row.added_at, format!("Added from {}", text::host(&row.url)))];
+    // The host it was added from is the one before its first new link.
+    let first_host = happened
+        .iter()
+        .find_map(|h| match &h.event {
+            ActivityEvent::LinkChanged { from, .. } => Some(from.as_str()),
+            _ => None,
+        })
+        .unwrap_or_else(|| text::host(&row.url));
+    let mut lines = vec![(row.added_at, format!("Added from {first_host}"))];
     lines.extend(happened.iter().map(|h| (h.at, said(&h.event))));
     if let Some(finished) = row.completed_at {
         lines.push((finished, "Finished".to_owned()));
@@ -549,10 +545,11 @@ fn said(event: &ActivityEvent) -> String {
         ActivityEvent::Failed { message } if message.is_empty() => "Failed".to_owned(),
         ActivityEvent::Failed { message } => format!("Failed: {message}"),
         ActivityEvent::Paused => "Paused".to_owned(),
+        ActivityEvent::Started => "Started".to_owned(),
         ActivityEvent::Resumed => "Resumed".to_owned(),
         ActivityEvent::Retried => "Tried again".to_owned(),
         ActivityEvent::Cancelled => "Cancelled".to_owned(),
-        ActivityEvent::LinkChanged { host } => format!("Link changed to {host}"),
+        ActivityEvent::LinkChanged { to, .. } => format!("Link changed to {to}"),
         ActivityEvent::Moved { folder } => format!("Moved to {folder}"),
     }
 }

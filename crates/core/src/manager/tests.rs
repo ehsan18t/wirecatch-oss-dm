@@ -1897,7 +1897,8 @@ async fn failures_retries_and_new_links_are_in_the_activity() {
             Retried,
             failure.clone(),
             LinkChanged {
-                host: "files.example.org".into()
+                from: "example.com".into(),
+                to: "files.example.org".into()
             },
             Retried,
             failure,
@@ -1928,4 +1929,24 @@ fn a_pause_resume_and_cancel_are_in_the_activity() {
         .map(|h| h.event.clone())
         .collect();
     assert_eq!(events, [Paused, Resumed, Cancelled]);
+}
+
+#[test]
+fn a_download_added_paused_starts_rather_than_resumes() {
+    use crate::ActivityEvent::Started;
+    let mut entry = super::state::idle_entry(
+        "https://example.com/a.bin",
+        wirecatch_sites::local_network::ChosenBy::Person,
+    );
+    entry.row.status = DownloadStatus::Paused;
+    entry.seen = super::state::Seen::of(&entry.row);
+    entry.row.status = DownloadStatus::Queued;
+    entry.note_changes(wirecatch_protocol::UnixMillis(1));
+    let events: Vec<_> = entry
+        .activity
+        .events()
+        .iter()
+        .map(|h| h.event.clone())
+        .collect();
+    assert_eq!(events, [Started]);
 }
