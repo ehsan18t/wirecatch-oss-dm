@@ -292,34 +292,63 @@ pub fn format_name(format: OutputFormat) -> &'static str {
         .map_or("Original", |(_, name)| name)
 }
 
-/// Why a download waits, in a couple of words.
-pub fn wait_short(wait: &WaitReason) -> String {
+/// Why a download waits, in a couple of words, naming the queue it waits in (D47.2):
+/// `Next in Main`, `3rd to start in Main`. `queue` is `None` while the queue is not known yet.
+pub fn wait_short(wait: &WaitReason, queue: Option<&str>) -> Sentence {
+    let said = Sentence::new();
     match wait {
-        WaitReason::QueuePaused => "Queue paused".to_owned(),
+        WaitReason::QueuePaused => named(said, queue, true).text(" is paused"),
         WaitReason::QueueSchedule {
             starts_at: Some(at),
-        } => format!("Starts {}", time(*at)),
-        WaitReason::QueueSchedule { starts_at: None } => "Outside schedule".to_owned(),
-        WaitReason::QueueFull { .. } => "Waiting for a free slot".to_owned(),
-        WaitReason::GlobalLimit { .. } => "Next, waiting for a free slot".to_owned(),
-        WaitReason::InLine { position } => format!("{} in line", ordinal(*position)),
-        WaitReason::ServerRefused { retry_at } => format!("Retrying at {}", clock(*retry_at)),
+        } => named(said, queue, true).text(&format!(" starts at {}", time(*at))),
+        WaitReason::QueueSchedule { starts_at: None } => {
+            named(said, queue, true).text(" is outside its schedule")
+        }
+        WaitReason::QueueFull { .. } => {
+            named(said.text("Waiting for a free slot in "), queue, false)
+        }
+        WaitReason::GlobalLimit { .. } => {
+            named(said.text("Next in "), queue, false).text(", waiting for a free slot")
+        }
+        WaitReason::InLine { position } => named(said.text(&place(*position)), queue, false),
+        WaitReason::ServerRefused { retry_at } => {
+            said.text(&format!("Retrying at {}", clock(*retry_at)))
+        }
+    }
+}
+
+/// Where a download stands in its queue's line, up to the queue's name: `Next in `,
+/// `3rd to start in `.
+fn place(position: u32) -> String {
+    match position {
+        0 | 1 => "Next in ".to_owned(),
+        n => format!("{} to start in ", ordinal(n)),
+    }
+}
+
+/// `said` followed by the queue's name, standing out (D240), or by "its queue" while the queue is
+/// not known.
+fn named(said: Sentence, queue: Option<&str>, starts: bool) -> Sentence {
+    match queue {
+        Some(name) => said.queue(name),
+        None if starts => said.text("Its queue"),
+        None => said.text("its queue"),
     }
 }
 
 /// A download's status in a couple of words; while ffmpeg works on it, which step and how far.
-pub fn status_short(row: &DownloadSummary) -> String {
+pub fn status_short(row: &DownloadSummary, queue: Option<&str>) -> Sentence {
     if let Some(wait) = shown_wait(row) {
-        return wait_short(wait);
+        return wait_short(wait, queue);
     }
     if let (DownloadStatus::Processing, Some(processing)) = (row.status, &row.processing) {
         let label = processing_label(processing.step);
         return match per_mille(row) {
-            Some(done) => format!("{label}, {}%", (done / 10).min(99)),
-            None => label.to_owned(),
+            Some(done) => format!("{label}, {}%", (done / 10).min(99)).into(),
+            None => label.into(),
         };
     }
-    status_label(row.status).to_owned()
+    status_label(row.status).into()
 }
 
 /// What each processing step is, in a sentence.
@@ -339,32 +368,29 @@ pub fn processing_detail(step: ProcessingStep) -> String {
 }
 
 /// Why a download waits, in a full sentence for its details.
-pub fn wait_long(wait: &WaitReason, queue: &str) -> Sentence {
+pub fn wait_long(wait: &WaitReason, queue: Option<&str>) -> Sentence {
     let said = Sentence::new();
     match wait {
-        WaitReason::QueuePaused => said
-            .queue(queue)
-            .text(" is paused. Resume the queue to start it."),
+        WaitReason::QueuePaused => {
+            named(said, queue, true).text(" is paused. Resume the queue to start it.")
+        }
         WaitReason::QueueSchedule {
             starts_at: Some(at),
-        } => said
-            .text("Waiting for ")
-            .queue(queue)
+        } => named(said.text("Waiting for "), queue, false)
             .text(&format!(", which starts at {}.", time(*at))),
         WaitReason::QueueSchedule { starts_at: None } => {
-            said.queue(queue).text(" is outside its schedule.")
+            named(said, queue, true).text(" is outside its schedule.")
         }
-        WaitReason::QueueFull { running, limit } => said.queue(queue).text(&format!(
+        WaitReason::QueueFull { running, limit } => named(said, queue, true).text(&format!(
             " is running {running} of {limit}. This starts when one of them finishes."
         )),
-        WaitReason::GlobalLimit { running, limit } => format!(
-            "Next in line: {running} of {limit} downloads are running. This starts when one of them finishes."
-        )
-        .into(),
-        WaitReason::InLine { position } => said
-            .text(&format!("{} in line in ", ordinal(*position)))
-            .queue(queue)
-            .text("."),
+        WaitReason::GlobalLimit { running, limit } => named(said.text("Next in "), queue, false)
+            .text(&format!(
+                ": {running} of {limit} downloads are running. This starts when one of them finishes."
+            )),
+        WaitReason::InLine { position } => {
+            named(said.text(&place(*position)), queue, false).text(".")
+        }
         WaitReason::ServerRefused { retry_at } => format!(
             "The video's server refused it for now, which sites sometimes do for a few minutes. {} tries again automatically at {} and keeps what was already downloaded.",
             host::CHANNEL.name(),
@@ -375,7 +401,7 @@ pub fn wait_long(wait: &WaitReason, queue: &str) -> Sentence {
 }
 
 /// What a download is doing in a sentence, when there is more to say than its status.
-pub fn status_detail(row: &DownloadSummary, queue: &str) -> Option<Sentence> {
+pub fn status_detail(row: &DownloadSummary, queue: Option<&str>) -> Option<Sentence> {
     if let Some(wait) = shown_wait(row) {
         return Some(wait_long(wait, queue));
     }
@@ -919,31 +945,55 @@ mod tests {
     }
 
     #[test]
-    fn a_wait_names_its_queue_so_it_stands_out() {
-        let said = wait_long(&WaitReason::InLine { position: 2 }, "Videos");
-        assert_eq!(said.said(), "2nd in line in Videos.");
-        assert_eq!(said.marked(), ["Videos"]);
+    fn a_wait_names_the_queue_it_waits_in() {
+        let short = |wait: WaitReason| wait_short(&wait, Some("Main"));
+        let next = short(WaitReason::InLine { position: 1 });
+        assert_eq!(next.said(), "Next in Main");
+        assert_eq!(next.marked(), ["Main"]);
         assert_eq!(
-            wait_long(&WaitReason::QueuePaused, "Main").marked(),
-            ["Main"]
+            short(WaitReason::InLine { position: 3 }).said(),
+            "3rd to start in Main"
         );
-    }
-
-    #[test]
-    fn the_first_in_line_waits_for_a_free_slot() {
         let first = WaitReason::GlobalLimit {
             running: 5,
             limit: 5,
         };
-        assert_eq!(wait_short(&first), "Next, waiting for a free slot");
+        assert_eq!(short(first).said(), "Next in Main, waiting for a free slot");
         let full = WaitReason::QueueFull {
             running: 2,
             limit: 2,
         };
-        assert_eq!(wait_short(&full), "Waiting for a free slot");
+        assert_eq!(short(full).said(), "Waiting for a free slot in Main");
+        assert_eq!(short(WaitReason::QueuePaused).said(), "Main is paused");
+    }
+
+    #[test]
+    fn a_wait_in_a_queue_not_known_yet_says_its_queue() {
+        let in_line = wait_short(&WaitReason::InLine { position: 2 }, None);
+        assert_eq!(in_line.said(), "2nd to start in its queue");
+        assert!(in_line.marked().is_empty());
         assert_eq!(
-            wait_short(&WaitReason::InLine { position: 2 }),
-            "2nd in line"
+            wait_short(&WaitReason::QueuePaused, None).said(),
+            "Its queue is paused"
+        );
+    }
+
+    #[test]
+    fn a_wait_in_full_names_its_queue_so_it_stands_out() {
+        let said = wait_long(&WaitReason::InLine { position: 2 }, Some("Videos"));
+        assert_eq!(said.said(), "2nd to start in Videos.");
+        assert_eq!(said.marked(), ["Videos"]);
+        let first = WaitReason::GlobalLimit {
+            running: 5,
+            limit: 5,
+        };
+        assert_eq!(
+            wait_long(&first, Some("Main")).said(),
+            "Next in Main: 5 of 5 downloads are running. This starts when one of them finishes."
+        );
+        assert_eq!(
+            wait_long(&WaitReason::QueuePaused, Some("Main")).marked(),
+            ["Main"]
         );
     }
 

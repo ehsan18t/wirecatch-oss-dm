@@ -351,6 +351,10 @@ impl Library {
     pub fn queue(&self, id: QueueId) -> Option<&Queue> {
         self.queues.iter().find(|queue| queue.id == id)
     }
+
+    pub fn queue_name(&self, id: QueueId) -> Option<&str> {
+        self.queue(id).map(|queue| queue.settings.name.as_str())
+    }
 }
 
 /// The question `event` asks, or moves on, if it asks one.
