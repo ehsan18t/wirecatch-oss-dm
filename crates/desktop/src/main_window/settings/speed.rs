@@ -1,6 +1,6 @@
-//! Speed and limits: a limit on all downloads together, how many run at once across the queues,
-//! and how many connections each opens, each naming the queues with a value of their own; then
-//! where the queues themselves are managed, in the sidebar (D256).
+//! Speed: a limit on all downloads together, how many run at once across the queues, and how
+//! many connections each opens, each naming the queues with a value of their own; then the
+//! queues, which are managed in the sidebar (D256).
 
 use gpui_kit::component::Sizable as _;
 use gpui_kit::component::button::Button;
@@ -16,6 +16,7 @@ use wirecatch_protocol::app::{
 
 use super::super::{MainWindow, Screen};
 use super::{change, current};
+use crate::closing::may_have_closed;
 use crate::library::Library;
 
 /// What the total limit starts at when switched on.
@@ -28,11 +29,11 @@ pub(super) fn page(
 ) -> SettingPage {
     SettingPage::new(super::Page::Speed.title())
         .resettable(false)
-        .groups([limits(library, cx), queues(main)])
+        .groups([limits(library, cx), queues(library, main, cx)])
 }
 
-/// Where a queue's own limits, rules and schedule are: its page, from the sidebar.
-fn queues(main: &WeakEntity<MainWindow>) -> SettingGroup {
+/// The queues by name, and where they are managed: the sidebar.
+fn queues(library: &Entity<Library>, main: &WeakEntity<MainWindow>, cx: &App) -> SettingGroup {
     let main = main.clone();
     let show = SettingField::render(move |_, _, _| {
         let main = main.clone();
@@ -40,15 +41,29 @@ fn queues(main: &WeakEntity<MainWindow>) -> SettingGroup {
             .small()
             .outline()
             .label("Show queues")
-            .on_click(move |_, _, cx| {
-                _ = main.update(cx, |main, cx| main.open_screen(Screen::Downloads, cx));
+            .on_click(move |_, window, cx| {
+                may_have_closed(main.update(cx, |main, cx| {
+                    main.open_screen(Screen::Downloads, window, cx);
+                }));
             })
             .into_any_element()
     });
     SettingGroup::new().item(
         SettingItem::new("Queues", show)
-            .description("Queues are managed in the sidebar. Each has its own page for its limits, rules and schedule: right-click it and choose Edit queue.")
-            .keywords(["queue", "new queue", "schedule", "rules", "test a link"]),
+            .description(queues_line(&library.read(cx).queues))
+            .keywords(["queue", "new queue", "schedule", "rules", "order"]),
+    )
+}
+
+/// "Main, Videos. Create, edit and order queues in the sidebar."
+fn queues_line(queues: &[Queue]) -> String {
+    let names: Vec<&str> = queues
+        .iter()
+        .map(|queue| queue.settings.name.as_str())
+        .collect();
+    format!(
+        "{}. Create, edit and order queues in the sidebar.",
+        names.join(", ")
     )
 }
 
@@ -202,5 +217,27 @@ fn with_note(help: &str, note: Option<String>) -> String {
     match note {
         Some(note) => format!("{help} {note}"),
         None => help.to_owned(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use wirecatch_protocol::QueueId;
+    use wirecatch_protocol::app::{QueueSettings, QueueStatus};
+
+    use super::*;
+
+    #[test]
+    fn the_queues_row_names_every_queue_in_sidebar_order() {
+        let queue = |id, name| Queue {
+            id: QueueId(id),
+            is_default: id == 1,
+            settings: QueueSettings::new(name),
+            status: QueueStatus::default(),
+        };
+        assert_eq!(
+            queues_line(&[queue(1, "Main"), queue(2, "Videos")]),
+            "Main, Videos. Create, edit and order queues in the sidebar."
+        );
     }
 }

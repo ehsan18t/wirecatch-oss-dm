@@ -347,23 +347,21 @@ impl Render for RulesForm {
         v_flex()
             .gap_4()
             .child(card)
-            .when(self.on && has_rules(&rules), |page| {
-                page.child(
-                    panel(cx).child(
-                        v_flex()
-                            .px_4()
-                            .py_3()
-                            .gap_2()
-                            .child(div().text_role(Role::Strong, cx).child("Test a link"))
-                            .child(
-                                div()
-                                    .text_role(Role::Meta, cx)
-                                    .child("See which queue a link goes to, and why."),
-                            )
-                            .child(self.trial.clone()),
-                    ),
-                )
-            })
+            .child(
+                panel(cx).child(
+                    v_flex()
+                        .px_4()
+                        .py_3()
+                        .gap_2()
+                        .child(div().text_role(Role::Strong, cx).child("Test a link"))
+                        .child(
+                            div()
+                                .text_role(Role::Meta, cx)
+                                .child("See which queue a link goes to, and why."),
+                        )
+                        .child(self.trial.clone()),
+                ),
+            )
             .child(ties(cx))
     }
 }

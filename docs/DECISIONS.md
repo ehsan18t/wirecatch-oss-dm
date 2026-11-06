@@ -1663,5 +1663,5 @@ Decided with the maintainer on 2026-11-06. The queue editor was one long dialog:
 
 Decided with the maintainer on 2026-11-06. Settings listed the queues again, each with an Edit button, and had a Test a link of its own, so a queue was managed in two places. It amends D72.7, D72.14, D85.1 and D85.5.
 
-1. The sidebar is where queues are made, opened, edited, reordered and deleted; each queue's page (D255) holds its settings and Test a link.
-2. The Settings page "Speed and queues" is "Speed and limits". It keeps the global limits, each still naming the queues with a value of their own, and ends with one Queues row that says where queues are managed, with Show queues, which goes back to the downloads and their sidebar. The list of queues and Test a link leave it.
+1. The sidebar is where queues are made, opened, edited, reordered and deleted; each queue's page (D255) holds its settings, and its Rules tab always shows Test a link, whether its rules are on or not.
+2. The Settings page "Speed and queues" is "Speed". It keeps the global limits, each still naming the queues with a value of their own, and ends with one Queues row that names the queues and says "Create, edit and order queues in the sidebar.", with Show queues, which goes back to the downloads and their sidebar. The list of queues and Test a link leave it.
