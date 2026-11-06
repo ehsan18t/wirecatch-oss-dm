@@ -943,14 +943,17 @@ mod tests {
 
     const POINTER: gpui_kit::Point<gpui_kit::Pixels> = gpui_kit::point(px(5.), px(45.));
 
+    /// How many times something happened, shared with the views that count it.
+    type Count = Rc<std::cell::Cell<usize>>;
+
     /// A window with a list of 50 downloads' lines, and what it counts.
     fn lines_window(
         cx: &mut gpui_kit::TestAppContext,
     ) -> (
         gpui_kit::Entity<Lines>,
         &mut gpui_kit::VisualTestContext,
-        Rc<std::cell::Cell<usize>>,
-        Rc<std::cell::Cell<usize>>,
+        Count,
+        Count,
     ) {
         cx.update(gpui_kit::component::init);
         let drawn = Rc::new(std::cell::Cell::new(0));
