@@ -115,13 +115,14 @@ pub fn cancel(m: &Manager, id: DownloadId) -> CommandResult<()> {
     plain(m.cancel(id))
 }
 
-/// Removes downloads from the list, and with [`RemoveFiles::Delete`] their files.
+/// Removes downloads from the list, and with [`RemoveFiles::Delete`] moves their finished files to
+/// the trash; answers how many of those stayed in their folder.
 ///
 /// # Errors
 ///
-/// The manager has shut down ([`Manager::remove`]). Files that cannot be deleted are logged,
-/// not reported.
-pub async fn remove(m: &Manager, ids: &[DownloadId], files: RemoveFiles) -> CommandResult<()> {
+/// The manager has shut down ([`Manager::remove`]). Partial files that cannot be deleted are
+/// logged, not reported.
+pub async fn remove(m: &Manager, ids: &[DownloadId], files: RemoveFiles) -> CommandResult<usize> {
     plain(m.remove(ids, files).await)
 }
 

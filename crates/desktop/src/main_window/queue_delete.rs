@@ -17,8 +17,9 @@ use wirecatch_protocol::{DownloadId, QueueId};
 use wirecatch_shell::api;
 
 use super::{MainWindow, View};
-use crate::backend::command;
+use crate::backend::command_saying;
 use crate::library::Library;
+use crate::text::{TRASH, left_in_place};
 use crate::ui::{Field, Role, Sentence, Typed as _};
 
 const WIDTH: f32 = 440.;
@@ -95,9 +96,9 @@ impl Render for DeleteForm {
                 form.child(
                     Checkbox::new("delete-files")
                         .label(if self.finished == 1 {
-                            "And delete the finished file from the disk"
+                            format!("And move the finished file to {TRASH}")
                         } else {
-                            "And delete the finished files from the disk"
+                            format!("And move the finished files to {TRASH}")
                         })
                         .checked(self.delete_files)
                         .disabled(!self.remove_downloads)
@@ -230,10 +231,18 @@ fn delete(
             main.show(View::All, window, cx);
         }
     });
-    command(window.window_handle(), cx, move |manager| async move {
-        if !removed.is_empty() {
-            api::remove(&manager, &removed, files).await?;
-        }
-        api::delete_queue(&manager, id)
-    });
+    command_saying(
+        window.window_handle(),
+        cx,
+        move |manager| async move {
+            let left = if removed.is_empty() {
+                0
+            } else {
+                api::remove(&manager, &removed, files).await?
+            };
+            api::delete_queue(&manager, id)?;
+            Ok(left)
+        },
+        left_in_place,
+    );
 }

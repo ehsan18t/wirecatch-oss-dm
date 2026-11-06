@@ -235,6 +235,26 @@ pub fn shown_wait(row: &DownloadSummary) -> Option<&WaitReason> {
     }
 }
 
+/// Where "Remove and delete" sends a finished file (D231).
+pub const TRASH: &str = if cfg!(target_os = "linux") {
+    "the trash"
+} else {
+    "the Recycle Bin"
+};
+
+/// What to say when `left` finished files could not go to [`TRASH`]; nothing when none.
+pub fn left_in_place(left: usize) -> Option<String> {
+    match left {
+        0 => None,
+        1 => Some(format!(
+            "1 file could not go to {TRASH} and is still in its folder."
+        )),
+        n => Some(format!(
+            "{n} files could not go to {TRASH} and are still in their folder."
+        )),
+    }
+}
+
 /// The quality window's switch and its setting (D200).
 pub const REMEMBER_CHOICES: &str = "Remember these choices";
 
@@ -742,6 +762,23 @@ fn ordinal(n: u32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn files_the_trash_refused_are_counted_once_there_are_any() {
+        assert_eq!(left_in_place(0), None);
+        assert_eq!(
+            left_in_place(1),
+            Some(format!(
+                "1 file could not go to {TRASH} and is still in its folder."
+            ))
+        );
+        assert_eq!(
+            left_in_place(2),
+            Some(format!(
+                "2 files could not go to {TRASH} and are still in their folder."
+            ))
+        );
+    }
 
     #[test]
     fn the_suffix_list_says_its_days_or_that_it_was_never_checked() {
