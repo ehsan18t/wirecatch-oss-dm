@@ -12,6 +12,7 @@ use wirecatch_protocol::app::{
 use wirecatch_protocol::extension::{AddAction, AddedDownload};
 use wirecatch_protocol::rules::QueueReason;
 use wirecatch_protocol::{DownloadId, QueueId};
+use wirecatch_records::activity::{Activity, Happened};
 use wirecatch_records::files::DownloadFiles;
 use wirecatch_sites::local_network::ChosenBy;
 use wirecatch_store::NameChoice;
@@ -22,7 +23,7 @@ use super::file_exists::give_up_the_name;
 use super::handovers::{Handover, Target};
 use super::placement::{Candidate, QueueRequest};
 use super::run::mark_cancelled;
-use super::state::{AfterCancel, Entry, Hold, NextRun, Partial, State, Stop};
+use super::state::{AfterCancel, Entry, Hold, NextRun, Partial, Seen, State, Stop};
 use crate::error::{CoreError, Result};
 use crate::headers;
 use crate::naming;
@@ -99,6 +100,15 @@ impl Manager {
     /// [`CoreError::DownloadNotFound`] when there is no download `id`.
     pub fn get_download(&self, id: DownloadId) -> Result<DownloadSummary> {
         Ok(self.lock().entry(id)?.summary())
+    }
+
+    /// What happened to download `id` after it was added, oldest first (D236).
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::DownloadNotFound`] when there is no download `id`.
+    pub fn activity(&self, id: DownloadId) -> Result<Vec<Happened>> {
+        Ok(self.lock().entry(id)?.activity.events().to_vec())
     }
 
     /// Adds a download from the app itself (paste, Add dialog, command palette) and
@@ -693,15 +703,7 @@ impl Manager {
             start,
             kind,
         } = new;
-        let (handover, expect, media, video_check) = match kind {
-            Kind::File { video_check } => (None, None, None, video_check),
-            Kind::Captured {
-                handover,
-                expect,
-                media,
-            } => (handover, Some(expect), media, false),
-            Kind::Media(media) => (None, None, Some(media), false),
-        };
+        let (handover, expect, media, video_check) = kind.into_parts();
         let id = state.ids.download();
         self.inner.store.save_last_ids(state.ids.last());
         let position = state.ids.position();
@@ -735,6 +737,7 @@ impl Manager {
         // The path is a guess until the server answers with its own name; a
         // media job's is final.
         state.insert_entry(Entry {
+            seen: Seen::of(&row),
             row,
             position,
             origin: fetch.origin,
@@ -760,6 +763,7 @@ impl Manager {
             files: DownloadFiles::default(),
             media_job,
             video_check,
+            activity: Activity::default(),
         });
         self.save(state, id);
         self.reconcile(state);

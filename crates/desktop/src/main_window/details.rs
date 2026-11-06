@@ -16,6 +16,7 @@ use gpui_kit::{
     IntoElement, ParentElement as _, Render, StatefulInteractiveElement as _, Styled as _,
     Subscription, Window, div, px,
 };
+use wirecatch_core::{ActivityEvent, Happened};
 use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, FixAction, PER_MILLE_DONE};
 use wirecatch_protocol::{DownloadId, QueueId};
 use wirecatch_shell::api;
@@ -23,7 +24,7 @@ use wirecatch_shell::api;
 use super::applies::RowAction;
 use super::list::status_tone;
 use super::{Group, applies, confirm, fixes, refresh_dialog};
-use crate::backend::act;
+use crate::backend::{Backend, act};
 use crate::library::Library;
 use crate::ui::layout::{self, Rule};
 use crate::ui::speed_graph::{SpeedHistory, speed_graph};
@@ -47,7 +48,48 @@ pub struct Details {
     id: DownloadId,
     /// The speeds seen while the dialog is open, oldest first, for the graph.
     speeds: SpeedHistory,
+    /// What happened to it, read from the manager whenever `changes` do.
+    activity: Vec<Happened>,
+    changes: Option<Changes>,
     _subscriptions: Vec<Subscription>,
+}
+
+/// What the activity records, so a change to any of it reads the activity again.
+#[derive(PartialEq, Eq)]
+struct Changes {
+    status: DownloadStatus,
+    url: String,
+    path: String,
+}
+
+impl Changes {
+    fn of(row: &DownloadSummary) -> Self {
+        Self {
+            status: row.status,
+            url: row.url.clone(),
+            path: row.path.clone(),
+        }
+    }
+}
+
+impl Details {
+    fn read_activity(&mut self, cx: &mut Context<'_, Self>) {
+        let id = self.id;
+        let read = Backend::run(
+            cx,
+            move |manager| async move { api::activity(&manager, id) },
+        );
+        cx.spawn(async move |details, cx| {
+            let Ok(Ok(activity)) = read.await else {
+                return;
+            };
+            _ = details.update(cx, |details, cx| {
+                details.activity = activity;
+                cx.notify();
+            });
+        })
+        .detach();
+    }
 }
 
 const GRAPH_HEIGHT: f32 = 40.;
@@ -64,11 +106,15 @@ pub(super) fn open(library: Entity<Library>, id: DownloadId, window: &mut Window
                     .read(cx)
                     .downloads
                     .find(details.id)
-                    .map(|row| (row.status, row.speed));
+                    .map(|row| (row.status, row.speed, Changes::of(row)));
                 match row {
-                    Some((status, speed)) => {
+                    Some((status, speed, changes)) => {
                         if Group::of(status) == Group::Downloading {
                             details.speeds.keep(speed, Instant::now());
+                        }
+                        if details.changes.as_ref() != Some(&changes) {
+                            details.changes = Some(changes);
+                            details.read_activity(cx);
                         }
                         cx.notify();
                     }
@@ -76,12 +122,16 @@ pub(super) fn open(library: Entity<Library>, id: DownloadId, window: &mut Window
                 }
             },
         );
-        Details {
+        let mut details = Details {
+            changes: library.read(cx).downloads.find(id).map(Changes::of),
             library,
             id,
             speeds: SpeedHistory::default(),
+            activity: Vec::new(),
             _subscriptions: vec![follow],
-        }
+        };
+        details.read_activity(cx);
+        details
     });
     crate::ui::dialog::open(window, cx, move |dialog, _, _| {
         dialog.w(px(WIDTH)).p_0().child(details.clone())
@@ -118,7 +168,7 @@ impl Render for Details {
                     .child(now_section(&row, &queue, &speeds, cx))
                     .child(facts(&row, &queue, &others, cx))
                     .child(places(&row, self.library.clone(), cx))
-                    .child(activity(&row, cx)),
+                    .child(activity(&row, &self.activity, cx)),
             )
             .child(footer(&row, self.library.clone(), cx))
             .into_any_element()
@@ -464,18 +514,33 @@ fn place(
 }
 
 /// What happened to it.
-fn activity(row: &DownloadSummary, cx: &App) -> impl IntoElement {
-    let line = |when: String, what: String| layout::label_row(ACTIVITY_LABEL_WIDTH, when, what, cx);
+fn activity(row: &DownloadSummary, happened: &[Happened], cx: &App) -> impl IntoElement {
+    let mut lines = vec![(row.added_at, format!("Added from {}", text::host(&row.url)))];
+    lines.extend(happened.iter().map(|h| (h.at, said(&h.event))));
+    if let Some(finished) = row.completed_at {
+        lines.push((finished, "Finished".to_owned()));
+    }
+    lines.sort_by_key(|(at, _)| *at);
     layout::section(Rule::Above, cx)
         .gap_2()
         .child(div().text_role(Role::Label, cx).child("Activity"))
-        .child(line(
-            text::date(row.added_at),
-            format!("Added from {}", text::host(&row.url)),
-        ))
-        .when_some(row.completed_at, |list, finished| {
-            list.child(line(text::date(finished), "Finished".to_owned()))
-        })
+        .children(lines.into_iter().map(|(at, what)| {
+            layout::label_row(ACTIVITY_LABEL_WIDTH, text::date(at), what, cx).items_start()
+        }))
+}
+
+/// One line of the activity, as the person reads it.
+fn said(event: &ActivityEvent) -> String {
+    match event {
+        ActivityEvent::Failed { message } if message.is_empty() => "Failed".to_owned(),
+        ActivityEvent::Failed { message } => format!("Failed: {message}"),
+        ActivityEvent::Paused => "Paused".to_owned(),
+        ActivityEvent::Resumed => "Resumed".to_owned(),
+        ActivityEvent::Retried => "Tried again".to_owned(),
+        ActivityEvent::Cancelled => "Cancelled".to_owned(),
+        ActivityEvent::LinkChanged { host } => format!("Link changed to {host}"),
+        ActivityEvent::Moved { folder } => format!("Moved to {folder}"),
+    }
 }
 
 /// The actions at the foot: quiet icon buttons on the left, and the one action its state calls for

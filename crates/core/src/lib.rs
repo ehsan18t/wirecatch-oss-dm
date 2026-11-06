@@ -28,6 +28,7 @@ pub use wirecatch_addons::manifest::{
     AddonComponent, AddonFile, ArchiveKind, ComponentId, Fingerprint, MEDIA_ADDON_FOLDER,
     ManifestError, MediaAddonSources, PinnedKey, ReleaseFile, Sha256Digest,
 };
+pub use wirecatch_records::activity::{Event as ActivityEvent, Happened};
 pub use wirecatch_settings::folders::{KnownFolders, PathError};
 pub use wirecatch_settings::proxy::{ComputerProxy, same_proxy};
 pub use wirecatch_settings::{

@@ -8,6 +8,7 @@ use wirecatch_protocol::app::{
     AppSettings, Category, DownloadStatus, QueueSettings, SubtitleChoice, UserError,
 };
 use wirecatch_protocol::rules::QueueReason;
+use wirecatch_records::activity::Activity;
 use wirecatch_records::answers::Answers;
 use wirecatch_records::batch::StoredBatch;
 use wirecatch_records::files::{DownloadFiles, PendingDeletion};
@@ -31,6 +32,7 @@ const KINDS: &[(&str, Check)] = &[
     ("origin", loads::<Origin>),
     ("download_error", loads::<UserError>),
     ("media", loads::<StoredMedia>),
+    ("activity", loads::<Activity>),
     ("answers", loads::<Answers>),
     ("files", loads::<DownloadFiles>),
     ("pending_deletions", loads::<Vec<PendingDeletion>>),

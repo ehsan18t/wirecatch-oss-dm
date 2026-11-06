@@ -1,3 +1,4 @@
+pub mod activity;
 pub mod answers;
 pub mod batch;
 pub mod files;

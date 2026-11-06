@@ -23,6 +23,7 @@ use wirecatch_protocol::extension::MediaKind;
 use wirecatch_protocol::{DownloadId, QueueId, UnixMillis};
 
 use wirecatch_files::{FileError, owner_only, with_suffix};
+use wirecatch_records::activity::Activity;
 use wirecatch_records::answers::Answers;
 use wirecatch_records::batch::StoredBatch;
 use wirecatch_records::files::{DownloadFiles, PendingDeletion};
@@ -193,6 +194,10 @@ const MIGRATIONS: &[&str] = &[
     r"
     ALTER TABLE queues ADD COLUMN running_until_empty INTEGER NOT NULL DEFAULT 0;
 ",
+    // What happened to a download after it was added (`Activity`, D236). Rows stored before it was kept have none.
+    r"
+    ALTER TABLE downloads ADD COLUMN activity TEXT NOT NULL DEFAULT '[]';
+",
 ];
 
 const SETTINGS_KEY: &str = "app";
@@ -229,6 +234,7 @@ pub struct StoredDownload {
     pub stranded: Option<PathBuf>,
     pub answers: Answers,
     pub files: DownloadFiles,
+    pub activity: Activity,
 }
 
 /// How a download's final name and folder get decided.
@@ -1447,7 +1453,7 @@ fn load_downloads(conn: &Connection) -> Result<(Vec<StoredDownload>, usize, usiz
     let mut stmt = conn.prepare(
         "SELECT id, url, path, queue_id, position, category, status, total, done, error,
                 added_at, completed_at, origin, settled, chosen_name, chosen_folder, media,
-                stranded, chosen_by, queue_reason, proxy_label, writing, answers, files
+                stranded, chosen_by, queue_reason, proxy_label, writing, answers, files, activity
          FROM downloads ORDER BY position",
     )?;
     let mut downloads = Vec::new();
@@ -1624,9 +1630,9 @@ fn save_download(tx: &Transaction<'_>, row: &StoredDownload) -> rusqlite::Result
         "INSERT OR REPLACE INTO downloads
             (id, url, path, queue_id, position, category, status, total, done, error,
              added_at, completed_at, origin, settled, chosen_name, chosen_folder, media,
-             stranded, chosen_by, queue_reason, proxy_label, writing, answers, files)
+             stranded, chosen_by, queue_reason, proxy_label, writing, answers, files, activity)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
-                 ?18, ?19, ?20, ?21, ?22, ?23, ?24)",
+                 ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)",
     )?
     .execute(params![
         d.id.0,
@@ -1655,6 +1661,7 @@ fn save_download(tx: &Transaction<'_>, row: &StoredDownload) -> rusqlite::Result
         row.naming.writing,
         to_json(&row.answers),
         to_json(&row.files),
+        to_json(&row.activity),
     ])?;
     Ok(())
 }
@@ -1793,6 +1800,7 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<StoredRow> {
             stranded: row.get::<_, Option<String>>(17)?.map(PathBuf::from),
             answers: from_json_or_default(&row.get::<_, String>(22)?),
             files: from_json_or_default(&row.get::<_, String>(23)?),
+            activity: from_json_or_default(&row.get::<_, String>(24)?),
         }),
     })
 }
@@ -1966,6 +1974,16 @@ mod tests {
             stranded: None,
             answers: Answers::default(),
             files: DownloadFiles::default(),
+            activity: {
+                let mut activity = Activity::default();
+                activity.record(
+                    UnixMillis(2),
+                    wirecatch_records::activity::Event::Failed {
+                        message: "expired".into(),
+                    },
+                );
+                activity
+            },
         }
     }
 

@@ -1560,6 +1560,14 @@ Decided on 2026-11-06. Every `Error::Network` was told as "Could not reach the s
 3. `wirecatch-messages` words each one: "Could not reach the server" only for `Unreachable`; "The connection to the server kept dropping" (the engine retried before giving up) with what trying again does with the part kept; "The server sent a reply that could not be read"; "The connection to the server failed" for `Other`.
 4. Release notes for the next release of `wirecatch-engine` (D30.3). Added: `NetworkFailure` and `NetworkError::failure`, which says where a failed exchange with the server broke off.
 
+### D236. A download keeps what happened to it
+
+Decided on 2026-11-06. Details' Activity showed only when a download was added and when it finished, so a download that failed, was tried again and then finished showed no trace of the failure.
+
+1. Each download keeps its activity (`wirecatch_records::activity`): failures with the message the person was shown, pauses, resumes, tries again after a failure or a cancel, cancels, new links (by host) and moves (by folder), each with its time. It is saved with the download (the `activity` column, a JSON list; a row stored before it was kept has none) and keeps the latest 50 events.
+2. The manager's save of a download, which every change of a download goes through, compares the row with what the last save saw and records what changed (`Entry::note_changes`), so no caller has to remember to. A move is recorded where it finishes, since a folder also changes when a server's answer settles the name. A move a restart finished, and states that change and change back between two saves, are not recorded.
+3. The activity stays out of `DownloadSummary`, which every progress event carries: Details reads it with `Manager::activity` when it opens, and again when the row's status, link or path changes. Adding and finishing are still shown from the row's own times.
+
 ### D239. A path is cut in the middle
 
 Decided with the maintainer on 2026-11-06. Paths were cut at their end, so the part that tells two folders apart (the last folder, or the file name) was the part hidden.
