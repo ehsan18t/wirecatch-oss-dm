@@ -1580,7 +1580,7 @@ Decided with the maintainer on 2026-11-06. Paths were cut at their end, so the p
 Decided with the maintainer on 2026-11-06. A queue's name is one someone made up, so inside a sentence it read as one of the sentence's words ("All go to Main.").
 
 1. A queue's name inside running text of the desktop app is drawn in the accent colour at medium weight, through `ui::Sentence`, which marks each name it is given. A label or note of a `Field` may be such a sentence.
-2. Menu items, tooltips and window titles keep plain text: they are short and say one thing.
+2. Headings, button labels, dialog titles, menu items, tooltips and window titles keep plain text: they are short and say one thing.
 3. A settings row's description stays plain text ("1 queue uses its own value: Videos."): gpui-component's `SettingItem::description` takes a string or Markdown, which cannot colour a name.
 
 ### D244. A download's row has two lines

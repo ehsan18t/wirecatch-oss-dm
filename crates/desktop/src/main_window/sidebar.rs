@@ -224,7 +224,6 @@ impl MainWindow {
             })
             .collect();
         let hidden = queues.len() - shown.len();
-        let speed = self.library.read(cx).downloads.tally().speed;
         let toggle = (queues.len() > QUEUES_SHOWN).then(|| {
             Button::new("more-queues")
                 .xsmall()
@@ -247,14 +246,6 @@ impl MainWindow {
                     .pl_2()
                     .gap_2()
                     .child(div().text_role(Role::Label, cx).child("Queues"))
-                    .when(speed > 0, |header| {
-                        header.child(
-                            div()
-                                .text_role(Role::Meta, cx)
-                                .text_color(theme.primary)
-                                .child(text::speed(speed)),
-                        )
-                    })
                     .child(div().flex_1())
                     .child(
                         Button::new("new-queue")
