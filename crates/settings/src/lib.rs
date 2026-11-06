@@ -152,7 +152,6 @@ pub fn within_limits(mut settings: AppSettings, suffixes: &SuffixList) -> AppSet
         .max_concurrent_downloads
         .clamp(1, MAX_CONCURRENT_DOWNLOADS);
     settings.global_speed_limit = speed_limit_within_limits(settings.global_speed_limit);
-    follow_download_folder(&mut settings);
     settings.extension.ignored_sites = stored_sites(settings.extension.ignored_sites);
     settings.local_sites = stored_local_sites(&settings.local_sites, suffixes);
     // Exceptions this build would refuse cannot be matched as they are; the defaults take
@@ -271,7 +270,6 @@ pub fn validate(
     suffixes: &SuffixList,
 ) -> Result<AppSettings> {
     check_folder(&settings.default_folder, folders)?;
-    follow_download_folder(&mut settings);
     if settings.categories.len() > MAX_CATEGORY_RULES {
         return Err(SettingsError::Invalid(format!(
             "There can be at most {MAX_CATEGORY_RULES} category rules. Remove some first."
@@ -284,6 +282,7 @@ pub fn validate(
         )?;
         rule.extensions = clean_extensions(&rule.extensions)?;
     }
+    keep_type_folders_safe(&mut settings, folders);
     check_connections(settings.connections_per_download)?;
     check_concurrency(
         settings.max_concurrent_downloads,
@@ -580,7 +579,7 @@ pub fn follows_download_folder(folder: &PortablePath) -> bool {
         && raw
             .split(['/', '\\'])
             .filter(|s| !s.is_empty())
-            .all(folders::is_plain_name)
+            .all(|name| folders::is_plain_name(name) && !name.starts_with('.'))
 }
 
 /// A type folder as a full folder setting: one that follows the download folder is placed in
@@ -600,21 +599,30 @@ pub fn in_download_folder(folder: &PortablePath, download_folder: &PortablePath)
     PortablePath(full)
 }
 
-/// Writes a type folder in the download folder's own placeholder (`{Downloads}/Video` while the
-/// download folder is `{Downloads}`) as one that follows it: only defaults and imported profiles
-/// are written so, never a folder picked by hand, which is a full path.
-fn follow_download_folder(settings: &mut AppSettings) {
-    let base = settings.default_folder.0.trim();
-    if !base.starts_with('{') {
+/// Puts a type folder that follows the download folder back in it when the download folder takes
+/// it somewhere a downloaded file could run by itself: such a tail may come from a settings file,
+/// and was judged only under the download folder of then. Blocks on the disk.
+fn keep_type_folders_safe(settings: &mut AppSettings, folders: &KnownFolders) {
+    let Ok(base) = folders.resolve(&settings.default_folder) else {
+        return;
+    };
+    if folders.is_protected(&base) {
         return;
     }
     for rule in &mut settings.categories {
-        let Some(rest) = rule.folder.0.trim().strip_prefix(base) else {
+        if rule.folder.0.trim().is_empty() || !follows_download_folder(&rule.folder) {
             continue;
-        };
-        let inside = PortablePath(rest.trim_start_matches(['/', '\\']).to_owned());
-        if (rest.is_empty() || rest.starts_with(['/', '\\'])) && follows_download_folder(&inside) {
-            rule.folder = inside;
+        }
+        let full = in_download_folder(&rule.folder, &settings.default_folder);
+        if folders
+            .resolve(&full)
+            .is_ok_and(|path| folders.is_protected(&path))
+        {
+            tracing::warn!(
+                category = ?rule.category,
+                "a type folder would be in a protected folder; it is the download folder instead"
+            );
+            rule.folder = PortablePath(String::new());
         }
     }
 }
@@ -1126,20 +1134,6 @@ mod tests {
     }
 
     #[test]
-    fn stored_type_folders_in_the_download_folder_follow_it_from_then_on() {
-        let mut stored = default_settings();
-        stored.categories[0].folder = PortablePath("{Downloads}/Video".into());
-        stored.categories[1].folder = PortablePath("{Downloads}".into());
-        stored.categories[2].folder = PortablePath("{Documents}/Compressed".into());
-        let kept = within_limits(stored, &SuffixList::built_in());
-        let shown: Vec<&str> = kept.categories[..3]
-            .iter()
-            .map(|rule| rule.folder.0.as_str())
-            .collect();
-        assert_eq!(shown, ["Video", "", "{Documents}/Compressed"]);
-    }
-
-    #[test]
     fn a_type_folder_in_the_download_folder_is_checked_there() {
         let f = folders();
         let check = |folder: &str| {
@@ -1150,6 +1144,20 @@ mod tests {
         assert!(check("Video/Clips").is_ok());
         assert!(check("../Video").is_err());
         assert!(check("Video/C:").is_err());
+        assert!(check(".ssh").is_err());
+        assert!(check("Video/.hidden").is_err());
+    }
+
+    #[test]
+    fn a_type_folder_the_download_folder_takes_into_a_protected_place_goes_back_to_it() {
+        let f = folders();
+        let f = f.clone().protecting(f.home.join("Apps"));
+        let mut s = default_settings();
+        s.categories[0].folder = PortablePath("Apps/Run".into());
+        s.default_folder = PortablePath(f.home.to_string_lossy().into_owned());
+        let s = validate(s, &[default_queue()], &f, &SuffixList::built_in()).unwrap();
+        assert_eq!(s.categories[0].folder, PortablePath(String::new()));
+        assert_eq!(s.categories[1].folder, PortablePath("Music".into()));
     }
 
     #[test]

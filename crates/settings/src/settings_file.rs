@@ -880,6 +880,20 @@ mod tests {
 
     /// A queue's folder travels like the other folder settings (D94.5).
     #[test]
+    fn type_folders_keep_following_or_staying_through_a_profile() {
+        let mut settings = default_settings();
+        let picked = folders().downloads.join("Music");
+        settings.categories[1].folder = PortablePath(picked.to_string_lossy().into_owned());
+        let exported = export(&settings, &[], &[], &folders(), UnixMillis(0));
+        let imported = merge(exported, &[default_queue()], &folders(), || QueueId(2)).unwrap();
+        let kept: Vec<&str> = imported.settings.categories[..2]
+            .iter()
+            .map(|rule| rule.folder.0.as_str())
+            .collect();
+        assert_eq!(kept, ["Video", "{Downloads}/Music"]);
+    }
+
+    #[test]
     fn queue_folders_are_exported_portable_and_checked_on_import() {
         let foreign = if cfg!(windows) {
             "/home/ada/Films"

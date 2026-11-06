@@ -198,6 +198,35 @@ const MIGRATIONS: &[&str] = &[
     r"
     ALTER TABLE downloads ADD COLUMN activity TEXT NOT NULL DEFAULT '[]';
 ",
+    // D270: a type folder inside the download folder follows it once written as plain names. Builds
+    // before it wrote the defaults as `{Downloads}/Video`; a folder picked by hand is a full path.
+    r"
+    UPDATE settings
+    SET value = json_set(value, '$.categories', (
+        WITH rules AS (
+            SELECT rule.key AS at, rule.value AS rule,
+                json_extract(rule.value, '$.folder') AS folder,
+                json_extract(settings.value, '$.default_folder') AS base
+            FROM json_each(settings.value, '$.categories') AS rule
+        ), tails AS (
+            SELECT at, rule, CASE
+                WHEN folder = base THEN ''
+                WHEN substr(folder, 1, length(base) + 1) = base || '/'
+                    THEN substr(folder, length(base) + 2)
+            END AS tail
+            FROM rules
+        )
+        SELECT json_group_array(json(CASE
+            WHEN tail IS NOT NULL AND substr(tail, 1, 1) <> '.' AND instr(tail, '/.') = 0
+                THEN json_set(rule, '$.folder', tail)
+            ELSE rule
+        END) ORDER BY at)
+        FROM tails
+    ))
+    WHERE key = 'app' AND json_valid(value)
+        AND json_type(value, '$.categories') = 'array'
+        AND json_extract(value, '$.default_folder') LIKE '{%';
+",
 ];
 
 const SETTINGS_KEY: &str = "app";
@@ -3297,6 +3326,50 @@ mod tests {
         store.close(PATIENCE).await;
         let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         assert!(!snapshot.settings.unwrap().extension.ask_before_download);
+    }
+
+    #[test]
+    fn type_folders_stored_in_the_download_folder_follow_it_from_then_on() {
+        let dir = tempfile::tempdir().unwrap();
+        database_with_settings(dir.path(), MIGRATIONS.len() - 1, true);
+        let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        for (at, folder) in [
+            (1, "{Downloads}"),
+            (2, "{Downloads}/.hidden"),
+            (3, "C:/Docs"),
+        ] {
+            conn.execute(
+                "UPDATE settings SET value = json_set(value, ?1, ?2) WHERE key = 'app'",
+                params![format!("$.categories[{at}].folder"), folder],
+            )
+            .unwrap();
+        }
+        drop(conn);
+        let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        let settings = snapshot.settings.expect("the settings survive");
+        let folders: Vec<&str> = settings
+            .categories
+            .iter()
+            .map(|rule| rule.folder.0.as_str())
+            .collect();
+        assert_eq!(
+            folders,
+            [
+                "Video",
+                "",
+                "{Downloads}/.hidden",
+                "C:/Docs",
+                "Programs",
+                "Images"
+            ]
+        );
+        let categories: Vec<_> = settings.categories.iter().map(|r| r.category).collect();
+        let before: Vec<_> = sample_settings()
+            .categories
+            .iter()
+            .map(|r| r.category)
+            .collect();
+        assert_eq!(categories, before, "the rules keep their order");
     }
 
     /// Writes `settings` as the stored settings of a database with every migration.
