@@ -1,5 +1,6 @@
-//! When and how the person is told about downloads that started or ended (D52, D63, D65): each
-//! queue's choice, downloads that end close together sharing one notification, and the settings.
+//! When and how the person is told about downloads that started or ended (D52, D63, D65, D269):
+//! each queue's choice, downloads that end or are added close together sharing one notification,
+//! and the settings.
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -15,7 +16,8 @@ use wirecatch_protocol::extension::{MediaKind, NoticeKind};
 use crate::activity::Ended;
 use crate::notifications::{self, Notification};
 
-/// Downloads finishing (or failing) within this long of the first one share one notification.
+/// Downloads finishing (or failing) within this long of the first one share one notification, and
+/// browser downloads added within this long of the last added notice share the next one.
 const NOTIFY_BATCH: Duration = Duration::from_secs(3);
 
 /// What to tell the person about downloads that ended (D52).
@@ -98,8 +100,8 @@ fn still_as_told(told: &mut DownloadSummary, row: &DownloadSummary) -> bool {
     same
 }
 
-/// Decides when to tell what: each queue's choice, and downloads that end close together
-/// sharing one notification. Holds no clock of its own, so tests give it the time.
+/// Decides when to tell what: each queue's choice, and downloads that end or are added close
+/// together sharing one notification. Holds no clock of its own, so tests give it the time.
 #[derive(Debug, Default)]
 pub struct Teller {
     modes: HashMap<QueueId, QueueNotify>,
@@ -109,7 +111,7 @@ pub struct Teller {
 }
 
 /// Browser downloads that started without a window (D63, D269): the first is told at once, and those
-/// that follow within [`NOTIFY_BATCH`] of the last notice share the next one.
+/// that follow within [`NOTIFY_BATCH`] of the last notice, or while one waits, share the next one.
 #[derive(Debug, Default)]
 struct Added {
     waiting: Batch,
@@ -167,9 +169,10 @@ impl Teller {
     /// `None` when it waits for the next notice ([`Self::take_added`]).
     pub fn added(&mut self, row: DownloadSummary, now: Instant) -> Option<Vec<DownloadSummary>> {
         let added = &mut self.added;
-        if let Some(until) = added.gathering_until.filter(|until| now < *until) {
+        let gathering = added.gathering_until.filter(|until| now < *until);
+        if let Some(due) = added.waiting.due.or(gathering) {
             added.waiting.rows.push(row);
-            added.waiting.due.get_or_insert(until);
+            added.waiting.due = Some(due);
             return None;
         }
         added.gathering_until = Some(now + NOTIFY_BATCH);
@@ -376,6 +379,20 @@ mod tests {
         let quiet = later + NOTIFY_BATCH;
         let alone = teller.added(row(502, "downloads", Queued), quiet);
         assert_eq!(alone.as_deref().map(ids), Some(vec![502]));
+    }
+
+    #[test]
+    fn an_add_while_a_notice_still_waits_joins_it() {
+        let mut teller = Teller::default();
+        let first = Instant::now();
+        teller.added(row(1, "downloads", Queued), first);
+        teller.added(row(2, "downloads", Queued), first + NOTIFY_BATCH / 3);
+        let late = first + NOTIFY_BATCH + Duration::from_millis(1);
+        assert_eq!(teller.added(row(3, "downloads", Queued), late), None);
+        assert_eq!(
+            teller.take_added(late).as_deref().map(ids),
+            Some(vec![2, 3])
+        );
     }
 
     #[test]

@@ -1607,6 +1607,6 @@ Decided on 2026-11-06. "Remove and delete" erased finished files for good, so on
 
 Decided with the maintainer on 2026-11-06. It amends D63.3, where each download that started without a window had its own notice, so handing 500 links over from the browser sent 500 notices.
 
-1. The first browser download that starts without a window is told at once, as before. One that starts within three seconds (`NOTIFY_BATCH`) of the last notice waits for the next one, which comes three seconds after that notice and tells every download that waited: "4 downloads added", with the first names and "and 2 more". A run of adds is told every three seconds while it lasts, and the first add after a quiet spell is told at once again (`Teller::added`).
+1. The first browser download that starts without a window is told at once, as before. One that starts within three seconds (`NOTIFY_BATCH`) of the last notice, or while a notice still waits, waits for the next one, which comes three seconds after that notice and tells every download that waited: "4 downloads added", with the first names and "and 2 more". A run of adds is told every three seconds while it lasts, and the first add after a quiet spell is told at once again (`Teller::added`).
 2. A download removed before its notice is left out of it, and a notice with nothing left is not sent.
 3. A video read without a window is still told on its own as soon as it is handed over (D67.3): it is told by its title, which a shared notice could not show.
