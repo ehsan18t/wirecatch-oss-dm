@@ -697,9 +697,7 @@ fn split_seconds(time: &str) -> (String, String) {
 
 /// The escapes a shown link keeps, as address bars do: decoded, each would change where the link
 /// seems to point (`example.com%2F@evil.test`) or how its query splits (`a%26token%3Dx`).
-const KEPT_ESCAPES: [u8; 13] = [
-    b'/', b'?', b'#', b'@', b'%', b':', b'&', b'=', b'+', b';', b',', b'$', b'\\',
-];
+const KEPT_ESCAPES: &[u8] = b"/?#@%:&=+;,$\\";
 
 /// `url` as a browser's address bar shows it, its path, query and fragment each decoded on its own;
 /// the scheme and host never are. Copying keeps `url`.
@@ -719,9 +717,9 @@ pub fn readable_link(url: &str) -> String {
         })
 }
 
-/// `part` with its escapes decoded but [`KEPT_ESCAPES`]; as it is when that gives no UTF-8 or a
-/// character that could break the line or make a name read as another (`%E2%80%AE` turns `exe`
-/// around).
+/// `part` with its escapes decoded but [`KEPT_ESCAPES`]; as it is when that gives no UTF-8, a space
+/// other than the plain one, or a character that could break the line or make a name read as
+/// another (`%E2%80%AE` turns `exe` around).
 fn readable_part(part: &str) -> std::borrow::Cow<'_, str> {
     let bytes = part.as_bytes();
     let mut decoded = Vec::with_capacity(bytes.len());
@@ -743,7 +741,13 @@ fn readable_part(part: &str) -> std::borrow::Cow<'_, str> {
         }
     }
     match String::from_utf8(decoded) {
-        Ok(shown) if !shown.chars().any(misleads) => shown.into(),
+        Ok(shown)
+            if !shown
+                .chars()
+                .any(|c| misleads(c) || (c.is_whitespace() && c != ' ')) =>
+        {
+            shown.into()
+        }
         _ => part.into(),
     }
 }
@@ -1335,6 +1339,9 @@ mod tests {
             "https://example.com/selector%EF%B8%8F.zip",
             "https://ex%61mple.com/host-stays.zip",
             "https://example.com%2F@evil.test/x.zip",
+            "https://example.com/a%C2%A0%C2%A0%C2%A0.pdf.exe",
+            "https://example.com/a%E3%80%80%E3%80%80.pdf.exe",
+            "https://example.com/a%E2%80%83.pdf.exe",
         ] {
             assert_eq!(readable_link(kept), kept);
         }
