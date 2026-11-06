@@ -561,13 +561,9 @@ fn earlier_notice_on(row: &DownloadSummary, today: NaiveDate, clock: ClockFormat
     }
 }
 
-/// What a row says of a paused download: where it got to, once it got anywhere.
-pub fn paused_at(row: &DownloadSummary) -> String {
-    if row.done == 0 {
-        status_label(DownloadStatus::Paused).to_owned()
-    } else {
-        format!("Paused at {}", size(row))
-    }
+/// Where a paused download got to, once it got anywhere; its row's time column says Paused.
+pub fn paused_at(row: &DownloadSummary) -> Option<String> {
+    (row.done > 0).then(|| size(row))
 }
 
 /// What the question about a file already in the folder says of that file (D96).
@@ -883,12 +879,12 @@ mod tests {
             total,
             ..wirecatch_test_support::downloads::download(1)
         };
-        assert_eq!(paused_at(&paused(0, None)), "Paused");
-        assert_eq!(paused_at(&paused(0, Some(2048))), "Paused");
-        assert_eq!(paused_at(&paused(1024, None)), "Paused at 1.00 KB");
+        assert_eq!(paused_at(&paused(0, None)), None);
+        assert_eq!(paused_at(&paused(0, Some(2048))), None);
+        assert_eq!(paused_at(&paused(1024, None)).as_deref(), Some("1.00 KB"));
         assert_eq!(
-            paused_at(&paused(1024, Some(2048))),
-            "Paused at 1.00 KB of 2.00 KB"
+            paused_at(&paused(1024, Some(2048))).as_deref(),
+            Some("1.00 KB of 2.00 KB")
         );
     }
 

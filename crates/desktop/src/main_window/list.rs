@@ -686,7 +686,7 @@ fn text_column(row: &DownloadSummary, shown: ListLines, tone: Hsla, cx: &App) ->
                             .flex_shrink_0()
                             .text_role(Role::Meta, cx)
                             .text_color(cx.theme().danger)
-                            .child(text::status_label(DownloadStatus::Failed)),
+                            .child("Failed"),
                     )
                 }),
         )
@@ -715,7 +715,7 @@ fn second_line_of(row: &DownloadSummary, shown: ListLines, tone: Hsla, cx: &App)
 }
 
 /// What a row says of its state, when its state is not plain finished: a failure's first
-/// sentence, a running download's speed and size, a paused one's size, or a word for the rest.
+/// sentence, a running download's speed and size, how far a paused one got, or a word for the rest.
 fn state_part(row: &DownloadSummary, tone: Hsla, cx: &App) -> Option<AnyElement> {
     let part = || h_flex().min_w_0().gap_2();
     let said = match row.status {
@@ -732,7 +732,7 @@ fn state_part(row: &DownloadSummary, tone: Hsla, cx: &App) -> Option<AnyElement>
             .flex_shrink_0()
             .child(div().text_color(tone).child(text::speed(row.speed)))
             .child(text::size(row)),
-        DownloadStatus::Paused => part().flex_shrink_0().child(text::size(row)),
+        DownloadStatus::Paused => part().flex_shrink_0().child(text::paused_at(row)?),
         _ => part().child(div().truncate().child(text::status_short(row))),
     };
     Some(said.into_any_element())

@@ -1155,8 +1155,8 @@ Decided with the maintainer on 2026-11-04. It amends D89's progress window and t
 
 Decided with the maintainer on 2026-10-31.
 
-1. Every row shares one grid: a circle that ticks it (a running row's too, D224), its time or state, the file tile, the name over its link and save folder, and one figure. In the queue-order sort, finished downloads sit under day headings with their count and total size, each row showing its time to the second, in the 12 or 24-hour format of the `clock` setting; other sorts keep one Finished heading.
-2. A View menu beside the sort chooses which lines rows show, saved in `list_lines`; a row with neither is one compact line. Rows therefore differ in height, so the list draws with GPUI's variable-height list and keeps its scroll position across changes.
+1. Every row shares one grid: a circle that ticks it (a running row's too, D224), its time or state, the file tile, the name over one line of its state, link and save folder (D244), and one figure. In the queue-order sort, finished downloads sit under day headings with their count and total size, each row showing its time to the second, in the 12 or 24-hour format of the `clock` setting; other sorts keep one Finished heading.
+2. A View menu beside the sort chooses which lines rows show, saved in `list_lines`; a row with neither is one compact line, and either one puts its part on the second line (D244). Rows therefore differ in height, so the list draws with GPUI's variable-height list and keeps its scroll position across changes.
 3. Circles beside each heading and in the selection bar tick a whole day, group or list.
 4. A queue with rules has a Rules on or Rules off button in its one-line header and the same choice in the sidebar's menu, so its rules can be switched without opening the editor. A queue with no rules shows neither.
 
@@ -1579,7 +1579,7 @@ Decided with the maintainer on 2026-11-06. A queue's name is one someone made up
 
 Decided with the maintainer on 2026-11-06. It changes D115.1 and D115.2, where the link and the whole save folder each took a line of their own under the name, so a window showed about a third of the rows a download manager does.
 
-1. A row is its name over one line: what matters for its state (a failure's first sentence, a running download's speed and size, a paused one's size, a word for one that waits), then the link's host, with its path once the download is over, then the folder's last name as a chip. Hovering the link or the chip shows it whole.
+1. A row is its name over one line: what matters for its state (a failure's first sentence, a running download's speed and size, how far a paused one got, a word for one that waits), then the link's host, with its path once the download is over, then the folder's last name as a chip. Hovering the link or the chip shows it whole.
 2. The time column says what the heading does not: a running download's time left, Paused, a place in a queue's line, or when the download finished or was added, to the second. A waiting row outside a queue's page leaves it empty.
 3. Work under way or paused draws its bar under the row's text.
 4. The View menu still keeps the link and the folder on the second line; with neither, a row is the one compact line it was.
