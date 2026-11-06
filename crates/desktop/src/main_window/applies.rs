@@ -122,14 +122,41 @@ pub fn can_move_to(rows: &[&DownloadSummary], queue: QueueId) -> bool {
 
 /// What a selection offers: an action applies when at least one of its downloads takes it.
 pub struct Applicable {
-    pub pause: bool,
-    pub resume: bool,
-    pub retry: bool,
+    /// How many of the downloads each action applies to.
+    pub pause: usize,
+    pub resume: usize,
+    pub retry: usize,
+    rows: usize,
     /// What retrying is called: starting over when all of it is cancelled.
     pub retry_word: &'static str,
 }
 
 impl Applicable {
+    pub fn pause_label(&self) -> String {
+        self.counted("Pause", self.pause)
+    }
+
+    pub fn resume_label(&self) -> String {
+        self.counted("Resume", self.resume)
+    }
+
+    pub fn retry_label(&self) -> String {
+        if self.retry == self.rows {
+            self.retry_word.to_owned()
+        } else {
+            self.retry_phrase(&self.retry.to_string())
+        }
+    }
+
+    /// `word`, with how many of the downloads it acts on when that is not all of them.
+    fn counted(&self, word: &str, acts_on: usize) -> String {
+        if acts_on == self.rows {
+            word.to_owned()
+        } else {
+            format!("{word} {acts_on}")
+        }
+    }
+
     /// Retrying `named`, in the words of [`Self::retry_word`].
     pub fn retry_phrase(&self, named: &str) -> String {
         if self.retry_word == START_OVER {
@@ -140,10 +167,12 @@ impl Applicable {
     }
 
     pub fn to(rows: &[&DownloadSummary]) -> Self {
+        let taking = |takes: fn(&DownloadSummary) -> bool| rows.iter().filter(|r| takes(r)).count();
         Self {
-            pause: rows.iter().any(|r| can_pause(r)),
-            resume: rows.iter().any(|r| can_resume(r)),
-            retry: rows.iter().any(|r| can_retry(r)),
+            pause: taking(can_pause),
+            resume: taking(can_resume),
+            retry: taking(can_retry),
+            rows: rows.len(),
             retry_word: if rows.iter().any(|r| r.status == DownloadStatus::Failed) {
                 RETRY
             } else {
@@ -216,6 +245,34 @@ mod tests {
         assert_eq!(
             Applicable::to(&[&cancelled]).retry_phrase("it"),
             "Start it over"
+        );
+    }
+
+    #[test]
+    fn a_mixed_selection_says_how_many_rows_each_button_acts_on() {
+        let row = |id, status| DownloadSummary {
+            status,
+            ..download(id)
+        };
+        let (running, queued, paused, failed, done) = (
+            row(1, DownloadStatus::Downloading),
+            row(2, DownloadStatus::Queued),
+            row(3, DownloadStatus::Paused),
+            row(4, DownloadStatus::Failed),
+            row(5, DownloadStatus::Completed),
+        );
+        let mixed = Applicable::to(&[&running, &queued, &paused, &failed, &done]);
+        assert_eq!(mixed.pause_label(), "Pause 2");
+        assert_eq!(mixed.resume_label(), "Resume 1");
+        assert_eq!(mixed.retry_label(), "Try 1 again");
+
+        let all_running = Applicable::to(&[&running, &running]);
+        assert_eq!(all_running.pause_label(), "Pause");
+        let cancelled = row(6, DownloadStatus::Cancelled);
+        assert_eq!(Applicable::to(&[&cancelled]).retry_label(), "Start over");
+        assert_eq!(
+            Applicable::to(&[&cancelled, &done]).retry_label(),
+            "Start 1 over"
         );
     }
 

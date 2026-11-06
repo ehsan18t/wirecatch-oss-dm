@@ -1155,7 +1155,7 @@ Decided with the maintainer on 2026-11-04. It amends D89's progress window and t
 
 Decided with the maintainer on 2026-10-31.
 
-1. Every row shares one grid: a circle that ticks it (none while it downloads), its time or state, the file tile, the name over its link and save folder, and one figure. In the queue-order sort, finished downloads sit under day headings with their count and total size, each row showing its time to the second, in the 12 or 24-hour format of the `clock` setting; other sorts keep one Finished heading.
+1. Every row shares one grid: a circle that ticks it (a running row's too, D224), its time or state, the file tile, the name over its link and save folder, and one figure. In the queue-order sort, finished downloads sit under day headings with their count and total size, each row showing its time to the second, in the 12 or 24-hour format of the `clock` setting; other sorts keep one Finished heading.
 2. A View menu beside the sort chooses which lines rows show, saved in `list_lines`; a row with neither is one compact line. Rows therefore differ in height, so the list draws with GPUI's variable-height list and keeps its scroll position across changes.
 3. Circles beside each heading and in the selection bar tick a whole day, group or list.
 4. A queue with rules has a Rules on or Rules off button in its one-line header and the same choice in the sidebar's menu, so its rules can be switched without opening the editor. A queue with no rules shows neither.
@@ -1526,3 +1526,11 @@ Decided on 2026-11-06. Every start of a page video read the page with yt-dlp aga
 2. A reading serves only a pause. An attempt that ends any other way (finished, failed, or refused by a format's server) drops it, so the next try reads fresh addresses; the waits before those tries are unchanged.
 3. Readings stay in memory, never in the work folder: they hold signed format addresses and sometimes cookies, which no folder keeps. A restart therefore reads the page again.
 4. Formats yt-dlp downloads itself are still read again by yt-dlp; the reading only spares the app's own read.
+
+### D224. A running download can be ticked like any other
+
+Decided with the maintainer on 2026-11-06. It changes D115.1, which left a running row without its circle, so a running download could not be picked with the circle to pause or move along with others.
+
+1. A running row shows its circle as every other row does: while hovered, and on every row while some are ticked.
+2. A selection bar button that only some of the ticked rows take says how many: "Pause 2", "Resume 1", "Try 2 again", "Start 2 over". When every ticked row takes it, it keeps its plain word.
+3. Pause still covers queued, connecting and processing rows as well as running ones, so a ticked queued row does not start a moment later.
