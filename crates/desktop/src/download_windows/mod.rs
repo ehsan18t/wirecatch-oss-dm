@@ -8,8 +8,9 @@ pub mod finished;
 mod media_form;
 pub mod media_output;
 mod proposed_name;
-mod run_record;
+pub(crate) mod run_record;
 mod view;
+pub(crate) use view::{run_facts, run_panel};
 
 use std::collections::HashMap;
 

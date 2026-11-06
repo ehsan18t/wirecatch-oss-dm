@@ -811,8 +811,8 @@ impl DownloadWindow {
                     )))
                     .children(state_mark(&row, self.record.stalled(Instant::now()), cx)),
             )
-            .child(self.run_panel(&row, per_mille, cx))
-            .children(self.facts(&row, cx))
+            .child(run_panel(&self.record, &row, cx))
+            .children(run_facts(&self.record, &row, cx))
             .when_some(folder, |body, folder| {
                 body.child(
                     h_flex()
@@ -845,172 +845,165 @@ impl DownloadWindow {
             )
             .into_any_element()
     }
+}
 
-    /// The progress bar and speed graph in one: across is how much is done, height is how fast,
-    /// with the speed and percent over it. It is in every state and takes the spare height, so the
-    /// rows keep even gaps: a failure's reason fills it, and a download too short to draw says it
-    /// finished.
-    fn run_panel(&self, row: &DownloadSummary, per_mille: Option<u16>, cx: &App) -> AnyElement {
-        let theme = cx.theme();
-        let panel = v_flex()
-            .w_full()
-            .flex_1()
-            .min_h(px(GRAPH_HEIGHT))
-            .rounded(theme.radius)
-            .overflow_hidden();
-        if let (DownloadStatus::Failed, Some(error)) = (row.status, &row.error) {
-            return panel
-                .px_2p5()
-                .py_1p5()
-                .bg(theme.danger.opacity(TINT))
-                .text_color(theme.danger)
-                .child(error.message.clone())
-                .into_any_element();
-        }
-        if row.status == DownloadStatus::Completed && !self.record.drawable() {
-            return panel
+/// The progress bar and speed graph in one: across is how much is done, height is how fast,
+/// with the speed and percent over it. It is in every state and takes the spare height, so the
+/// rows keep even gaps: a failure's reason fills it, and a download too short to draw says it
+/// finished.
+pub(crate) fn run_panel(record: &RunRecord, row: &DownloadSummary, cx: &App) -> AnyElement {
+    let per_mille = text::per_mille(row);
+    let theme = cx.theme();
+    let panel = v_flex()
+        .w_full()
+        .flex_1()
+        .min_h(px(GRAPH_HEIGHT))
+        .rounded(theme.radius)
+        .overflow_hidden();
+    if let (DownloadStatus::Failed, Some(error)) = (row.status, &row.error) {
+        return panel
+            .px_2p5()
+            .py_1p5()
+            .bg(theme.danger.opacity(TINT))
+            .text_color(theme.danger)
+            .child(error.message.clone())
+            .into_any_element();
+    }
+    if row.status == DownloadStatus::Completed && !record.drawable() {
+        return panel
+            .px_2p5()
+            .pt_1p5()
+            .bg(theme.primary.opacity(TINT))
+            .child(div().text_role(Role::Strong, cx).child("Download finished"))
+            .into_any_element();
+    }
+    let cancelled = row.status == DownloadStatus::Cancelled;
+    let color = match row.status {
+        DownloadStatus::Downloading if record.stalled(Instant::now()) => theme.muted_foreground,
+        DownloadStatus::Completed | DownloadStatus::Downloading => theme.primary,
+        DownloadStatus::Failed => theme.danger,
+        _ => theme.muted_foreground,
+    };
+    let label = panel_label(record, row);
+    let moving = !matches!(
+        row.status,
+        DownloadStatus::Completed | DownloadStatus::Processing | DownloadStatus::Cancelled
+    );
+    let front = per_mille
+        .filter(|_| moving && row.total.is_some_and(|total| total > 0))
+        .map(|done| f32::from(done) / f32::from(PER_MILLE_DONE));
+    // Cancelling zeroes the row's progress: the curve stays where the run got to.
+    let end = if cancelled { record.reached() } else { front };
+    let graph = record.drawable().then(|| {
+        run_graph(record.points(end.unwrap_or(1.)), front, color)
+            .absolute()
+            .size_full()
+    });
+    panel
+        .bg(theme.secondary)
+        .child(
+            h_flex()
+                .flex_shrink_0()
                 .px_2p5()
                 .pt_1p5()
-                .bg(theme.primary.opacity(TINT))
-                .child(div().text_role(Role::Strong, cx).child("Download finished"))
-                .into_any_element();
-        }
-        let cancelled = row.status == DownloadStatus::Cancelled;
-        let color = match row.status {
-            DownloadStatus::Downloading if self.record.stalled(Instant::now()) => {
-                theme.muted_foreground
-            }
-            DownloadStatus::Completed | DownloadStatus::Downloading => theme.primary,
-            DownloadStatus::Failed => theme.danger,
-            _ => theme.muted_foreground,
-        };
-        let label = self.panel_label(row);
-        let moving = !matches!(
-            row.status,
-            DownloadStatus::Completed | DownloadStatus::Processing | DownloadStatus::Cancelled
-        );
-        let front = per_mille
-            .filter(|_| moving && row.total.is_some_and(|total| total > 0))
-            .map(|done| f32::from(done) / f32::from(PER_MILLE_DONE));
-        // Cancelling zeroes the row's progress: the curve stays where the run got to.
-        let end = if cancelled {
-            self.record.reached()
-        } else {
-            front
-        };
-        let graph = self.record.drawable().then(|| {
-            run_graph(self.record.points(end.unwrap_or(1.)), front, color)
-                .absolute()
-                .size_full()
-        });
-        panel
-            .bg(theme.secondary)
-            .child(
-                h_flex()
+                .justify_between()
+                .child(div().text_role(Role::Strong, cx).children(label))
+                .child(
+                    div()
+                        .text_role(Role::Meta, cx)
+                        .children(text::percent(row).filter(|_| moving)),
+                ),
+        )
+        .when(cancelled, |panel| {
+            panel.child(
+                div()
                     .flex_shrink_0()
                     .px_2p5()
-                    .pt_1p5()
-                    .justify_between()
-                    .child(div().text_role(Role::Strong, cx).children(label))
-                    .child(
-                        div()
-                            .text_role(Role::Meta, cx)
-                            .children(text::percent(row).filter(|_| moving)),
-                    ),
-            )
-            .when(cancelled, |panel| {
-                panel.child(
-                    div()
-                        .flex_shrink_0()
-                        .px_2p5()
-                        .text_role(Role::Meta, cx)
-                        .child("Anything downloaded so far was removed. Try again starts over."),
-                )
-            })
-            .child(div().relative().mt_1p5().flex_1().min_h_0().children(graph))
-            .into_any_element()
-    }
-
-    fn panel_label(&self, row: &DownloadSummary) -> Option<String> {
-        match row.status {
-            DownloadStatus::Downloading if self.record.stalled(Instant::now()) => {
-                Some("Waiting for the server".to_owned())
-            }
-            DownloadStatus::Downloading if row.speed > 0 => Some(text::speed(row.speed)),
-            DownloadStatus::Completed => self
-                .record
-                .peak()
-                .map(|peak| format!("Peak {}", text::speed(peak))),
-            DownloadStatus::Failed => None,
-            DownloadStatus::Cancelled => Some("Download cancelled".to_owned()),
-            _ => Some(text::status_short(row)),
-        }
-    }
-
-    /// The figures under the panel, by state: a failure keeps what it downloaded, and a cancelled
-    /// download has nothing left to count.
-    fn facts(&self, row: &DownloadSummary, cx: &App) -> Option<AnyElement> {
-        if row.status == DownloadStatus::Cancelled {
-            return None;
-        }
-        if row.status == DownloadStatus::Failed && row.error.is_some() {
-            return (row.done > 0).then(|| {
-                let kept = match row.total {
-                    Some(total) => format!(
-                        "Downloaded {} of {}",
-                        format_bytes(row.done),
-                        format_bytes(total)
-                    ),
-                    None => format!("Downloaded {}", format_bytes(row.done)),
-                };
-                div()
                     .text_role(Role::Meta, cx)
-                    .child(kept)
-                    .into_any_element()
-            });
+                    .child("Anything downloaded so far was removed. Try again starts over."),
+            )
+        })
+        .child(div().relative().mt_1p5().flex_1().min_h_0().children(graph))
+        .into_any_element()
+}
+
+fn panel_label(record: &RunRecord, row: &DownloadSummary) -> Option<String> {
+    match row.status {
+        DownloadStatus::Downloading if record.stalled(Instant::now()) => {
+            Some("Waiting for the server".to_owned())
         }
-        let average = self
-            .record
-            .average()
-            .map(|bytes| ("Average", text::speed(bytes)));
-        let ran = self.record.ran().map(|ran| ran.as_secs());
-        let facts: Vec<(&str, String)> = match row.status {
-            DownloadStatus::Completed => finished_facts(row, ran, average),
-            DownloadStatus::Paused => vec![
-                Some(("Downloaded", format_bytes(row.done))),
-                row.total
-                    .map(|total| ("Remaining", format_bytes(total.saturating_sub(row.done)))),
-                average,
-                ran.map(|secs| ("Time so far", text::eta(secs))),
-            ],
-            _ => vec![
-                Some(("Downloaded", format_bytes(row.done))),
-                Some((
-                    "Time left",
-                    row.eta_secs
-                        .filter(|_| !self.record.stalled(Instant::now()))
-                        .map_or_else(|| "Unknown".to_owned(), text::eta),
-                )),
-                average,
-                (row.connections > 0).then(|| ("Connections", row.connections.to_string())),
-            ],
-        }
-        .into_iter()
-        .flatten()
-        .collect();
-        Some(
-            h_flex()
-                .w_full()
-                .children(facts.into_iter().map(|(label, value)| {
-                    v_flex()
-                        .w(relative(0.25))
-                        .min_w_0()
-                        .child(div().text_role(Role::Meta, cx).child(label))
-                        .child(div().truncate().child(value))
-                }))
-                .into_any_element(),
-        )
+        DownloadStatus::Downloading if row.speed > 0 => Some(text::speed(row.speed)),
+        DownloadStatus::Completed => record
+            .peak()
+            .map(|peak| format!("Peak {}", text::speed(peak))),
+        DownloadStatus::Failed => None,
+        DownloadStatus::Cancelled => Some("Download cancelled".to_owned()),
+        _ => Some(text::status_short(row)),
     }
+}
+
+/// The figures under the panel, by state: a failure keeps what it downloaded, and a cancelled
+/// download has nothing left to count.
+pub(crate) fn run_facts(record: &RunRecord, row: &DownloadSummary, cx: &App) -> Option<AnyElement> {
+    if row.status == DownloadStatus::Cancelled {
+        return None;
+    }
+    if row.status == DownloadStatus::Failed && row.error.is_some() {
+        return (row.done > 0).then(|| {
+            let kept = match row.total {
+                Some(total) => format!(
+                    "Downloaded {} of {}",
+                    format_bytes(row.done),
+                    format_bytes(total)
+                ),
+                None => format!("Downloaded {}", format_bytes(row.done)),
+            };
+            div()
+                .text_role(Role::Meta, cx)
+                .child(kept)
+                .into_any_element()
+        });
+    }
+    let average = record
+        .average()
+        .map(|bytes| ("Average", text::speed(bytes)));
+    let ran = record.ran().map(|ran| ran.as_secs());
+    let facts: Vec<(&str, String)> = match row.status {
+        DownloadStatus::Completed => finished_facts(row, ran, average),
+        DownloadStatus::Paused => vec![
+            Some(("Downloaded", format_bytes(row.done))),
+            row.total
+                .map(|total| ("Remaining", format_bytes(total.saturating_sub(row.done)))),
+            average,
+            ran.map(|secs| ("Time so far", text::eta(secs))),
+        ],
+        _ => vec![
+            Some(("Downloaded", format_bytes(row.done))),
+            Some((
+                "Time left",
+                row.eta_secs
+                    .filter(|_| !record.stalled(Instant::now()))
+                    .map_or_else(|| "Unknown".to_owned(), text::eta),
+            )),
+            average,
+            (row.connections > 0).then(|| ("Connections", row.connections.to_string())),
+        ],
+    }
+    .into_iter()
+    .flatten()
+    .collect();
+    Some(
+        h_flex()
+            .w_full()
+            .children(facts.into_iter().map(|(label, value)| {
+                v_flex()
+                    .w(relative(0.25))
+                    .min_w_0()
+                    .child(div().text_role(Role::Meta, cx).child(label))
+                    .child(div().truncate().child(value))
+            }))
+            .into_any_element(),
+    )
 }
 
 /// What the finished window says of a download, with its average speed and how long it `ran`.
