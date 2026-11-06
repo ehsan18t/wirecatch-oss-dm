@@ -2,7 +2,7 @@
 //! takes one away, Shift+click and Shift with the arrows take a range, and the arrows move a
 //! cursor. A selection built on purpose takes the command bar's row with what it can do.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
@@ -13,8 +13,8 @@ use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, Context, IntoElement, Modifiers, ParentElement as _, SharedString,
-    Styled as _, Window, div, px,
+    AnyElement, App, Bounds, Context, IntoElement, Modifiers, ParentElement as _, Pixels,
+    SharedString, Styled as _, Window, div, px,
 };
 use wirecatch_protocol::app::DownloadSummary;
 use wirecatch_protocol::wire::ProtocolError;
@@ -307,7 +307,16 @@ impl MainWindow {
     pub(super) fn remove_selected(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
         let ids: Vec<DownloadId> = self.selected_rows(cx).iter().map(|r| r.id).collect();
         let folded = folded_among(&ids, &self.shown_ids(cx));
-        confirm::remove(&self.library, &ids, &folded, window, cx);
+        let near = self.cursor_among(&ids).bounds();
+        confirm::remove(&self.library, &ids, &folded, near, window, cx);
+    }
+
+    /// The cursor's row, when it is one of `ids`: a question about them opens beside it.
+    pub(super) fn cursor_among(&self, ids: &[DownloadId]) -> CursorRow {
+        CursorRow {
+            id: self.cursor.filter(|id| ids.contains(id)),
+            drawn: self.cursor_bounds.clone(),
+        }
     }
 
     /// The bar's circle, in the list's column of circles: ticks every download the list shows,
@@ -341,6 +350,7 @@ impl MainWindow {
         let ids = facts.ids.clone();
         let theme = cx.theme();
         let library = self.library.clone();
+        let cursor = self.cursor_among(&ids);
         let bar = h_flex()
             .flex_1()
             .mx_1()
@@ -366,7 +376,7 @@ impl MainWindow {
             .child(
                 bar_button("sel-remove", "Remove", Icon::new(Lucide::Trash)).on_click(
                     move |_, window, cx| {
-                        confirm::remove(&library, &ids, &folded, window, cx);
+                        confirm::remove(&library, &ids, &folded, cursor.bounds(), window, cx);
                     },
                 ),
             )
@@ -514,6 +524,20 @@ fn through_every<E>(
         }
     }
     refused.map_or(Ok(()), Err)
+}
+
+/// The cursor's row a question is about, read where it is drawn when the question opens: a
+/// right-click moves the cursor before the row is drawn there.
+#[derive(Clone)]
+pub(super) struct CursorRow {
+    id: Option<DownloadId>,
+    drawn: Rc<Cell<Option<Bounds<Pixels>>>>,
+}
+
+impl CursorRow {
+    pub(super) fn bounds(&self) -> Option<Bounds<Pixels>> {
+        self.id.and(self.drawn.get())
+    }
 }
 
 /// Those of `ids` the list does not show, because their group is collapsed.

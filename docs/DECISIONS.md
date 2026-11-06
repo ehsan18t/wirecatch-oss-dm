@@ -1672,8 +1672,17 @@ Decided with the maintainer on 2026-11-06. A dialog's title sat as close to its 
 
 1. A dialog's header is its title in the page title's type, over a rule across the whole dialog, with the same gap before the content as before the buttons. `ui::dialog::open` draws it from the title it is given, so a dialog cannot be titled another way; only the command palette, which is one field, and Details (point 4) open without one, and the `dialog-header` gate check refuses any other.
 2. A question whose answer cannot be taken back (opening a program, removing the add-on, discarding a queue's changes) is a dialog like the others, through `ui::dialog::ask`: what happens under the header, then its two answers. gpui-kit's alert, which put that text above the rule, is not used.
-3. Enter gives a question's main answer, as its main button does, unless that answer is a danger one (deleting files, cancelling downloads, opening a program, removing the add-on): then Enter does nothing and the question stays open, so a held or stray Enter never answers what cannot be taken back (`ui::dialog::enter_answers`). Deleting a queue is the exception: its name must be typed first, so Enter in that field deletes, as the button does.
+3. Enter gives a question's main answer, as its main button does, unless that answer is a danger one (deleting files, cancelling a download that has a part downloaded, opening a program, removing the add-on): then Enter does nothing and the question stays open, so a held or stray Enter never answers what cannot be taken back (`ui::dialog::enter_answers`). Deleting a queue is the exception: its name must be typed first, so Enter in that field deletes, as the button does.
 4. Details keeps the header it draws itself, with the download's state under the name, until it moves to the shared header.
+
+### D261. A question about downloads opens beside their row
+
+Decided with the maintainer on 2026-11-06. It amends D87.1, which hung every dialog from a fixed space at the top of the window: a question about a row near the top covered the row it asked about.
+
+1. Remove and Cancel, asked from a row's menu, the selection bar, Delete or the command palette, open beside the cursor's row when it is one of the downloads asked about and was drawn: under it when the question fits there, else above it, and at D87.1's place when neither fits (`ui::dialog::open_beside`). A question asked from Details or a download window, which covers no row, keeps D87.1's place.
+2. The row's place is read when the question opens, so a right-click that moved the cursor has drawn the row there first.
+3. The Cancel question's button takes the danger colour only when a download has a part downloaded, as D272.1 says of Remove; otherwise it is the plain primary button, which Enter also answers (D260.3).
+4. The Remove question speaks of partial files only for downloads that have one: "It stops, and the part already downloaded is deleted." for one, "1 of them has a partial file, which is deleted." among several, and nothing for downloads with nothing downloaded.
 
 ### D265. A waiting download names its queue
 
