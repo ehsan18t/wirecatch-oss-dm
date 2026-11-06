@@ -1551,6 +1551,15 @@ Decided on 2026-11-06. Clicking Change again while a folder chooser was open cou
 2. GPUI makes the window that is active when the chooser is asked for its owner, so the chooser is modal to it and Windows disables that window while it is open. A request made while no window of the app is active (input sent to a window in the background, or a second request while the first chooser holds the focus) gets no owner and blocks nothing, so the app keeps the count itself rather than rely on the owner.
 3. It holds on Linux as on Windows: the portal's answer, or its failure, ends the turn the same way.
 
+### D235. A failed connection is told by where it broke
+
+Decided on 2026-11-06. Every `Error::Network` was told as "Could not reach the server", also for a server that answered and then dropped the connection, or whose answer was not HTTP, which sent people to check a connection that worked.
+
+1. `NetworkError::failure` gives a `NetworkFailure` (`#[non_exhaustive]`), read in this order: `TimedOut` when a time limit ran out (a connect timeout included), `Unreachable` when the connection never opened, then the error's causes: `Unreadable` for an answer its protocol does not allow (hyper's parse errors, an HTTP framing error, a reset or `GOAWAY` h2 sends itself over a frame or header the server should not have sent, such as a size that is not a number, an FTP reply that cannot be read, `InvalidData`), `Dropped` for a connection closed or reset after it opened (hyper's incomplete or closed message, a reset or `GOAWAY` the server sent, an HTTP/2 socket error, an end of file or reset on the socket, or any other failure while reading a body), and `Other` for the rest.
+2. h2's error has no `source`, so the engine reads it whole, with `hyper` and `h2` as direct dependencies (both already built by reqwest) only for this. HTTP/3 errors (the `http3` feature) are `Other` until their libraries' errors are read the same way.
+3. `wirecatch-messages` words each one: "Could not reach the server" only for `Unreachable`; "The connection to the server kept dropping" (the engine retried before giving up) with what trying again does with the part kept; "The server sent a reply that could not be read"; "The connection to the server failed" for `Other`.
+4. Release notes for the next release of `wirecatch-engine` (D30.3). Added: `NetworkFailure` and `NetworkError::failure`, which says where a failed exchange with the server broke off.
+
 ### D239. A path is cut in the middle
 
 Decided with the maintainer on 2026-11-06. Paths were cut at their end, so the part that tells two folders apart (the last folder, or the file name) was the part hidden.

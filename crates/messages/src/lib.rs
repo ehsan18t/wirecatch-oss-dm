@@ -4,7 +4,9 @@ use std::io;
 use std::path::Path;
 use wirecatch_product::PRODUCT_NAME;
 
-use wirecatch_engine::{Error as EngineError, HELD_FILE_CODES, IoAction, ProxySetting};
+use wirecatch_engine::{
+    Error as EngineError, HELD_FILE_CODES, IoAction, NetworkFailure, ProxySetting,
+};
 use wirecatch_protocol::app::{FixAction, UserError};
 use wirecatch_sites::local_network::ChosenBy;
 
@@ -38,13 +40,28 @@ impl Worked {
     }
 }
 
-fn network_problem(error: &wirecatch_engine::NetworkError) -> UserError {
-    let message = if error.is_timeout() {
-        "The server took too long to answer. Try again in a few minutes."
-    } else {
-        "Could not reach the server. Check your internet connection, then try again."
-    };
-    fix(message, FixAction::Retry)
+/// The engine retried before giving up, so a dropped connection is one that kept dropping.
+fn network_problem(failure: NetworkFailure, worked: Worked) -> UserError {
+    match failure {
+        NetworkFailure::TimedOut => fix(
+            "The server took too long to answer. Try again in a few minutes.",
+            FixAction::Retry,
+        ),
+        NetworkFailure::Unreachable => fix(
+            "Could not reach the server. Check your internet connection, then try again.",
+            FixAction::Retry,
+        ),
+        NetworkFailure::Dropped => worked.retry("The connection to the server kept dropping."),
+        NetworkFailure::Unreadable => fix(
+            "The server sent a reply that could not be read. Try again in a few minutes; if it keeps happening, the problem is on the site's side.",
+            FixAction::Retry,
+        ),
+        // `Other`, and a kind added to the engine after this was written.
+        _ => fix(
+            "The connection to the server failed. Check your internet connection, then try again.",
+            FixAction::Retry,
+        ),
+    }
 }
 
 fn certificate_refused() -> UserError {
@@ -75,7 +92,7 @@ pub fn describe(error: &EngineError, folder: &Path, worked: Worked) -> UserError
             "This link is not a valid web address. Refresh the link with one copied from the page.",
             FixAction::RefreshLink,
         ),
-        EngineError::Network(e) => network_problem(e),
+        EngineError::Network(e) => network_problem(e.failure(), worked),
         EngineError::Certificate { .. } => certificate_refused(),
         EngineError::TooManyRedirects { .. } => fix(
             format!(
@@ -804,6 +821,41 @@ mod tests {
             action(&EngineError::PrematureEof { at: 1, end: 2 }, Worked::Before),
             Some(FixAction::Retry)
         );
+    }
+
+    #[test]
+    fn a_connection_that_broke_after_it_opened_is_not_called_unreachable() {
+        const UNREACHABLE: &str = "Could not reach the server";
+        let dropped = network_problem(NetworkFailure::Dropped, Worked::Before);
+        assert!(
+            dropped.message.contains("kept dropping"),
+            "{}",
+            dropped.message
+        );
+        assert!(dropped.message.contains("already downloaded is kept"));
+        let unreadable = network_problem(NetworkFailure::Unreadable, Worked::Never);
+        assert!(
+            unreadable.message.contains("reply that could not be read"),
+            "{}",
+            unreadable.message
+        );
+        let other = network_problem(NetworkFailure::Other, Worked::Never);
+        for told in [&dropped, &unreadable, &other] {
+            assert!(!told.message.contains(UNREACHABLE), "{}", told.message);
+            assert_eq!(told.fix, Some(FixAction::Retry));
+        }
+        let unreachable = network_problem(NetworkFailure::Unreachable, Worked::Never);
+        assert!(unreachable.message.starts_with(UNREACHABLE));
+        for failure in [
+            NetworkFailure::TimedOut,
+            NetworkFailure::Unreachable,
+            NetworkFailure::Dropped,
+            NetworkFailure::Unreadable,
+            NetworkFailure::Other,
+        ] {
+            let m = network_problem(failure, Worked::BeforeStartsOver).message;
+            assert!(!m.contains('\u{2014}') && m.ends_with('.'), "{m}");
+        }
     }
 
     /// A stall as the engine reports it.

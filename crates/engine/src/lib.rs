@@ -286,7 +286,7 @@ pub use download::{
     DownloadRequest, ExistingFile, Outcome, PathRejected, PathResolver, RemoteFile, download,
 };
 pub use error::HELD_FILE_CODES;
-pub use error::{Error, IoAction, NetworkError, REFUSED_LINK_STATUSES, Result};
+pub use error::{Error, IoAction, NetworkError, NetworkFailure, REFUSED_LINK_STATUSES, Result};
 pub use fetch::{Fetched, Fetcher};
 pub use file_work::FileWork;
 pub use limiter::RateLimiter;
