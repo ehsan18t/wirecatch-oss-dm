@@ -1,5 +1,5 @@
 //! The navigation folded to an icon rail, and the switch between the docked sidebar, the rail,
-//! and the drawer that a narrow window opens over the list (D87.2, D91).
+//! and the drawer that a narrow window opens over the list (D87.2, D91, D266).
 
 use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, v_flex};
@@ -23,33 +23,44 @@ pub enum Nav {
     /// Docked when the window is wide, a rail when it is narrow.
     #[default]
     Auto,
-    Docked,
+    /// Folded by the title bar's button, at any width.
     Rail,
 }
 
-impl MainWindow {
+impl Nav {
     /// Whether the navigation shows as a rail in a window `width` wide.
-    pub(super) fn shows_rail(&self, width: Pixels) -> bool {
-        match self.nav {
-            Nav::Auto => width < px(NARROW),
-            Nav::Docked => false,
-            Nav::Rail => true,
+    fn shows_rail(self, width: Pixels) -> bool {
+        match self {
+            Self::Auto => width < px(NARROW),
+            Self::Rail => true,
         }
+    }
+
+    /// What the title bar's button makes of the navigation in a window `width` wide, or `None`
+    /// where it opens and closes the drawer instead.
+    fn toggled(self, width: Pixels) -> Option<Self> {
+        let rail = self.shows_rail(width);
+        if rail && width < px(NARROW) {
+            return None;
+        }
+        Some(if rail { Self::Auto } else { Self::Rail })
+    }
+}
+
+impl MainWindow {
+    pub(super) fn shows_rail(&self, width: Pixels) -> bool {
+        self.nav.shows_rail(width)
     }
 
     /// The title bar's navigation button: folds the sidebar to a rail and back; in a narrow
     /// window it opens the full navigation as a drawer over the list.
     pub(super) fn toggle_nav(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
-        let narrow = window.viewport_size().width < px(NARROW);
-        if narrow && self.shows_rail(window.viewport_size().width) {
-            self.page.drawer = !self.page.drawer;
-        } else {
-            self.nav = if self.shows_rail(window.viewport_size().width) {
-                Nav::Docked
-            } else {
-                Nav::Rail
-            };
-            self.page.drawer = false;
+        match self.nav.toggled(window.viewport_size().width) {
+            Some(nav) => {
+                self.nav = nav;
+                self.page.drawer = false;
+            }
+            None => self.page.drawer = !self.page.drawer,
         }
         cx.notify();
     }
@@ -277,6 +288,26 @@ fn initials(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unfolding_leaves_the_fold_to_the_width_again() {
+        let (wide, narrow) = (px(NARROW + 300.), px(NARROW - 200.));
+        let folded = Nav::Auto
+            .toggled(wide)
+            .expect("a wide window folds the sidebar");
+        assert!(folded.shows_rail(wide));
+        let unfolded = folded.toggled(wide).expect("and unfolds it");
+        assert!(!unfolded.shows_rail(wide));
+        assert!(
+            unfolded.shows_rail(narrow),
+            "a narrow window folds it again"
+        );
+        assert_eq!(
+            unfolded.toggled(narrow),
+            None,
+            "where the button opens the drawer"
+        );
+    }
 
     #[test]
     fn a_queue_shows_its_initials() {
