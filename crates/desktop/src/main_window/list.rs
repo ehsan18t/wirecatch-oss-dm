@@ -489,7 +489,7 @@ impl MainWindow {
                 .outline()
                 .label("Remove from list")
                 .on_click(move |_, window, cx| {
-                    super::confirm::remove(&library, &ids, &[], window, cx);
+                    super::confirm::remove(&library, &ids, &[], None, window, cx);
                 }),
             )
             .into_any_element()
