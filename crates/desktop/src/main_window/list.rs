@@ -107,6 +107,13 @@ pub(super) enum GroupCommand {
 }
 
 impl GroupCommand {
+    pub(super) fn icon(self) -> IconName {
+        match self {
+            Self::PauseAll => IconName::Pause,
+            Self::ResumeAll => IconName::Play,
+        }
+    }
+
     pub(super) fn run(self, window: &Window, cx: &mut App) {
         let work = match self {
             Self::PauseAll => api::pause_all,
@@ -199,28 +206,61 @@ impl MainWindow {
         }
         self.sync_scroll(&laid, cx);
         let top = self.scroll.state.logical_scroll_top();
-        list(
+        let pinned = laid
+            .pinned(top, px(HEADING_SPACE))
+            .map(|line| self.line(&laid, line, top, cx));
+        let drawn = laid.clone();
+        let lines = list(
             self.scroll.state.clone(),
-            cx.processor(move |this, index: usize, _, cx| {
-                let shown = this.list_lines(cx);
-                match laid.lines.get(index).copied() {
-                    Some(Line::Heading(group, count)) => {
-                        this.heading(group, count, laid.group_ids(group), cx)
-                    }
-                    Some(Line::Day(day)) => match laid.day(index) {
-                        Some(facts) => this.day_heading(day, facts, cx),
-                        None => div().into_any_element(),
-                    },
-                    Some(Line::Row(row, place, dated)) => {
-                        this.row(row, place, dated, shown, InView { index, top }, cx)
-                    }
-                    None => div().into_any_element(),
-                }
-            }),
+            cx.processor(move |this, index: usize, _, cx| this.line(&drawn, index, top, cx)),
         )
         .flex_1()
-        .pb_4()
-        .into_any_element()
+        .pb_4();
+        let Some(pinned) = pinned else {
+            return lines.into_any_element();
+        };
+        v_flex()
+            .flex_1()
+            .min_h_0()
+            .relative()
+            .overflow_hidden()
+            .child(lines)
+            .child(
+                div()
+                    .absolute()
+                    .top(px(-HEADING_SPACE))
+                    .left_0()
+                    .right_0()
+                    .bg(cx.theme().background)
+                    .border_b_1()
+                    .border_color(cx.theme().border)
+                    .child(pinned),
+            )
+            .into_any_element()
+    }
+
+    /// Line `index` of `laid`: a heading, a day or a row.
+    fn line(
+        &self,
+        laid: &Laid,
+        index: usize,
+        top: ListOffset,
+        cx: &mut Context<'_, Self>,
+    ) -> AnyElement {
+        let shown = self.list_lines(cx);
+        match laid.lines.get(index).copied() {
+            Some(Line::Heading(group, count)) => {
+                self.heading(group, count, laid.group_ids(group), cx)
+            }
+            Some(Line::Day(day)) => match laid.day(index) {
+                Some(facts) => self.day_heading(day, facts, cx),
+                None => div().into_any_element(),
+            },
+            Some(Line::Row(row, place, dated)) => {
+                self.row(row, place, dated, shown, InView { index, top }, cx)
+            }
+            None => div().into_any_element(),
+        }
     }
 
     /// Keeps the list's state on `laid`: only the lines that changed are laid out again, so the
@@ -405,8 +445,9 @@ impl MainWindow {
             .when_some(command, |line, (label, command)| {
                 line.child(
                     Button::new(ElementId::Name(SharedString::new(format!("all-{group:?}"))))
-                        .xsmall()
-                        .ghost()
+                        .small()
+                        .outline()
+                        .icon(command.icon())
                         .label(label)
                         .on_click(cx.listener(move |_, _, window, cx| command.run(window, cx))),
                 )
@@ -420,6 +461,7 @@ impl MainWindow {
             1 => "1 file".to_owned(),
             n => format!("{n} files"),
         };
+        let (library, ids) = (self.library.clone(), facts.ids.clone());
         heading_line()
             .child(self.heading_circle(format!("pick-day-{day}").into(), facts.ids.clone(), cx))
             .child(
@@ -429,8 +471,20 @@ impl MainWindow {
             )
             .child(
                 div()
+                    .flex_1()
                     .text_role(Role::Meta, cx)
                     .child(format!("{files}, {}", format_bytes(facts.bytes))),
+            )
+            .child(
+                Button::new(ElementId::Name(SharedString::new(format!(
+                    "remove-day-{day}"
+                ))))
+                .small()
+                .outline()
+                .label("Remove from list")
+                .on_click(move |_, window, cx| {
+                    super::confirm::remove(&library, &ids, &[], window, cx);
+                }),
             )
             .into_any_element()
     }
