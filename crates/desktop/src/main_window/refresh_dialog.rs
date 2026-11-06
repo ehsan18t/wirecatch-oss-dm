@@ -37,40 +37,44 @@ pub struct RefreshForm {
 pub fn open(library: Entity<Library>, id: DownloadId, window: &mut Window, cx: &mut App) {
     let form = cx.new(|cx| RefreshForm::new(library, id, window, cx));
     let link = form.read(cx).link.clone();
-    crate::ui::dialog::open(window, cx, move |dialog, _, cx| {
-        let found = form.read(cx).found(cx).is_some();
-        let busy = form.read(cx).busy;
-        let (saved, entered) = (form.clone(), form.clone());
-        dialog
-            .title(crate::ui::dialog::Header::new("Get a new link"))
-            .w(px(WIDTH))
-            .child(form.clone())
-            .on_ok(move |_, window, cx| {
-                entered.update(cx, |form, cx| form.save(window, cx));
-                false
-            })
-            .footer(
-                h_flex()
-                    .w_full()
-                    .gap_2()
-                    .justify_end()
-                    .child(
-                        Button::new("refresh-cancel")
-                            .label("Cancel")
-                            .on_click(|_, window, cx| window.close_dialog(cx)),
-                    )
-                    .child(
-                        Button::new("refresh-save")
-                            .primary()
-                            .label("Use this link")
-                            .disabled(!found)
-                            .loading(busy)
-                            .on_click(move |_, window, cx| {
-                                saved.update(cx, |form, cx| form.save(window, cx));
-                            }),
-                    ),
-            )
-    });
+    crate::ui::dialog::open(
+        window,
+        cx,
+        |_| "Get a new link".into(),
+        move |dialog, _, cx| {
+            let found = form.read(cx).found(cx).is_some();
+            let busy = form.read(cx).busy;
+            let (saved, entered) = (form.clone(), form.clone());
+            dialog
+                .w(px(WIDTH))
+                .child(form.clone())
+                .on_ok(move |_, window, cx| {
+                    entered.update(cx, |form, cx| form.save(window, cx));
+                    false
+                })
+                .footer(
+                    h_flex()
+                        .w_full()
+                        .gap_2()
+                        .justify_end()
+                        .child(
+                            Button::new("refresh-cancel")
+                                .label("Cancel")
+                                .on_click(|_, window, cx| window.close_dialog(cx)),
+                        )
+                        .child(
+                            Button::new("refresh-save")
+                                .primary()
+                                .label("Use this link")
+                                .disabled(!found)
+                                .loading(busy)
+                                .on_click(move |_, window, cx| {
+                                    saved.update(cx, |form, cx| form.save(window, cx));
+                                }),
+                        ),
+                )
+        },
+    );
     crate::ui::dialog::focus_after_opening(&link, window, cx);
 }
 

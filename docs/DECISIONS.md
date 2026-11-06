@@ -1670,4 +1670,6 @@ Decided with the maintainer on 2026-11-06. Settings listed the queues again, eac
 
 Decided with the maintainer on 2026-11-06. A dialog's title sat as close to its first field as the fields sit to each other, so it did not read as a header.
 
-1. Every dialog, alerts included, takes its title through `ui::dialog::Header`: the title in the page title's type, over a rule across the whole dialog, with a fixed gap before the content.
+1. A dialog's header is its title in the page title's type, over a rule across the whole dialog, with the same gap before the content as before the buttons. `ui::dialog::open` draws it from the title it is given, so a dialog cannot be titled another way; only a dialog that is one field, such as the command palette, opens without one.
+2. A question whose answer cannot be taken back (opening a program, removing the add-on) is a dialog like the others, through `ui::dialog::ask`: what happens under the header, then its two answers. gpui-kit's alert, which put that text above the rule, is not used.
+3. Details keeps the header it draws itself, with the download's state under the name, until it moves to the shared header.

@@ -170,40 +170,44 @@ pub(super) fn ask(
         }
     });
     let title = format!("Delete {name}?");
-    crate::ui::dialog::open(window, cx, move |dialog, _, cx| {
-        let confirmed = form.read(cx).confirmed(cx);
-        let deleting = form.clone();
-        let main = main.clone();
-        let entered = (form.clone(), main.clone());
-        dialog
-            .title(crate::ui::dialog::Header::new(title.clone()))
-            .w(px(WIDTH))
-            .child(form.clone())
-            .on_ok(move |_, window, cx| {
-                delete(&entered.0, &entered.1, window, cx);
-                false
-            })
-            .footer(
-                h_flex()
-                    .w_full()
-                    .gap_2()
-                    .justify_end()
-                    .child(
-                        Button::new("keep-queue")
-                            .label("Keep queue")
-                            .on_click(|_, window, cx| window.close_dialog(cx)),
-                    )
-                    .child(
-                        Button::new("delete-queue")
-                            .danger()
-                            .label("Delete queue")
-                            .disabled(!confirmed)
-                            .on_click(move |_, window, cx| {
-                                delete(&deleting, &main, window, cx);
-                            }),
-                    ),
-            )
-    });
+    crate::ui::dialog::open(
+        window,
+        cx,
+        move |_| title.clone().into(),
+        move |dialog, _, cx| {
+            let confirmed = form.read(cx).confirmed(cx);
+            let deleting = form.clone();
+            let main = main.clone();
+            let entered = (form.clone(), main.clone());
+            dialog
+                .w(px(WIDTH))
+                .child(form.clone())
+                .on_ok(move |_, window, cx| {
+                    delete(&entered.0, &entered.1, window, cx);
+                    false
+                })
+                .footer(
+                    h_flex()
+                        .w_full()
+                        .gap_2()
+                        .justify_end()
+                        .child(
+                            Button::new("keep-queue")
+                                .label("Keep queue")
+                                .on_click(|_, window, cx| window.close_dialog(cx)),
+                        )
+                        .child(
+                            Button::new("delete-queue")
+                                .danger()
+                                .label("Delete queue")
+                                .disabled(!confirmed)
+                                .on_click(move |_, window, cx| {
+                                    delete(&deleting, &main, window, cx);
+                                }),
+                        ),
+                )
+        },
+    );
     crate::ui::dialog::focus_after_opening(&field, window, cx);
 }
 

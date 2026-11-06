@@ -7,8 +7,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::ui::dialog::Question;
 use gpui_kit::component::WindowExt as _;
-use gpui_kit::component::button::ButtonVariant;
 use gpui_kit::{App, Global, PathPromptOptions, Window};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::wire::ProtocolError;
@@ -118,19 +118,14 @@ pub fn open(id: DownloadId, window: &mut Window, cx: &mut App) {
 
 /// Asks in `window` before a program at `path` opens.
 pub fn ask_to_open(path: PathBuf, warning: ProgramWarning, window: &mut Window, cx: &mut App) {
-    crate::ui::dialog::open_alert(window, cx, move |alert, _, _| {
-        let path = path.clone();
-        alert
-            .title(crate::ui::dialog::Header::new(warning.title.clone()))
-            .description(warning.message.clone())
-            .confirm()
-            .ok_text("Open")
-            .ok_variant(ButtonVariant::Danger)
-            .cancel_text("Cancel")
-            .on_ok(move |_, _, cx| {
-                cx.open_with_system(&path);
-                true
-            })
+    let question = Question {
+        title: warning.title,
+        body: warning.message,
+        keep: "Cancel",
+        go: "Open",
+    };
+    crate::ui::dialog::ask(question, window, cx, move |_, cx| {
+        cx.open_with_system(&path)
     });
 }
 
