@@ -16,8 +16,6 @@ pub enum Role {
     Secondary,
     /// A value that matters more than the text around it.
     Strong,
-    /// A live figure shown large, such as a download's speed.
-    Figure,
     /// What sits under or beside a value: a host, a count, a hint.
     Meta,
     /// The small label over a group.
@@ -47,10 +45,6 @@ pub trait Typed: Styled + Sized {
                 .text_sm()
                 .font_weight(FontWeight::NORMAL)
                 .text_color(theme.muted_foreground),
-            Role::Figure => self
-                .text_xl()
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(theme.foreground),
             Role::Strong => self
                 .text_sm()
                 .font_weight(FontWeight::MEDIUM)
