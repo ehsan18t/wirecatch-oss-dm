@@ -51,11 +51,16 @@ const PROGRESS_HEIGHT: f32 = 2.;
 const OVERDRAW: f32 = 400.;
 const HEADING_HEIGHT: f32 = 32.;
 const HEADING_SPACE: f32 = 12.;
+/// A list whose top is in one of its first lines counts as at the top: a wheel notch passes the
+/// first heading.
+const NEAR_TOP_LINES: usize = 2;
 
 /// The list's scroll and the lines it last laid out, which its state follows.
 pub(super) struct Scroll {
     state: ListState,
     drawn: Option<Rc<Laid>>,
+    /// What each drawn line shows.
+    drawn_keys: Vec<LineKey>,
     shown: Option<ListLines>,
 }
 
@@ -64,6 +69,7 @@ impl Default for Scroll {
         Self {
             state: ListState::new(0, ListAlignment::Top, px(OVERDRAW)),
             drawn: None,
+            drawn_keys: Vec::new(),
             shown: None,
         }
     }
@@ -99,14 +105,49 @@ fn command_for(group: Group, tally: &Tally) -> Option<(&'static str, GroupComman
     }
 }
 
-/// Replaces the lines in `old` with `count` new ones. A list scrolled into its first line stays
-/// at the top, so lines added above show; further down, the lines in view stay put.
-fn splice_keeping_top(state: &ListState, old: std::ops::Range<usize>, count: usize) {
-    // GPUI moves its anchor past lines inserted at or before it, even at the very top.
-    let at_top = state.logical_scroll_top().item_ix == 0;
+/// What a line shows, which stays when other lines come and go: row lines name downloads by
+/// their index in the library, which a removal above them changes.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum LineKey {
+    Heading(Group),
+    Day(NaiveDate),
+    Row(Option<DownloadId>),
+}
+
+fn line_keys(lines: &[Line], downloads: &[DownloadSummary]) -> Vec<LineKey> {
+    lines
+        .iter()
+        .map(|line| match *line {
+            Line::Heading(group, _) => LineKey::Heading(group),
+            Line::Day(day) => LineKey::Day(day),
+            Line::Row(index, ..) => LineKey::Row(downloads.get(index).map(|row| row.id)),
+        })
+        .collect()
+}
+
+/// Replaces the lines in `old` with `count` new ones, `drawn` before and `lines` after. A list
+/// near its top stays at the top, so lines added above show; further down, the line at the top
+/// stays there.
+fn splice_keeping_place(
+    state: &ListState,
+    old: std::ops::Range<usize>,
+    count: usize,
+    drawn: &[LineKey],
+    lines: &[LineKey],
+) {
+    // GPUI moves its anchor past lines inserted at or before it, even at the very top, and to the
+    // start of the range when the range holds it.
+    let top = state.logical_scroll_top();
+    let near_top = top.item_ix < NEAR_TOP_LINES;
+    let kept = old
+        .contains(&top.item_ix)
+        .then(|| drawn.get(top.item_ix))
+        .flatten();
     state.splice(old, count);
-    if at_top {
+    if near_top {
         state.scroll_to(ListOffset::default());
+    } else if let Some(item_ix) = kept.and_then(|kept| lines.iter().position(|key| key == kept)) {
+        state.scroll_to(ListOffset { item_ix, ..top });
     }
 }
 
@@ -152,6 +193,7 @@ impl MainWindow {
     /// scroll stays where it was, and every line is when the View menu changes the rows' height.
     fn sync_scroll(&mut self, laid: &Rc<Laid>, cx: &App) {
         let shown = self.list_lines(cx);
+        let downloads = &self.library.read(cx).downloads;
         let scroll = &mut self.scroll;
         if !scroll
             .drawn
@@ -167,14 +209,18 @@ impl MainWindow {
                 .zip(lines[same_start..].iter().rev())
                 .take_while(|(a, b)| a == b)
                 .count();
+            let keys = line_keys(lines, downloads);
             if same_start < drawn.len() || drawn.len() != lines.len() {
-                splice_keeping_top(
+                splice_keeping_place(
                     &scroll.state,
                     same_start..drawn.len() - same_end,
                     lines.len() - same_start - same_end,
+                    &scroll.drawn_keys,
+                    &keys,
                 );
             }
             scroll.drawn = Some(laid.clone());
+            scroll.drawn_keys = keys;
         }
         if scroll.shown != Some(shown) {
             scroll.state.remeasure();
@@ -940,31 +986,74 @@ mod tests {
         assert_eq!(click_on(folder_line, cx), (1, None));
     }
 
+    /// A list of `keys` scrolled to `top`.
+    fn scrolled(keys: &[LineKey], top: ListOffset) -> ListState {
+        let state = ListState::new(keys.len(), ListAlignment::Top, px(OVERDRAW));
+        state.scroll_to(top);
+        state
+    }
+
+    fn rows(ids: std::ops::Range<i64>) -> Vec<LineKey> {
+        ids.map(|id| LineKey::Row(Some(DownloadId(id)))).collect()
+    }
+
     #[test]
-    fn lines_added_above_a_list_at_its_top_show() {
-        let state = ListState::new(3, ListAlignment::Top, px(OVERDRAW));
-        state.scroll_to(ListOffset::default());
+    fn lines_added_above_a_list_near_its_top_show() {
+        let drawn = rows(1..4);
+        for top in [0, 1] {
+            let state = scrolled(
+                &drawn,
+                ListOffset {
+                    item_ix: top,
+                    offset_in_item: px(4.),
+                },
+            );
+            let lines = [rows(10..12), drawn.clone()].concat();
 
-        splice_keeping_top(&state, 0..0, 2);
+            splice_keeping_place(&state, 0..0, 2, &drawn, &lines);
 
-        assert_eq!(state.logical_scroll_top(), ListOffset::default());
+            assert_eq!(state.logical_scroll_top(), ListOffset::default(), "{top}");
+        }
     }
 
     #[test]
     fn lines_added_above_a_scrolled_list_leave_the_lines_in_view() {
-        let state = ListState::new(10, ListAlignment::Top, px(OVERDRAW));
+        let drawn = rows(1..11);
         let reading = ListOffset {
             item_ix: 5,
             offset_in_item: px(4.),
         };
-        state.scroll_to(reading);
+        let state = scrolled(&drawn, reading);
+        let lines = [rows(20..22), drawn.clone()].concat();
 
-        splice_keeping_top(&state, 0..0, 2);
+        splice_keeping_place(&state, 0..0, 2, &drawn, &lines);
 
         assert_eq!(
             state.logical_scroll_top(),
             ListOffset {
                 item_ix: 7,
+                ..reading
+            }
+        );
+    }
+
+    #[test]
+    fn a_removal_that_renumbers_the_line_at_the_top_keeps_it_there() {
+        let drawn = rows(1..11);
+        let reading = ListOffset {
+            item_ix: 5,
+            offset_in_item: px(4.),
+        };
+        let state = scrolled(&drawn, reading);
+        let lines = rows(2..11);
+
+        // Every row after the removed one has a new library index, so all of them changed.
+        splice_keeping_place(&state, 0..10, 9, &drawn, &lines);
+
+        assert_eq!(
+            state.logical_scroll_top(),
+            ListOffset {
+                item_ix: 4,
                 ..reading
             }
         );
