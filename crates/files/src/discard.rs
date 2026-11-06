@@ -19,43 +19,122 @@ pub fn dir(path: &Path) {
     logged(path, crate::remove_own_folder(path));
 }
 
-/// Moves each file of `paths` to the Recycle Bin, or to the trash on Linux. A
-/// folder is left alone, and a file that cannot go there stays where it is
-/// (D231). Blocks on the disk.
-pub fn to_trash(paths: &[PathBuf]) {
-    let files = paths.iter().filter(|path| is_file(path));
+/// Moves each file of `paths` to the Recycle Bin, or to the trash on Linux, and
+/// answers how many files stayed where they were because they could not go
+/// there (D231). A folder or a missing path is left alone and not counted.
+/// Blocks on the disk.
+#[must_use]
+pub fn to_trash(paths: &[PathBuf]) -> usize {
+    let mut left = 0;
+    let mut files = Vec::new();
+    for path in paths {
+        match std::fs::symlink_metadata(path) {
+            // By now a folder may have taken a file's name.
+            Ok(found) if found.is_dir() => {}
+            Ok(_) => files.push(path),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+            Err(e) => {
+                warn!(path = %path.display(), error = %e, "could not read a file to move to the trash; it is left in place");
+                left += 1;
+            }
+        }
+    }
     #[cfg(any(test, feature = "testing"))]
     if !test_trash::REAL.load(std::sync::atomic::Ordering::Acquire) {
-        files.for_each(|path| test_trash::take(path));
-        return;
+        files.iter().for_each(|path| test_trash::take(path));
+        return left;
     }
     // A thread of its own: `trash` panics when its thread is already in COM's multithreaded apartment.
     let moved = std::thread::scope(|scope| {
         std::thread::Builder::new()
             .name("trash".into())
-            .spawn_scoped(scope, || files.for_each(|path| trashed(path)))
-            .map(|_| ())
+            .spawn_scoped(scope, || files.iter().filter(|path| !trashed(path)).count())
+            .map(|spawned| spawned.join().unwrap_or(files.len()))
     });
-    if let Err(e) = moved {
-        warn!(error = %e, "could not start moving files to the trash; they are left in place");
+    match moved {
+        Ok(refused) => left + refused,
+        Err(e) => {
+            warn!(error = %e, "could not start moving files to the trash; they are left in place");
+            left + files.len()
+        }
     }
 }
 
-/// Whether `path` is there and is not a folder: by now a folder may have taken a file's name.
-fn is_file(path: &Path) -> bool {
-    match std::fs::symlink_metadata(path) {
-        Ok(found) => !found.is_dir(),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => false,
+/// Whether `path` went to the trash; a file the trash cannot take beside it stays.
+fn trashed(path: &Path) -> bool {
+    #[cfg(target_os = "linux")]
+    if !beside::has_trash_beside(path) {
+        warn!(path = %path.display(), "no trash on the file's own drive; it is left in place");
+        return false;
+    }
+    match trash::delete(path) {
+        Ok(()) => true,
         Err(e) => {
-            warn!(path = %path.display(), error = %e, "could not read a file to move to the trash; it is left in place");
+            warn!(path = %path.display(), error = %e, "could not move a file to the trash; it is left in place");
             false
         }
     }
 }
 
-fn trashed(path: &Path) {
-    if let Err(e) = trash::delete(path) {
-        warn!(path = %path.display(), error = %e, "could not move a file to the trash; it is left in place");
+/// Whether a file has a trash on its own device. Across devices `trash` copies the
+/// file and then deletes it, which takes long for a large file and leaves half a
+/// copy when it fails.
+#[cfg(target_os = "linux")]
+mod beside {
+    use std::os::unix::fs::{DirBuilderExt as _, MetadataExt as _};
+    use std::path::{Path, PathBuf};
+
+    pub fn has_trash_beside(path: &Path) -> bool {
+        let Some(path) = path
+            .parent()
+            .and_then(|parent| std::fs::canonicalize(parent).ok())
+            .zip(path.file_name())
+            .map(|(parent, name)| parent.join(name))
+        else {
+            return false;
+        };
+        let Ok(file) = std::fs::symlink_metadata(&path) else {
+            return false;
+        };
+        let device = file.dev();
+        if home_trash().is_some_and(|trash| device_of_nearest(&trash) == Some(device)) {
+            return true;
+        }
+        // `trash` uses the drive's own trash, `.Trash-<uid>` at its top, before the home one.
+        let (Some(top), Ok(me)) = (drive_top(&path, device), std::fs::metadata("/proc/self"))
+        else {
+            return false;
+        };
+        let own = top.join(format!(".Trash-{}", me.uid()));
+        let mut folder = std::fs::DirBuilder::new();
+        folder.recursive(true).mode(0o700);
+        ["files", "info"]
+            .iter()
+            .all(|part| folder.create(own.join(part)).is_ok())
+            && device_of_nearest(&own) == Some(device)
+    }
+
+    /// Where `trash` keeps the home trash.
+    fn home_trash() -> Option<PathBuf> {
+        let set = |name: &str| std::env::var_os(name).filter(|value| !value.is_empty());
+        set("XDG_DATA_HOME")
+            .map(|data| PathBuf::from(data).join("Trash"))
+            .or_else(|| set("HOME").map(|home| PathBuf::from(home).join(".local/share/Trash")))
+    }
+
+    fn device_of_nearest(path: &Path) -> Option<u64> {
+        path.ancestors()
+            .find_map(|folder| std::fs::metadata(folder).ok())
+            .map(|found| found.dev())
+    }
+
+    /// The highest folder above `path` still on `device`: the top of its drive.
+    fn drive_top(path: &Path, device: u64) -> Option<PathBuf> {
+        path.ancestors()
+            .skip(1)
+            .take_while(|folder| std::fs::metadata(folder).is_ok_and(|found| found.dev() == device))
+            .last()
+            .map(Path::to_path_buf)
     }
 }
 
@@ -113,11 +192,13 @@ mod tests {
         let taken_name = folder.path().join("taken-by-a-folder");
         std::fs::create_dir(&taken_name).unwrap();
 
-        to_trash(&[
+        let left = to_trash(&[
             file.clone(),
             folder.path().join("never-there.bin"),
             taken_name.clone(),
         ]);
+
+        assert_eq!(left, 0);
 
         assert!(!file.exists());
         assert!(taken_name.is_dir(), "a folder went to the trash");

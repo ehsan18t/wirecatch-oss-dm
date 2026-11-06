@@ -228,15 +228,15 @@ impl Manager {
         Ok(())
     }
 
-    /// Removes downloads from the list, stopping them first. The partial files of an unfinished download are always deleted; the file of a completed download, with its subtitle files, goes to the Recycle Bin or the trash only with [`RemoveFiles::Delete`] (D231). Ids that no longer exist are ignored.
+    /// Removes downloads from the list, stopping them first. The partial files of an unfinished download are always deleted; the file of a completed download, with its subtitle files, goes to the Recycle Bin or the trash only with [`RemoveFiles::Delete`] (D231). Answers how many finished files could not go to the trash and stay in their folder. Ids that no longer exist are ignored.
     ///
     /// # Errors
     ///
-    /// [`CoreError::Closed`] once the manager has shut down. Files that cannot be
+    /// [`CoreError::Closed`] once the manager has shut down. Partial files that cannot be
     /// deleted are logged, not reported.
     ///
     /// Runs to the end even when the caller stops waiting.
-    pub async fn remove(&self, ids: &[DownloadId], completed: RemoveFiles) -> Result<()> {
+    pub async fn remove(&self, ids: &[DownloadId], completed: RemoveFiles) -> Result<usize> {
         // From here on nothing can resume, move or start them, so once their runs
         // have stopped they stay stopped.
         let under_way = {
@@ -300,8 +300,8 @@ impl Manager {
         }
     }
 
-    /// Removes downloads already marked as being removed, once their runs and moves have ended. Carries on after a shutdown began, as the removal was already promised.
-    async fn finish_removing(&self, ids: &[DownloadId], completed: RemoveFiles) -> Result<()> {
+    /// Removes downloads already marked as being removed, once their runs and moves have ended, answering how many finished files stayed in their folder. Carries on after a shutdown began, as the removal was already promised.
+    async fn finish_removing(&self, ids: &[DownloadId], completed: RemoveFiles) -> Result<usize> {
         self.wait_until_stopped(ids).await;
 
         let mut finished_files = Vec::new();
@@ -343,7 +343,7 @@ impl Manager {
                 removed.push(*id);
             }
             if removed.is_empty() {
-                return Ok(());
+                return Ok(0);
             }
             self.save_pending_deletions(&state);
             finished_files = files_no_row_lists(&state, finished_files);
@@ -364,18 +364,19 @@ impl Manager {
         }
         #[cfg(test)]
         let before_deleting = self.before_deleting();
-        self.blocking(move || {
-            #[cfg(test)]
-            if let Some(hook) = before_deleting {
-                hook();
-            }
-            wirecatch_files::discard::to_trash(&finished_files);
-            for partial in &partials {
-                partial.delete();
-            }
-            Ok(())
-        })
-        .await?;
+        let left_in_place = self
+            .blocking(move || {
+                #[cfg(test)]
+                if let Some(hook) = before_deleting {
+                    hook();
+                }
+                let left = wirecatch_files::discard::to_trash(&finished_files);
+                for partial in &partials {
+                    partial.delete();
+                }
+                Ok(left)
+            })
+            .await?;
         let mut state = self.lock();
         state
             .pending_deletions
@@ -384,7 +385,7 @@ impl Manager {
         for (path, id) in &leaving {
             state.claimed.release(path, *id);
         }
-        Ok(())
+        Ok(left_in_place)
     }
 
     pub(super) fn save_pending_deletions(&self, state: &State) {

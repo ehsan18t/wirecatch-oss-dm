@@ -288,7 +288,7 @@ async fn commands_return_what_the_ui_expects() -> TestResult {
         m.retry(id).unwrap(),
     ];
     assert_eq!(nothing.len(), 11);
-    let (): () = m.remove(&[id], RemoveFiles::Keep).await.unwrap();
+    assert_eq!(m.remove(&[id], RemoveFiles::Keep).await.unwrap(), 0);
     let (): () = m.delete_queue(queue.id).unwrap();
 
     let error = m.resume(id).unwrap_err().to_string();

@@ -10,7 +10,7 @@ homepage.workspace = true
 publish = false
 
 [features]
-# Lets a test make `restrict` fail.
+# For tests: lets one make `restrict` fail, and stands in for the trash (D231).
 testing = []
 
 [dependencies]

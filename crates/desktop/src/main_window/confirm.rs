@@ -16,10 +16,10 @@ use wirecatch_protocol::app::{DownloadStatus, DownloadSummary};
 use wirecatch_shell::api;
 
 use super::{applies, selection};
-use crate::backend::command;
+use crate::backend::command_saying;
 use crate::library::Library;
 use crate::rows::Rows;
-use crate::text::TRASH;
+use crate::text::{TRASH, left_in_place};
 use crate::ui::{Role, Typed as _};
 
 const WIDTH: f32 = 440.;
@@ -229,9 +229,14 @@ pub(super) fn remove(
                                     )
                                 };
                                 window.close_dialog(cx);
-                                command(window.window_handle(), cx, move |manager| async move {
-                                    api::remove(&manager, &ids, files).await
-                                });
+                                command_saying(
+                                    window.window_handle(),
+                                    cx,
+                                    move |manager| async move {
+                                        api::remove(&manager, &ids, files).await
+                                    },
+                                    left_in_place,
+                                );
                             }),
                     ),
             )
