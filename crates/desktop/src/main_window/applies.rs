@@ -100,10 +100,16 @@ pub fn has_file(row: &DownloadSummary) -> bool {
     }
 }
 
-/// A fresh link stands in for an expired one while the download waits or is paused; a running
-/// one is reading its link.
+/// A fresh link stands in for an expired one while the download waits, is paused, or waits to try
+/// again after its server refused it; a download reading its link needs none.
 pub fn can_refresh_link(row: &DownloadSummary) -> bool {
-    matches!(row.status, DownloadStatus::Queued | DownloadStatus::Paused)
+    match row.status {
+        DownloadStatus::Queued | DownloadStatus::Paused => true,
+        DownloadStatus::Connecting => {
+            matches!(row.waiting, Some(WaitReason::ServerRefused { .. }))
+        }
+        _ => false,
+    }
 }
 
 /// A new link is offered for what still downloads from its link, and for a failure whose fix is one.
@@ -266,6 +272,19 @@ mod tests {
         for status in [DownloadStatus::Queued, DownloadStatus::Paused] {
             assert!(offers_new_link(&row(status)), "{status:?}");
         }
+    }
+
+    #[test]
+    fn a_download_its_server_refused_is_offered_a_new_link() {
+        let refused = DownloadSummary {
+            status: DownloadStatus::Connecting,
+            waiting: Some(WaitReason::ServerRefused {
+                retry_at: wirecatch_protocol::UnixMillis(1),
+            }),
+            ..download(1)
+        };
+        assert!(offers_new_link(&refused));
+        assert!(link_may_have_expired(&refused));
     }
 
     #[test]
