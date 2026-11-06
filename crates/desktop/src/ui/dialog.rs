@@ -2,7 +2,7 @@
 
 use std::rc::Rc;
 
-use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::button::{Button, ButtonVariant, ButtonVariants as _};
 use gpui_kit::component::dialog::{Dialog, DialogEntrance};
 use gpui_kit::component::input::InputState;
 use gpui_kit::component::{ActiveTheme as _, WindowExt as _, h_flex, v_flex};
@@ -62,6 +62,21 @@ pub fn open_headless(
     });
 }
 
+/// Enter gives the main answer, `main` styled as `variant`, unless it is a danger one: then Enter
+/// leaves the question open (D260.3).
+pub fn enter_answers(
+    dialog: Dialog,
+    variant: ButtonVariant,
+    main: impl Fn(&mut Window, &mut App) + 'static,
+) -> Dialog {
+    dialog.on_ok(move |_, window, cx| {
+        if variant != ButtonVariant::Danger {
+            main(window, cx);
+        }
+        false
+    })
+}
+
 /// A question whose answer cannot be taken back: what it is about, and its two answers.
 pub struct Question {
     pub title: String,
@@ -93,7 +108,7 @@ pub fn ask(
         move |_| title.clone(),
         move |dialog, _, cx| {
             let go = go.clone();
-            dialog
+            enter_answers(dialog, ButtonVariant::Danger, |_, _| {})
                 .w(px(QUESTION_WIDTH))
                 .child(div().text_role(Role::Secondary, cx).child(body.clone()))
                 .footer(

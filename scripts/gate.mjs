@@ -19,6 +19,7 @@
 // The commit range for `commits` is GATE_COMMIT_RANGE when set, otherwise `origin/main..HEAD`. Written for Node 18 and later, so it also runs where only an older Node is installed (scripts/linux-test.sh).
 
 import { COMMIT_CHECKS, commitMessageFile } from './gate/commits.mjs';
+import { DIALOG_HEADER_CHECKS } from './gate/dialog-header.mjs';
 import { DISCARDED_CHECKS } from './gate/discarded.mjs';
 import { EXCEPTION_CHECKS } from './gate/exceptions.mjs';
 import { BROWSER_CHECKS } from './gate/browser.mjs';
@@ -57,6 +58,7 @@ const CHECKS = {
   ...NOTICES_CHECKS,
   ...ICON_CHECKS,
   ...PATH_TEXT_CHECKS,
+  ...DIALOG_HEADER_CHECKS,
   product: productCheck('product'),
   'product-placeholders': productCheck('product-placeholders'),
   'product-placeholders-warn': productCheck('product-placeholders-warn'),
@@ -82,7 +84,16 @@ const GROUPS = {
   js: ['js-policy', 'protocol', 'js-check', 'js-lint', 'js-test', 'js-build'],
   // Apart from `js` so CI runs them alongside it: they take minutes and need no Rust. They skip themselves, saying so, only where their browser is not installed (WIRECATCH_REQUIRE_BROWSER=1 makes that fail too).
   browser: ['e2e-extension'],
-  repo: ['text', 'exceptions', 'product', 'product-name', 'icon', 'path-text', 'commits'],
+  repo: [
+    'text',
+    'exceptions',
+    'product',
+    'product-name',
+    'icon',
+    'path-text',
+    'dialog-header',
+    'commits',
+  ],
   'supply-chain': ['unused-deps', 'deny', 'notices', 'npm-audit'],
   // Only when publishing a release, never in DEFAULT: the product identity still holds placeholders until the publisher's details are decided (D29). `product` first, so committed generated files are what is checked. Every step that publishes runs this group first.
   publish: ['product', 'product-placeholders'],

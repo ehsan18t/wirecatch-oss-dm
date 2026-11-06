@@ -216,8 +216,13 @@ pub(super) fn remove(
                 let form = form.read(cx);
                 remove_button(&form.asked, form.delete_files)
             };
-            let removing = form.clone();
-            dialog.w(px(WIDTH)).child(form.clone()).footer(
+            let (removing, entered) = (form.clone(), form.clone());
+            crate::ui::dialog::enter_answers(
+                dialog.w(px(WIDTH)).child(form.clone()),
+                variant,
+                move |window, cx| remove_now(&entered, window, cx),
+            )
+            .footer(
                 h_flex()
                     .w_full()
                     .gap_2()
@@ -231,31 +236,32 @@ pub(super) fn remove(
                         Button::new("remove")
                             .with_variant(variant)
                             .label(label)
-                            .on_click(move |_, window, cx| {
-                                let (ids, files) = {
-                                    let form = removing.read(cx);
-                                    (
-                                        form.asked.ids.clone(),
-                                        if form.delete_files && form.asked.finished > 0 {
-                                            RemoveFiles::Delete
-                                        } else {
-                                            RemoveFiles::Keep
-                                        },
-                                    )
-                                };
-                                window.close_dialog(cx);
-                                command_saying(
-                                    window.window_handle(),
-                                    cx,
-                                    move |manager| async move {
-                                        api::remove(&manager, &ids, files).await
-                                    },
-                                    left_in_place,
-                                );
-                            }),
+                            .on_click(move |_, window, cx| remove_now(&removing, window, cx)),
                     ),
             )
         },
+    );
+}
+
+/// Removes what `form` asked about, as its answer says, and closes the question.
+fn remove_now(form: &Entity<RemoveForm>, window: &mut Window, cx: &mut App) {
+    let (ids, files) = {
+        let form = form.read(cx);
+        (
+            form.asked.ids.clone(),
+            if form.delete_files && form.asked.finished > 0 {
+                RemoveFiles::Delete
+            } else {
+                RemoveFiles::Keep
+            },
+        )
+    };
+    window.close_dialog(cx);
+    command_saying(
+        window.window_handle(),
+        cx,
+        move |manager| async move { api::remove(&manager, &ids, files).await },
+        left_in_place,
     );
 }
 
@@ -307,7 +313,7 @@ pub fn cancel(
         move |_| title.clone().into(),
         move |dialog, _, cx| {
             let ids = ids.clone();
-            dialog
+            crate::ui::dialog::enter_answers(dialog, ButtonVariant::Danger, |_, _| {})
                 .w(px(WIDTH))
                 .child(
                     v_flex()
