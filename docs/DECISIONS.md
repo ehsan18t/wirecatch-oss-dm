@@ -1748,3 +1748,9 @@ Decided with the maintainer on 2026-11-06. It amends D85.1 and D169: a few setti
 2. General: the site list's updates, "Update the site list automatically" with the list's state and Check now, move from Updates to Advanced (D169.1's place). The setting and its behaviour are unchanged.
 3. Network: "FTP links skip the proxy" moves from Proxy to Advanced.
 4. The start and finish settings stay where D262 puts them; none of them is folded.
+
+### D248. A row's fix stays in place when its Details button appears
+
+Decided with the maintainer on 2026-11-06, as part of the UX review.
+
+1. When a row offers a fix such as Get a new link, the space for Details beside it is reserved while Details is hidden. Hovering changes its visibility, without moving the fix under the pointer.
