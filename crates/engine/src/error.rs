@@ -561,7 +561,7 @@ impl NetworkError {
             return NetworkFailure::Unreachable;
         }
         let mut in_http = false;
-        let mut cause = self.root();
+        let mut cause = Some(self.root());
         while let Some(c) = cause {
             if let Some(http) = c.downcast_ref::<hyper::Error>() {
                 in_http = true;
@@ -626,7 +626,7 @@ impl NetworkError {
     /// Whether the system reported the connection refused: nothing listens at
     /// the address. A proxy relaying its server's refusal is not this.
     pub(crate) fn is_refused_by_system(&self) -> bool {
-        let mut cause = self.root();
+        let mut cause = Some(self.root());
         while let Some(c) = cause {
             if let Some(io) = c.downcast_ref::<io::Error>() {
                 // Only an error the system raised has an OS code; one built for a
@@ -646,12 +646,12 @@ impl NetworkError {
     }
 
     /// The error this one wraps, the top of the chain its causes are read from.
-    fn root(&self) -> Option<&(dyn std::error::Error + 'static)> {
+    fn root(&self) -> &(dyn std::error::Error + 'static) {
         match &self.0 {
-            Inner::Http(e) => Some(e),
-            Inner::Io { error, .. } => Some(error),
+            Inner::Http(e) => e,
+            Inner::Io { error, .. } => error,
             #[cfg(feature = "http3")]
-            Inner::Other { error, .. } => Some(&**error),
+            Inner::Other { error, .. } => &**error,
         }
     }
 

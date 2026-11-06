@@ -77,7 +77,6 @@ async fn serve(
     tls.write_all(&frame(HEADERS, END_HEADERS, STREAM, headers))
         .await?;
     match end {
-        End::BadLength => {}
         End::ResetStream => {
             tls.write_all(&frame(RST_STREAM, 0, STREAM, &INTERNAL_ERROR))
                 .await?;
@@ -87,7 +86,7 @@ async fn serve(
             payload.extend_from_slice(&INTERNAL_ERROR);
             tls.write_all(&frame(GOAWAY, 0, 0, &payload)).await?;
         }
-        End::CloseSocket => {}
+        End::BadLength | End::CloseSocket => {}
     }
     tls.flush().await?;
     if matches!(end, End::GoAway | End::CloseSocket) {
