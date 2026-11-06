@@ -3,6 +3,7 @@
 //! the live speed or why the download list could not open.
 
 use gpui_kit::{App, Entity, Global};
+use tokio::sync::mpsc::error::SendError;
 use tray_icon::menu::{
     CheckMenuItem, IsMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu,
 };
@@ -63,7 +64,7 @@ pub fn start(library: &Entity<Library>, cx: &mut App) {
     let (clicks, mut clicked) = tokio::sync::mpsc::unbounded_channel();
     let menu_clicks = clicks.clone();
     MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
-        _ = menu_clicks.send(Clicked::Menu(event.id.0));
+        app_may_be_quitting(&menu_clicks.send(Clicked::Menu(event.id.0)));
     }));
     TrayIconEvent::set_event_handler(Some(move |event| {
         if let TrayIconEvent::Click {
@@ -72,7 +73,7 @@ pub fn start(library: &Entity<Library>, cx: &mut App) {
             ..
         } = event
         {
-            _ = clicks.send(Clicked::Icon);
+            app_may_be_quitting(&clicks.send(Clicked::Icon));
         }
     }));
     cx.set_global(Tray {
@@ -91,6 +92,11 @@ pub fn start(library: &Entity<Library>, cx: &mut App) {
     cx.observe(library, |library, cx| follow(&library, cx))
         .detach();
     follow(library, cx);
+}
+
+/// A click that comes after the app stopped reading clicks, while it quits, has nothing to do.
+fn app_may_be_quitting(sent: &Result<(), SendError<Clicked>>) {
+    let (Ok(()) | Err(_)) = sent;
 }
 
 /// Whether the icon is in the tray.

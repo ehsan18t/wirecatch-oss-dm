@@ -418,7 +418,7 @@ pub(super) fn finish_interrupted_move(entry: &mut Entry, record: &MoveUnderWay) 
 /// Finishes the move of a finished row a removal took off the list, so one copy of each file is left (D171). Blocks on the disk.
 pub(super) fn finish_removed_move(files: &[MovedFile]) {
     if files.iter().any(has_arrived) {
-        _ = finish_files(files);
+        finish_files(files);
     }
 }
 

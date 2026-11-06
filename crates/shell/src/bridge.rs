@@ -491,7 +491,10 @@ mod tests {
         let _answer: Option<Message> = frame::read_async(&mut client).await.unwrap();
 
         serving.abort();
-        _ = serving.await;
+        assert!(
+            !matches!(serving.await, Err(ended) if ended.is_panic()),
+            "serving the endpoint panicked"
+        );
         let mut rest = Vec::new();
         let read = tokio::time::timeout(PATIENCE, client.read_to_end(&mut rest)).await;
         assert!(read.is_ok(), "the connection outlived its server");
@@ -550,7 +553,10 @@ mod tests {
         .await;
         assert!(served.is_ok(), "still told the list could not open");
         serving.abort();
-        _ = serving.await;
+        assert!(
+            !matches!(serving.await, Err(ended) if ended.is_panic()),
+            "serving the endpoint panicked"
+        );
         manager.shutdown().await;
     }
 

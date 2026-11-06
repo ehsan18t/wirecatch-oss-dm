@@ -19,6 +19,7 @@
 // The commit range for `commits` is GATE_COMMIT_RANGE when set, otherwise `origin/main..HEAD`. Written for Node 18 and later, so it also runs where only an older Node is installed (scripts/linux-test.sh).
 
 import { COMMIT_CHECKS, commitMessageFile } from './gate/commits.mjs';
+import { DISCARDED_CHECKS } from './gate/discarded.mjs';
 import { EXCEPTION_CHECKS } from './gate/exceptions.mjs';
 import { BROWSER_CHECKS } from './gate/browser.mjs';
 import { ICON_CHECKS } from './gate/icon.mjs';
@@ -44,6 +45,7 @@ const CHECKS = {
   ...RUST_CHECKS,
   ...EXCEPTION_CHECKS,
   ...TEST_TIMING_CHECKS,
+  ...DISCARDED_CHECKS,
   ...PRODUCT_NAME_CHECKS,
   'clippy-linux': clippyLinux,
   ...JS_CHECKS,
@@ -66,6 +68,7 @@ const GROUPS = {
     'lint-policy',
     'cfg-allow',
     'test-timing',
+    'discarded',
     'clippy',
     'clippy-linux',
     'clippy-http3',
