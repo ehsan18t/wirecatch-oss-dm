@@ -517,7 +517,60 @@ enum Inner {
     },
 }
 
+/// Where a [`NetworkError`] broke off the exchange with the server.
+///
+/// New kinds may be added in minor releases, so a `match` needs a `_` arm.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum NetworkFailure {
+    /// A time limit ran out (connecting, or waiting for the server).
+    TimedOut,
+    /// The connection could not be opened: name lookup, a refused connection, the TLS handshake.
+    Unreachable,
+    /// The connection was open, then closed or reset before the answer was complete.
+    Dropped,
+    /// The server answered with something that is not valid HTTP.
+    Unreadable,
+    /// Something else failed after the connection opened.
+    Other,
+}
+
 impl NetworkError {
+    /// Where the exchange with the server broke off.
+    #[must_use]
+    pub fn failure(&self) -> NetworkFailure {
+        if self.is_timeout() {
+            return NetworkFailure::TimedOut;
+        }
+        if self.is_connect() {
+            return NetworkFailure::Unreachable;
+        }
+        let mut cause = self.root();
+        while let Some(c) = cause {
+            if let Some(http) = c.downcast_ref::<hyper::Error>() {
+                if http.is_parse() {
+                    return NetworkFailure::Unreadable;
+                }
+                if http.is_incomplete_message() || http.is_canceled() || http.is_closed() {
+                    return NetworkFailure::Dropped;
+                }
+            }
+            if let Some(io) = c.downcast_ref::<io::Error>()
+                && matches!(
+                    io.kind(),
+                    io::ErrorKind::UnexpectedEof
+                        | io::ErrorKind::ConnectionReset
+                        | io::ErrorKind::ConnectionAborted
+                        | io::ErrorKind::BrokenPipe
+                )
+            {
+                return NetworkFailure::Dropped;
+            }
+            cause = c.source();
+        }
+        NetworkFailure::Other
+    }
+
     /// Whether a time limit ran out (connecting, or waiting for the server).
     #[must_use]
     pub fn is_timeout(&self) -> bool {
@@ -544,12 +597,7 @@ impl NetworkError {
     /// Whether the system reported the connection refused: nothing listens at
     /// the address. A proxy relaying its server's refusal is not this.
     pub(crate) fn is_refused_by_system(&self) -> bool {
-        let mut cause: Option<&(dyn std::error::Error + 'static)> = match &self.0 {
-            Inner::Http(e) => Some(e),
-            Inner::Io { error, .. } => Some(error),
-            #[cfg(feature = "http3")]
-            Inner::Other { error, .. } => Some(&**error),
-        };
+        let mut cause = self.root();
         while let Some(c) = cause {
             if let Some(io) = c.downcast_ref::<io::Error>() {
                 // Only an error the system raised has an OS code; one built for a
@@ -566,6 +614,16 @@ impl NetworkError {
             cause = c.source();
         }
         false
+    }
+
+    /// The error this one wraps, the top of the chain its causes are read from.
+    fn root(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match &self.0 {
+            Inner::Http(e) => Some(e),
+            Inner::Io { error, .. } => Some(error),
+            #[cfg(feature = "http3")]
+            Inner::Other { error, .. } => Some(&**error),
+        }
     }
 
     /// The first error in the chain below the one this error displays itself.

@@ -10051,6 +10051,7 @@ dependencies = [
  "h3-quinn",
  "http",
  "httpdate",
+ "hyper",
  "hyper-util",
  "libc",
  "percent-encoding",
