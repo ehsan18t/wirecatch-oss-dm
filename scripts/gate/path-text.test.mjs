@@ -27,4 +27,15 @@ test('only the chain that is cut is read', () => {
   assert.deepEqual(lines('h_flex().child(div().truncate().child(name)).child(folder)'), []);
   assert.deepEqual(lines('h_flex()\n    .child(PathText::new(folder))\n    .truncate()'), []);
   assert.deepEqual(lines('let shown = div().truncate().child(title);\nlet path = folder;'), []);
+  assert.deepEqual(
+    lines(
+      'fn f() {\n    if let Some(path) = x { keep(); }\n    let el = div().truncate().child(name);\n}',
+    ),
+    [],
+  );
+  assert.deepEqual(
+    lines('match x {\n    Some(path) => div().truncate().child(name),\n    None => div(),\n}'),
+    [],
+  );
+  assert.deepEqual(lines('Some(path) => div().truncate().child(path),'), [1]);
 });

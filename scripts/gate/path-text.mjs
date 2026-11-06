@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { filesMatching, GateError, ROOT } from './process.mjs';
-import { codeOnly } from './rust-attributes.mjs';
+import { closingBracket, codeOnly } from './rust-attributes.mjs';
 
 const SOURCES = 'crates/desktop/src/*.rs';
 const PATH_TEXT = 'crates/desktop/src/ui/path_text.rs';
@@ -11,23 +11,45 @@ const PATH_TEXT = 'crates/desktop/src/ui/path_text.rs';
 const PATH_LIKE =
   /\b(?!(?:link|url)_)(?:\w+_)?(?:path|folder|dir|directory)s?\b|\.display\(\)|\bto_string_lossy\(/;
 
-/** Where the builder chain at `index` ends going `step` (1 or -1): at the bracket that holds it, or at a `,` or `;` beside it. */
-function chainEdge(code, index, step) {
-  const [opening, closing] = step > 0 ? ['([{', ')]}'] : [')]}', '([{'];
-  let at = index;
+/** Where the bracket closing at `close` opens. */
+function openingBracket(code, close) {
   let depth = 0;
-  for (; at >= 0 && at < code.length; at += step) {
-    const c = code[at];
-    if (opening.includes(c)) depth += 1;
-    else if (closing.includes(c) && depth > 0) depth -= 1;
-    else if (depth === 0 && (closing.includes(c) || ',;'.includes(c))) break;
+  for (let at = close; at >= 0; at -= 1) {
+    if (')]}'.includes(code[at])) depth += 1;
+    else if ('([{'.includes(code[at])) depth -= 1;
+    if (depth === 0) return at;
+  }
+  return 0;
+}
+
+/** Where the method chain ending just before `end` starts: back over each `.name(args)` link to the call or name it starts from, `div()` or `row.path`. */
+function chainStart(code, end) {
+  let at = end;
+  for (;;) {
+    while (at > 0 && /\s/.test(code[at - 1])) at -= 1;
+    if (code[at - 1] === ')') at = openingBracket(code, at - 1);
+    while (at > 0 && /[\w:]/.test(code[at - 1])) at -= 1;
+    let dot = at;
+    while (dot > 0 && /\s/.test(code[dot - 1])) dot -= 1;
+    if (code[dot - 1] !== '.') return at;
+    at = dot - 1;
+  }
+}
+
+/** Where the method chain going on at `start` ends: past each `.name(args)` link. */
+function chainEnd(code, start) {
+  const link = /^\s*\.\s*\w+(?:::<[^>]*>)?\s*\(?/;
+  let at = start;
+  for (let found = link.exec(code.slice(at)); found; found = link.exec(code.slice(at))) {
+    at += found[0].length;
+    if (found[0].endsWith('(')) at = closingBracket(code, at - 1);
   }
   return at;
 }
 
-/** `[start, end)` of the builder chain around `index`. */
+/** `[start, end)` of the method chain that the `.truncate()` at `index` is a link of. */
 function chainAround(code, index) {
-  return [chainEdge(code, index - 1, -1) + 1, chainEdge(code, index, 1)];
+  return [chainStart(code, index), chainEnd(code, index)];
 }
 
 /** The places in one Rust file where `.truncate()` cuts an element whose content is named as a path, as `{ line, code }`. */

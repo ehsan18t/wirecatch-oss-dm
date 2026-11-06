@@ -1574,7 +1574,7 @@ Decided with the maintainer on 2026-11-06. Paths were cut at their end, so the p
 
 1. Every path the desktop app shows goes through `ui::PathText`: on one line, cut before its last part when it does not fit (`C:\Users\someone\Ap…\Video`), so the last folder or file name stays in view. The last part is cut in its own middle only when it alone does not fit, which keeps a file name's extension.
 2. The whole path shows on hover, in the piece's own tooltip or in the one of the control it sits in.
-3. The gate's `path-text` check refuses `.truncate()` in `crates/desktop` on an element whose content is named as a file path (`path`, `folder`, `dir`, `.display()`), outside `ui::PathText`. It reads names, not types: a value that only looks like a file path, such as a link's path, is named for what it is.
+3. The gate's `path-text` check refuses `.truncate()` in `crates/desktop` on an element whose method chain names a file path (a name that is or ends in `path`, `folder`, `dir` or `directory`, plural too, or a call of `.display()` or `to_string_lossy()`), outside `ui::PathText`. It reads names, not types: a value that only looks like a file path, such as a link's path, is named for what it is.
 
 ### D240. A queue's name stands out in running text
 
