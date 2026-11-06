@@ -97,18 +97,20 @@ pub fn open(
     let opened = form.downgrade();
     let links = form.read(cx).links.clone();
     let empty = urls.is_empty();
-    crate::ui::dialog::open(window, cx, move |dialog, _, cx| {
+    let counted = form.clone();
+    let title = move |cx: &App| -> SharedString {
+        match counted.read(cx).link_count(cx) {
+            count if count > 1 => format!("{count} new downloads").into(),
+            _ => "New download".into(),
+        }
+    };
+    crate::ui::dialog::open(window, cx, title, move |dialog, _, cx| {
         let count = form.read(cx).link_count(cx);
         let send = form.clone();
         let paused = form.clone();
         let busy = form.read(cx).busy;
         let confirmed = form.clone();
         dialog
-            .title(if count > 1 {
-                format!("{count} new downloads")
-            } else {
-                "New download".to_owned()
-            })
             .w(px(560.))
             .child(form.clone())
             .on_ok(move |_, window, cx| {

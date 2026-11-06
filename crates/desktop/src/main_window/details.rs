@@ -135,7 +135,7 @@ pub(super) fn open(library: Entity<Library>, id: DownloadId, window: &mut Window
         details.read_activity(cx);
         details
     });
-    crate::ui::dialog::open(window, cx, move |dialog, _, _| {
+    crate::ui::dialog::open_headless(window, cx, move |dialog, _, _| {
         dialog.w(px(WIDTH)).p_0().child(details.clone())
     });
 }

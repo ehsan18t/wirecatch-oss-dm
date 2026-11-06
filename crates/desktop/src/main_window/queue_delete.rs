@@ -8,8 +8,8 @@ use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::{Disableable as _, WindowExt as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    App, AppContext as _, Context, Entity, IntoElement, ParentElement as _, Render, Styled as _,
-    Subscription, WeakEntity, Window, div, px,
+    App, AppContext as _, Context, Div, Entity, IntoElement, ParentElement as _, Render,
+    Styled as _, Subscription, WeakEntity, Window, div, px,
 };
 use wirecatch_core::RemoveFiles;
 use wirecatch_protocol::app::DownloadStatus;
@@ -170,41 +170,45 @@ pub(super) fn ask(
         }
     });
     let title = format!("Delete {name}?");
-    crate::ui::dialog::open(window, cx, move |dialog, _, cx| {
-        let confirmed = form.read(cx).confirmed(cx);
-        let deleting = form.clone();
-        let main = main.clone();
-        let entered = (form.clone(), main.clone());
-        dialog
-            .title(title.clone())
-            .w(px(WIDTH))
-            .child(form.clone())
-            .on_ok(move |_, window, cx| {
-                delete(&entered.0, &entered.1, window, cx);
-                false
-            })
-            .footer(
-                h_flex()
-                    .w_full()
-                    .gap_2()
-                    .justify_end()
-                    .child(
-                        Button::new("keep-queue")
-                            .label("Keep queue")
-                            .on_click(|_, window, cx| window.close_dialog(cx)),
-                    )
-                    .child(
-                        Button::new("delete-queue")
-                            .danger()
-                            .label("Delete queue")
-                            .disabled(!confirmed)
-                            .on_click(move |_, window, cx| {
-                                delete(&deleting, &main, window, cx);
-                            }),
-                    ),
-            )
-    });
+    crate::ui::dialog::open(
+        window,
+        cx,
+        move |_| title.clone().into(),
+        move |dialog, _, cx| {
+            let entered = (form.clone(), main.clone());
+            dialog
+                .w(px(WIDTH))
+                .child(form.clone())
+                .on_ok(move |_, window, cx| {
+                    delete(&entered.0, &entered.1, window, cx);
+                    false
+                })
+                .footer(footer(&form, &main, cx))
+        },
+    );
     crate::ui::dialog::focus_after_opening(&field, window, cx);
+}
+
+/// Keep queue, and Delete queue once the name is typed.
+fn footer(form: &Entity<DeleteForm>, main: &WeakEntity<MainWindow>, cx: &App) -> Div {
+    let confirmed = form.read(cx).confirmed(cx);
+    let (deleting, main) = (form.clone(), main.clone());
+    h_flex()
+        .w_full()
+        .gap_2()
+        .justify_end()
+        .child(
+            Button::new("keep-queue")
+                .label("Keep queue")
+                .on_click(|_, window, cx| window.close_dialog(cx)),
+        )
+        .child(
+            Button::new("delete-queue")
+                .danger()
+                .label("Delete queue")
+                .disabled(!confirmed)
+                .on_click(move |_, window, cx| delete(&deleting, &main, window, cx)),
+        )
 }
 
 fn delete(

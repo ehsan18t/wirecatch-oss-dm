@@ -365,7 +365,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let (root, cx) = row_window(cx);
-        cx.update(|window, cx| crate::ui::dialog::open(window, cx, |dialog, _, _| dialog));
+        cx.update(|window, cx| crate::ui::dialog::open_headless(window, cx, |dialog, _, _| dialog));
         cx.run_until_parked();
 
         take_the_row(&root, cx);
@@ -385,7 +385,7 @@ mod tests {
         let field_shown = Rc::new(Cell::new(true));
         cx.update(|window, cx| {
             let (field, field_shown) = (field.clone(), field_shown.clone());
-            crate::ui::dialog::open(window, cx, move |dialog, _, _| {
+            crate::ui::dialog::open_headless(window, cx, move |dialog, _, _| {
                 dialog.when(field_shown.get(), |dialog| {
                     dialog.child(div().id("field").track_focus(&field))
                 })
@@ -409,7 +409,7 @@ mod tests {
     #[gpui_kit::test]
     fn focus_lost_under_an_open_dialog_does_not_reach_the_list(cx: &mut TestAppContext) {
         let (root, cx) = row_window(cx);
-        cx.update(|window, cx| crate::ui::dialog::open(window, cx, |dialog, _, _| dialog));
+        cx.update(|window, cx| crate::ui::dialog::open_headless(window, cx, |dialog, _, _| dialog));
         cx.run_until_parked();
 
         take_the_row(&root, cx);

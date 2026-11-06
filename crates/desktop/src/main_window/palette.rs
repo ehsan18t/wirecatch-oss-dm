@@ -46,7 +46,7 @@ impl MainWindow {
         let state = cx.new(|cx| CommandState::new(window, cx));
         let groups = Rc::new(groups);
         let focused = state.clone();
-        crate::ui::dialog::open(window, cx, move |dialog, _, _| {
+        crate::ui::dialog::open_headless(window, cx, move |dialog, _, _| {
             let (main, chosen) = (main.clone(), groups.clone());
             let command =
                 groups.iter().fold(

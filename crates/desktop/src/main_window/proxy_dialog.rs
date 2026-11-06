@@ -57,15 +57,16 @@ pub(super) fn open(
         let name = form.read(cx).name.clone();
         crate::ui::dialog::focus_after_opening(&name, window, cx);
     }
-    crate::ui::dialog::open(window, cx, move |dialog, _, cx| {
+    let named = form.clone();
+    let title = move |cx: &App| -> SharedString {
+        match &named.read(cx).original {
+            Some(proxy) => format!("Edit {}", proxy.settings.shown_name()).into(),
+            None => "New proxy".into(),
+        }
+    };
+    crate::ui::dialog::open(window, cx, title, move |dialog, _, cx| {
         let saving = form.clone();
-        let state = form.read(cx);
-        let title = match &state.original {
-            Some(proxy) => format!("Edit {}", proxy.settings.shown_name()),
-            None => "New proxy".to_owned(),
-        };
         dialog
-            .title(title)
             .w(px(WIDTH))
             .child(form.clone())
             .on_ok(move |_, window, cx| {
@@ -627,52 +628,57 @@ pub(super) fn ask_delete(
     let line = users.line();
     let replacement =
         cx.new(|cx| SelectState::new(choices, Some(IndexPath::default()), window, cx));
-    crate::ui::dialog::open(window, cx, move |dialog, _, cx| {
-        let picked = replacement.clone();
-        dialog
-            .title(format!("Delete {name}?"))
-            .w(px(440.))
-            .child(
-                v_flex()
-                    .gap_4()
-                    .text_sm()
-                    .child(div().text_role(Role::Secondary, cx).child(if in_use {
-                        line.clone().text(". They switch to the proxy you pick.")
-                    } else {
-                        "Nothing uses it.".into()
-                    }))
-                    .when(in_use, |body| {
-                        body.child(Field::new("Switch to", Select::new(&replacement)))
-                    }),
-            )
-            .footer(
-                h_flex()
-                    .w_full()
-                    .gap_2()
-                    .justify_end()
-                    .child(
-                        Button::new("keep-proxy")
-                            .label("Keep proxy")
-                            .on_click(|_, window, cx| window.close_dialog(cx)),
-                    )
-                    .child(
-                        Button::new("delete-proxy")
-                            .danger()
-                            .label("Delete proxy")
-                            .on_click(move |_, window, cx| {
-                                let to = picked
-                                    .read(cx)
-                                    .selected_value()
-                                    .copied()
-                                    .unwrap_or(ProxyUse::System);
-                                window.close_dialog(cx);
-                                act(window.window_handle(), cx, move |manager| {
-                                    api::delete_proxy_server(manager, id, to)
-                                });
-                            }),
-                    ),
-            )
-    });
+    let title = SharedString::from(format!("Delete {name}?"));
+    crate::ui::dialog::open(
+        window,
+        cx,
+        move |_| title.clone(),
+        move |dialog, _, cx| {
+            let picked = replacement.clone();
+            dialog
+                .w(px(440.))
+                .child(
+                    v_flex()
+                        .gap_4()
+                        .text_sm()
+                        .child(div().text_role(Role::Secondary, cx).child(if in_use {
+                            line.clone().text(". They switch to the proxy you pick.")
+                        } else {
+                            "Nothing uses it.".into()
+                        }))
+                        .when(in_use, |body| {
+                            body.child(Field::new("Switch to", Select::new(&replacement)))
+                        }),
+                )
+                .footer(
+                    h_flex()
+                        .w_full()
+                        .gap_2()
+                        .justify_end()
+                        .child(
+                            Button::new("keep-proxy")
+                                .label("Keep proxy")
+                                .on_click(|_, window, cx| window.close_dialog(cx)),
+                        )
+                        .child(
+                            Button::new("delete-proxy")
+                                .danger()
+                                .label("Delete proxy")
+                                .on_click(move |_, window, cx| {
+                                    let to = picked
+                                        .read(cx)
+                                        .selected_value()
+                                        .copied()
+                                        .unwrap_or(ProxyUse::System);
+                                    window.close_dialog(cx);
+                                    act(window.window_handle(), cx, move |manager| {
+                                        api::delete_proxy_server(manager, id, to)
+                                    });
+                                }),
+                        ),
+                )
+        },
+    );
 }
 
 #[cfg(test)]

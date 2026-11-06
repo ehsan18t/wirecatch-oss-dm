@@ -207,16 +207,21 @@ pub(super) fn remove(
         folded,
         delete_files: false,
     });
-    crate::ui::dialog::open(window, cx, move |dialog, _, cx| {
-        let (label, variant) = {
-            let form = form.read(cx);
-            remove_button(&form.asked, form.delete_files)
-        };
-        let removing = form.clone();
-        dialog
-            .title(title.clone())
-            .w(px(WIDTH))
-            .child(form.clone())
+    crate::ui::dialog::open(
+        window,
+        cx,
+        move |_| title.clone().into(),
+        move |dialog, _, cx| {
+            let (label, variant) = {
+                let form = form.read(cx);
+                remove_button(&form.asked, form.delete_files)
+            };
+            let (removing, entered) = (form.clone(), form.clone());
+            crate::ui::dialog::enter_answers(
+                dialog.w(px(WIDTH)).child(form.clone()),
+                variant,
+                move |window, cx| remove_now(&entered, window, cx),
+            )
             .footer(
                 h_flex()
                     .w_full()
@@ -231,31 +236,33 @@ pub(super) fn remove(
                         Button::new("remove")
                             .with_variant(variant)
                             .label(label)
-                            .on_click(move |_, window, cx| {
-                                let (ids, files) = {
-                                    let form = removing.read(cx);
-                                    (
-                                        form.asked.ids.clone(),
-                                        if form.delete_files && form.asked.finished > 0 {
-                                            RemoveFiles::Delete
-                                        } else {
-                                            RemoveFiles::Keep
-                                        },
-                                    )
-                                };
-                                window.close_dialog(cx);
-                                command_saying(
-                                    window.window_handle(),
-                                    cx,
-                                    move |manager| async move {
-                                        api::remove(&manager, &ids, files).await
-                                    },
-                                    left_in_place,
-                                );
-                            }),
+                            .on_click(move |_, window, cx| remove_now(&removing, window, cx)),
                     ),
             )
-    });
+        },
+    );
+}
+
+/// Removes what `form` asked about, as its answer says, and closes the question.
+fn remove_now(form: &Entity<RemoveForm>, window: &mut Window, cx: &mut App) {
+    let (ids, files) = {
+        let form = form.read(cx);
+        (
+            form.asked.ids.clone(),
+            if form.delete_files && form.asked.finished > 0 {
+                RemoveFiles::Delete
+            } else {
+                RemoveFiles::Keep
+            },
+        )
+    };
+    window.close_dialog(cx);
+    command_saying(
+        window.window_handle(),
+        cx,
+        move |manager| async move { api::remove(&manager, &ids, files).await },
+        left_in_place,
+    );
 }
 
 /// Asks before cancelling `ids`: they stop and lose what was downloaded, but stay in the list.
@@ -300,44 +307,48 @@ pub fn cancel(
     let note = folded_note(asked.count(), folded);
     let name = asked.one.clone();
     let ids = asked.ids;
-    crate::ui::dialog::open(window, cx, move |dialog, _, cx| {
-        let ids = ids.clone();
-        dialog
-            .title(title.clone())
-            .w(px(WIDTH))
-            .child(
-                v_flex()
-                    .gap_4()
-                    .text_sm()
-                    .when_some(name.clone(), |body, name| {
-                        body.child(div().text_role(Role::Strong, cx).child(name))
-                    })
-                    .when_some(note.clone(), |body, note| {
-                        body.child(div().text_role(Role::Secondary, cx).child(note))
-                    })
-                    .child(div().text_role(Role::Secondary, cx).child(said)),
-            )
-            .footer(
-                h_flex()
-                    .w_full()
-                    .gap_2()
-                    .justify_end()
-                    .child(
-                        Button::new("keep")
-                            .label(keep)
-                            .on_click(|_, window, cx| window.close_dialog(cx)),
-                    )
-                    .child(
-                        Button::new("cancel-download")
-                            .danger()
-                            .label("Cancel download")
-                            .on_click(move |_, window, cx| {
-                                window.close_dialog(cx);
-                                selection::each_id(ids.clone(), api::cancel, window, cx);
-                            }),
-                    ),
-            )
-    });
+    crate::ui::dialog::open(
+        window,
+        cx,
+        move |_| title.clone().into(),
+        move |dialog, _, cx| {
+            let ids = ids.clone();
+            crate::ui::dialog::enter_answers(dialog, ButtonVariant::Danger, |_, _| {})
+                .w(px(WIDTH))
+                .child(
+                    v_flex()
+                        .gap_4()
+                        .text_sm()
+                        .when_some(name.clone(), |body, name| {
+                            body.child(div().text_role(Role::Strong, cx).child(name))
+                        })
+                        .when_some(note.clone(), |body, note| {
+                            body.child(div().text_role(Role::Secondary, cx).child(note))
+                        })
+                        .child(div().text_role(Role::Secondary, cx).child(said)),
+                )
+                .footer(
+                    h_flex()
+                        .w_full()
+                        .gap_2()
+                        .justify_end()
+                        .child(
+                            Button::new("keep")
+                                .label(keep)
+                                .on_click(|_, window, cx| window.close_dialog(cx)),
+                        )
+                        .child(
+                            Button::new("cancel-download")
+                                .danger()
+                                .label("Cancel download")
+                                .on_click(move |_, window, cx| {
+                                    window.close_dialog(cx);
+                                    selection::each_id(ids.clone(), api::cancel, window, cx);
+                                }),
+                        ),
+                )
+        },
+    );
 }
 
 #[cfg(test)]

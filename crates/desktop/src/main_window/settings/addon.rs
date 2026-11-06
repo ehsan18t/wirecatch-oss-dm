@@ -1,7 +1,7 @@
 //! An add-on's state and what can be done with it (D2, D20): one main button that installs,
 //! updates, tries again or stops, and once installed, checking for updates and removal.
 
-use gpui_kit::component::button::{Button, ButtonVariant, ButtonVariants as _};
+use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::progress::Progress;
 use gpui_kit::component::setting::SettingItem;
 use gpui_kit::component::{ActiveTheme as _, Sizable as _, h_flex, v_flex};
@@ -16,6 +16,7 @@ use wirecatch_shell::api;
 use crate::backend::{command, command_saying};
 use crate::library::Library;
 use crate::text;
+use crate::ui::dialog::Question;
 use crate::ui::{Role, Typed as _};
 
 const PER_MILLE: u64 = 1000;
@@ -253,23 +254,16 @@ pub(super) fn status(addon: &AddonInfo) -> String {
 
 /// Asks before removing the add-on: what stops working until it is installed again.
 fn ask_to_remove(id: AddonId, name: &str, window: &mut Window, cx: &mut App) {
-    let title = format!("Remove the {name}?");
-    crate::ui::dialog::open_alert(window, cx, move |alert, _, _| {
-        alert
-            .title(title.clone())
-            .description(
-                "Downloads from video sites, and videos whose video and audio must be merged, won’t work until you install it again. Your downloaded files are kept.",
-            )
-            .confirm()
-            .ok_text("Remove")
-            .ok_variant(ButtonVariant::Danger)
-            .cancel_text("Keep")
-            .on_ok(move |_, window, cx| {
-                command(window.window_handle(), cx, move |manager| async move {
-                    api::remove_addon(&manager, id).await
-                });
-                true
-            })
+    let question = Question {
+        title: format!("Remove the {name}?"),
+        body: "Downloads from video sites, and videos whose video and audio must be merged, won’t work until you install it again. Your downloaded files are kept.".to_owned(),
+        keep: "Keep",
+        go: "Remove",
+    };
+    crate::ui::dialog::ask(question, window, cx, move |window, cx| {
+        command(window.window_handle(), cx, move |manager| async move {
+            api::remove_addon(&manager, id).await
+        });
     });
 }
 

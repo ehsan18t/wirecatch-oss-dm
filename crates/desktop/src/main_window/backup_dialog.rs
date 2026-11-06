@@ -80,16 +80,21 @@ pub(super) fn open(
         busy: false,
         problem: None,
     });
-    crate::ui::dialog::open(window, cx, move |dialog, _, cx| {
-        dialog
-            .title(match direction {
-                Direction::Export => "Export settings",
-                Direction::Import => "Import settings",
-            })
-            .w(px(WIDTH))
-            .child(form.clone())
-            .footer(footer(&form, cx))
-    });
+    let title = match direction {
+        Direction::Export => "Export settings",
+        Direction::Import => "Import settings",
+    };
+    crate::ui::dialog::open(
+        window,
+        cx,
+        move |_| title.into(),
+        move |dialog, _, cx| {
+            dialog
+                .w(px(WIDTH))
+                .child(form.clone())
+                .footer(footer(&form, cx))
+        },
+    );
 }
 
 fn footer(form: &Entity<BackupForm>, cx: &App) -> Div {
