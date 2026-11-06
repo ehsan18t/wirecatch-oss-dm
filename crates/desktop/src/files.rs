@@ -121,7 +121,7 @@ pub fn ask_to_open(path: PathBuf, warning: ProgramWarning, window: &mut Window, 
     crate::ui::dialog::open_alert(window, cx, move |alert, _, _| {
         let path = path.clone();
         alert
-            .title(warning.title.clone())
+            .title(crate::ui::dialog::Header::new(warning.title.clone()))
             .description(warning.message.clone())
             .confirm()
             .ok_text("Open")

@@ -256,7 +256,7 @@ fn ask_to_remove(id: AddonId, name: &str, window: &mut Window, cx: &mut App) {
     let title = format!("Remove the {name}?");
     crate::ui::dialog::open_alert(window, cx, move |alert, _, _| {
         alert
-            .title(title.clone())
+            .title(crate::ui::dialog::Header::new(title.clone()))
             .description(
                 "Downloads from video sites, and videos whose video and audio must be merged, won’t work until you install it again. Your downloaded files are kept.",
             )

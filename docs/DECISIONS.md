@@ -1665,3 +1665,9 @@ Decided with the maintainer on 2026-11-06. Settings listed the queues again, eac
 
 1. The sidebar is where queues are made, opened, edited, reordered and deleted; each queue's page (D255) holds its settings, and its Rules tab always shows Test a link, whether its rules are on or not.
 2. The Settings page "Speed and queues" is "Speed". It keeps the global limits, each still naming the queues with a value of their own, and ends with one Queues row that names the queues and says "Create, edit and order queues in the sidebar.", with Show queues, which goes back to the downloads and their sidebar. The list of queues and Test a link leave it.
+
+### D260. Every dialog has one header
+
+Decided with the maintainer on 2026-11-06. A dialog's title sat as close to its first field as the fields sit to each other, so it did not read as a header.
+
+1. Every dialog, alerts included, takes its title through `ui::dialog::Header`: the title in the page title's type, over a rule across the whole dialog, with a fixed gap before the content.

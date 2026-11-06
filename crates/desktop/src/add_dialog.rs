@@ -104,11 +104,11 @@ pub fn open(
         let busy = form.read(cx).busy;
         let confirmed = form.clone();
         dialog
-            .title(if count > 1 {
+            .title(crate::ui::dialog::Header::new(if count > 1 {
                 format!("{count} new downloads")
             } else {
                 "New download".to_owned()
-            })
+            }))
             .w(px(560.))
             .child(form.clone())
             .on_ok(move |_, window, cx| {

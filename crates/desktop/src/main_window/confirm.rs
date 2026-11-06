@@ -214,7 +214,7 @@ pub(super) fn remove(
         };
         let removing = form.clone();
         dialog
-            .title(title.clone())
+            .title(crate::ui::dialog::Header::new(title.clone()))
             .w(px(WIDTH))
             .child(form.clone())
             .footer(
@@ -303,7 +303,7 @@ pub fn cancel(
     crate::ui::dialog::open(window, cx, move |dialog, _, cx| {
         let ids = ids.clone();
         dialog
-            .title(title.clone())
+            .title(crate::ui::dialog::Header::new(title.clone()))
             .w(px(WIDTH))
             .child(
                 v_flex()

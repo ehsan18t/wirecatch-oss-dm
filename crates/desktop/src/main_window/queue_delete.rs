@@ -176,7 +176,7 @@ pub(super) fn ask(
         let main = main.clone();
         let entered = (form.clone(), main.clone());
         dialog
-            .title(title.clone())
+            .title(crate::ui::dialog::Header::new(title.clone()))
             .w(px(WIDTH))
             .child(form.clone())
             .on_ok(move |_, window, cx| {

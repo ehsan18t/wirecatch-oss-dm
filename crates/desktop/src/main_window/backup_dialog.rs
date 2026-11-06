@@ -82,10 +82,10 @@ pub(super) fn open(
     });
     crate::ui::dialog::open(window, cx, move |dialog, _, cx| {
         dialog
-            .title(match direction {
+            .title(crate::ui::dialog::Header::new(match direction {
                 Direction::Export => "Export settings",
                 Direction::Import => "Import settings",
-            })
+            }))
             .w(px(WIDTH))
             .child(form.clone())
             .footer(footer(&form, cx))

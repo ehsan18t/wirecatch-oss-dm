@@ -65,7 +65,7 @@ pub(super) fn open(
             None => "New proxy".to_owned(),
         };
         dialog
-            .title(title)
+            .title(crate::ui::dialog::Header::new(title))
             .w(px(WIDTH))
             .child(form.clone())
             .on_ok(move |_, window, cx| {
@@ -630,7 +630,7 @@ pub(super) fn ask_delete(
     crate::ui::dialog::open(window, cx, move |dialog, _, cx| {
         let picked = replacement.clone();
         dialog
-            .title(format!("Delete {name}?"))
+            .title(crate::ui::dialog::Header::new(format!("Delete {name}?")))
             .w(px(440.))
             .child(
                 v_flex()

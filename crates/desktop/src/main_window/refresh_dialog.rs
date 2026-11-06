@@ -42,7 +42,7 @@ pub fn open(library: Entity<Library>, id: DownloadId, window: &mut Window, cx: &
         let busy = form.read(cx).busy;
         let (saved, entered) = (form.clone(), form.clone());
         dialog
-            .title("Get a new link")
+            .title(crate::ui::dialog::Header::new("Get a new link"))
             .w(px(WIDTH))
             .child(form.clone())
             .on_ok(move |_, window, cx| {
