@@ -114,21 +114,21 @@ impl MainWindow {
                 super::selection::each(&rows, takes, command, window, cx);
             })
         };
-        if can.pause {
+        if can.pause > 0 {
             entries.push(each(
                 format!("Pause {named}"),
                 applies::can_pause,
                 api::pause,
             ));
         }
-        if can.resume {
+        if can.resume > 0 {
             entries.push(each(
                 format!("Resume {named}"),
                 applies::can_resume,
                 api::resume,
             ));
         }
-        if can.retry {
+        if can.retry > 0 {
             entries.push(each(
                 can.retry_phrase(&named),
                 applies::can_retry,

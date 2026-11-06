@@ -13,8 +13,8 @@ use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, Context, IntoElement, Modifiers, ParentElement as _, Styled as _, Window, div,
-    px,
+    AnyElement, App, Context, IntoElement, Modifiers, ParentElement as _, SharedString,
+    Styled as _, Window, div, px,
 };
 use wirecatch_protocol::app::DownloadSummary;
 use wirecatch_protocol::wire::ProtocolError;
@@ -276,7 +276,7 @@ impl MainWindow {
     pub(super) fn pause_or_resume(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
         let rows = self.selected_rows(cx);
         let rows: Vec<&DownloadSummary> = rows.iter().collect();
-        if Applicable::to(&rows).pause {
+        if Applicable::to(&rows).pause > 0 {
             each(&rows, applies::can_pause, api::pause, window, cx);
         } else {
             each(&rows, applies::can_resume, api::resume, window, cx);
@@ -399,35 +399,35 @@ pub(super) type Command = fn(&wirecatch_core::Manager, DownloadId) -> Result<(),
 struct Offer {
     shown: bool,
     id: &'static str,
-    label: &'static str,
+    label: String,
     icon: IconName,
     takes: fn(&DownloadSummary) -> bool,
     command: Command,
 }
 
-/// Pause, Resume and Try again, each while some of the selection takes it.
+/// Pause, Resume and Try again, each while some of the selection takes it, saying how many rows when not all of them do.
 fn state_buttons(can: &Applicable, cx: &mut Context<'_, MainWindow>) -> Vec<Button> {
     let offered = [
         Offer {
-            shown: can.pause,
+            shown: can.pause > 0,
             id: "sel-pause",
-            label: "Pause",
+            label: can.pause_label(),
             icon: IconName::Pause,
             takes: applies::can_pause,
             command: api::pause,
         },
         Offer {
-            shown: can.resume,
+            shown: can.resume > 0,
             id: "sel-resume",
-            label: "Resume",
+            label: can.resume_label(),
             icon: IconName::Play,
             takes: applies::can_resume,
             command: api::resume,
         },
         Offer {
-            shown: can.retry,
+            shown: can.retry > 0,
             id: "sel-retry",
-            label: can.retry_word,
+            label: can.retry_label(),
             icon: IconName::RotateCw,
             takes: applies::can_retry,
             command: api::retry,
@@ -479,7 +479,7 @@ fn move_button(queues: Rc<[(QueueId, String)]>, ids: Rc<[DownloadId]>) -> impl I
     })
 }
 
-fn bar_button(id: &'static str, label: &'static str, icon: Icon) -> Button {
+fn bar_button(id: &'static str, label: impl Into<SharedString>, icon: Icon) -> Button {
     Button::new(id).small().ghost().icon(icon).label(label)
 }
 

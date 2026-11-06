@@ -171,7 +171,7 @@ fn actions(menu: PopupMenu, target: &Target) -> PopupMenu {
                 .on_click(move |_, window, cx| files::open(id, window, cx)),
         )
     })
-    .when(can.pause, |menu| {
+    .when(can.pause > 0, |menu| {
         menu.item(each_item(
             "Pause",
             IconName::Pause,
@@ -180,7 +180,7 @@ fn actions(menu: PopupMenu, target: &Target) -> PopupMenu {
             api::pause,
         ))
     })
-    .when(can.resume, |menu| {
+    .when(can.resume > 0, |menu| {
         menu.item(each_item(
             "Resume",
             IconName::Play,
@@ -190,7 +190,7 @@ fn actions(menu: PopupMenu, target: &Target) -> PopupMenu {
         ))
     })
     .when(
-        can.retry && fix.map(|(_, fix)| fix) != Some(FixAction::Retry),
+        can.retry > 0 && fix.map(|(_, fix)| fix) != Some(FixAction::Retry),
         |menu| {
             menu.item(each_item(
                 can.retry_word,
