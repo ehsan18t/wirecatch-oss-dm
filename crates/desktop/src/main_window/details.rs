@@ -146,9 +146,7 @@ impl Render for Details {
         let Some(row) = library.downloads.find(self.id).cloned() else {
             return div().into_any_element();
         };
-        let queue = library
-            .queue(row.queue)
-            .map_or_else(|| "Its queue".to_owned(), |q| q.settings.name.clone());
+        let queue = library.queue_name(row.queue).map(str::to_owned);
         let others: Vec<(QueueId, String)> = library
             .queues
             .iter()
@@ -166,8 +164,13 @@ impl Render for Details {
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
-                    .child(self.now_section(&row, &queue, cx))
-                    .child(facts(&row, &queue, &others, cx))
+                    .child(self.now_section(&row, queue.as_deref(), cx))
+                    .child(facts(
+                        &row,
+                        queue.as_deref().unwrap_or("Its queue"),
+                        &others,
+                        cx,
+                    ))
                     .child(places(&row, self.library.clone(), cx))
                     .child(activity(&row, &self.activity, cx)),
             )
@@ -208,7 +211,12 @@ fn header(row: &DownloadSummary, cx: &mut Context<'_, Details>) -> impl IntoElem
 impl Details {
     /// What is happening now: the problem and its fix, or why it waits and the progress window's
     /// run panel; then that window's figures.
-    fn now_section(&self, row: &DownloadSummary, queue: &str, cx: &mut Context<'_, Self>) -> Div {
+    fn now_section(
+        &self,
+        row: &DownloadSummary,
+        queue: Option<&str>,
+        cx: &mut Context<'_, Self>,
+    ) -> Div {
         let theme = cx.theme();
         let mut section = layout::section(Rule::None, cx).gap_3();
         if let (DownloadStatus::Failed, Some(error)) = (row.status, &row.error) {
@@ -224,7 +232,7 @@ impl Details {
                         .child(detail),
                 );
             }
-            section = section.child(run_panel(&self.record, row, cx));
+            section = section.child(run_panel(&self.record, row, queue, cx));
         }
         section = section.children(run_facts(&self.record, row, cx));
         if let Some(media) = &row.media {

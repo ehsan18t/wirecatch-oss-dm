@@ -1674,3 +1674,11 @@ Decided with the maintainer on 2026-11-06. A dialog's title sat as close to its 
 2. A question whose answer cannot be taken back (opening a program, removing the add-on, discarding a queue's changes) is a dialog like the others, through `ui::dialog::ask`: what happens under the header, then its two answers. gpui-kit's alert, which put that text above the rule, is not used.
 3. Enter gives a question's main answer, as its main button does, unless that answer is a danger one (deleting files, cancelling downloads, opening a program, removing the add-on): then Enter does nothing and the question stays open, so a held or stray Enter never answers what cannot be taken back (`ui::dialog::enter_answers`). Deleting a queue is the exception: its name must be typed first, so Enter in that field deletes, as the button does.
 4. Details keeps the header it draws itself, with the download's state under the name, until it moves to the shared header.
+
+### D265. A waiting download names its queue
+
+Decided with the maintainer on 2026-11-06. It amends D47.2: the shared status words had dropped the queue's name ("2nd in line", "Queue paused"), so on All downloads a wait did not say which queue it was in.
+
+1. A waiting download's short status names its queue, standing out as D240 says: "Next in Main", "3rd to start in Main". A reason of its own follows the place or names the queue itself: "Next in Main, waiting for a free slot", "Main is paused", "Main starts at 2:00 AM". Rows, the download window and the details say the same (`text::wait_short`, `text::wait_long`).
+2. Only the first in line waits for a free slot, whether the app's limit or its queue's is reached; the others wait for those ahead of them (`wait_reason` in core), so each says its place.
+3. A queue not known yet reads "its queue".

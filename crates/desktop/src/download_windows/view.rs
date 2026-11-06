@@ -48,7 +48,7 @@ use crate::main_window::fixes::run_from_download_window;
 use crate::text::{ASK_EACH_VIDEO, REMEMBER_CHOICES};
 use crate::ui::small_title_bar::small_title_bar;
 use crate::ui::speed_graph::run_graph;
-use crate::ui::{Callout, Field, PathText, Role, Typed as _, tokens, tooltip};
+use crate::ui::{Callout, Field, PathText, Role, Sentence, Typed as _, tokens, tooltip};
 use crate::{files, text};
 
 type ChooseQueue = Rc<dyn Fn(Option<QueueId>, &mut App)>;
@@ -788,8 +788,8 @@ impl DownloadWindow {
         let queue = self
             .library
             .read(cx)
-            .queue(row.queue)
-            .map(|queue| queue.settings.name.clone());
+            .queue_name(row.queue)
+            .map(str::to_owned);
         let folder = Path::new(&row.path)
             .parent()
             .map(|folder| text::folder(&folder.to_string_lossy()));
@@ -811,7 +811,7 @@ impl DownloadWindow {
                     )))
                     .children(state_mark(&row, self.record.stalled(Instant::now()), cx)),
             )
-            .child(run_panel(&self.record, &row, cx))
+            .child(run_panel(&self.record, &row, queue.as_deref(), cx))
             .children(run_facts(&self.record, &row, cx))
             .when_some(folder, |body, folder| {
                 body.child(
@@ -850,8 +850,13 @@ impl DownloadWindow {
 /// The progress bar and speed graph in one: across is how much is done, height is how fast,
 /// with the speed and percent over it. It is in every state and takes the spare height, so the
 /// rows keep even gaps: a failure's reason fills it, and a download too short to draw says it
-/// finished.
-pub(crate) fn run_panel(record: &RunRecord, row: &DownloadSummary, cx: &App) -> AnyElement {
+/// finished. `queue` is the download's queue, which a wait names.
+pub(crate) fn run_panel(
+    record: &RunRecord,
+    row: &DownloadSummary,
+    queue: Option<&str>,
+    cx: &App,
+) -> AnyElement {
     let per_mille = text::per_mille(row);
     let theme = cx.theme();
     let panel = v_flex()
@@ -884,7 +889,7 @@ pub(crate) fn run_panel(record: &RunRecord, row: &DownloadSummary, cx: &App) -> 
         DownloadStatus::Failed => theme.danger,
         _ => theme.muted_foreground,
     };
-    let label = panel_label(record, row);
+    let label = panel_label(record, row, queue);
     let moving = !matches!(
         row.status,
         DownloadStatus::Completed | DownloadStatus::Processing | DownloadStatus::Cancelled
@@ -927,18 +932,18 @@ pub(crate) fn run_panel(record: &RunRecord, row: &DownloadSummary, cx: &App) -> 
         .into_any_element()
 }
 
-fn panel_label(record: &RunRecord, row: &DownloadSummary) -> Option<String> {
+fn panel_label(record: &RunRecord, row: &DownloadSummary, queue: Option<&str>) -> Option<Sentence> {
     match row.status {
         DownloadStatus::Downloading if record.stalled(Instant::now()) => {
-            Some("Waiting for the server".to_owned())
+            Some("Waiting for the server".into())
         }
-        DownloadStatus::Downloading if row.speed > 0 => Some(text::speed(row.speed)),
+        DownloadStatus::Downloading if row.speed > 0 => Some(text::speed(row.speed).into()),
         DownloadStatus::Completed => record
             .peak()
-            .map(|peak| format!("Peak {}", text::speed(peak))),
+            .map(|peak| format!("Peak {}", text::speed(peak)).into()),
         DownloadStatus::Failed => None,
-        DownloadStatus::Cancelled => Some("Download cancelled".to_owned()),
-        _ => Some(text::status_short(row)),
+        DownloadStatus::Cancelled => Some("Download cancelled".into()),
+        _ => Some(text::status_short(row, queue)),
     }
 }
 

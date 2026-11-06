@@ -435,6 +435,13 @@ impl MainWindow {
             .into_any_element()
     }
 
+    fn queue_name(&self, row: &DownloadSummary, cx: &App) -> Option<String> {
+        self.library
+            .read(cx)
+            .queue_name(row.queue)
+            .map(str::to_owned)
+    }
+
     fn row(
         &self,
         index: usize,
@@ -452,6 +459,7 @@ impl MainWindow {
         let id = row.id;
         let selected = self.selected.contains(&id);
         let hovered = self.hovered == Some(id);
+        let queue = self.queue_name(&row, cx);
         let tone = status_tone(&row, cx);
         let compact = !has_second_line(shown);
         let shows_circle = hovered || (self.picked && self.selection_facts(cx).count > 0);
@@ -483,7 +491,7 @@ impl MainWindow {
             }))
             .child(time_cell(&row, place, dated || compact, cx))
             .child(tile(&row, compact, tone))
-            .child(text_column(&row, shown, tone, cx).id(tip_id("text", id, at)))
+            .child(text_column(&row, queue.as_deref(), shown, tone, cx).id(tip_id("text", id, at)))
             .child(
                 div()
                     .id(tip_id("end", id, at))
@@ -663,7 +671,13 @@ fn time_cell(row: &DownloadSummary, place: Option<usize>, dated: bool, cx: &App)
 
 /// The name, over one line of what matters for the row's state, then the link and the folder the
 /// View menu keeps; a progress bar under them while work is under way or paused.
-fn text_column(row: &DownloadSummary, shown: ListLines, tone: Hsla, cx: &App) -> gpui_kit::Div {
+fn text_column(
+    row: &DownloadSummary,
+    queue: Option<&str>,
+    shown: ListLines,
+    tone: Hsla,
+    cx: &App,
+) -> gpui_kit::Div {
     let second_line = has_second_line(shown);
     let failed = row.status == DownloadStatus::Failed;
     v_flex()
@@ -693,15 +707,21 @@ fn text_column(row: &DownloadSummary, shown: ListLines, tone: Hsla, cx: &App) ->
                 }),
         )
         .when(second_line, |column| {
-            column.child(second_line_of(row, shown, tone, cx))
+            column.child(second_line_of(row, queue, shown, tone, cx))
         })
         .children(progress_bar(row, tone, cx))
 }
 
 /// The row's second line: its state while that matters, then the link's host (with its path once
 /// the download is over) and the folder as a chip.
-fn second_line_of(row: &DownloadSummary, shown: ListLines, tone: Hsla, cx: &App) -> AnyElement {
-    let state = state_part(row, tone, cx);
+fn second_line_of(
+    row: &DownloadSummary,
+    queue: Option<&str>,
+    shown: ListLines,
+    tone: Hsla,
+    cx: &App,
+) -> AnyElement {
+    let state = state_part(row, queue, tone, cx);
     let dot = state.is_some() && shown.link;
     h_flex()
         .w_full()
@@ -718,7 +738,12 @@ fn second_line_of(row: &DownloadSummary, shown: ListLines, tone: Hsla, cx: &App)
 
 /// What a row says of its state, when its state is not plain finished: a failure's first
 /// sentence, a running download's speed and size, how far a paused one got, or a word for the rest.
-fn state_part(row: &DownloadSummary, tone: Hsla, cx: &App) -> Option<AnyElement> {
+fn state_part(
+    row: &DownloadSummary,
+    queue: Option<&str>,
+    tone: Hsla,
+    cx: &App,
+) -> Option<AnyElement> {
     let part = || h_flex().min_w_0().gap_2();
     let said = match row.status {
         DownloadStatus::Completed | DownloadStatus::Cancelled => return None,
@@ -726,8 +751,8 @@ fn state_part(row: &DownloadSummary, tone: Hsla, cx: &App) -> Option<AnyElement>
             part()
                 .text_color(cx.theme().danger)
                 .child(div().truncate().child(row.error.as_ref().map_or_else(
-                    || text::status_short(row),
-                    |error| text::first_sentence(&error.message).to_owned(),
+                    || text::status_short(row, queue),
+                    |error| text::first_sentence(&error.message).into(),
                 )))
         }
         DownloadStatus::Downloading if row.speed > 0 && text::shown_wait(row).is_none() => part()
@@ -735,7 +760,7 @@ fn state_part(row: &DownloadSummary, tone: Hsla, cx: &App) -> Option<AnyElement>
             .child(div().text_color(tone).child(text::speed(row.speed)))
             .child(text::size(row)),
         DownloadStatus::Paused => part().flex_shrink_0().child(text::paused_at(row)?),
-        _ => part().child(div().truncate().child(text::status_short(row))),
+        _ => part().child(div().truncate().child(text::status_short(row, queue))),
     };
     Some(said.into_any_element())
 }

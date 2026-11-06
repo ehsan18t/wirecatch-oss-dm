@@ -258,7 +258,7 @@ fn finished_row(row: &DownloadSummary, alone: bool, cx: &App) -> AnyElement {
             |error| text::first_sentence(&error.message).to_owned(),
         )
     } else {
-        text::status_short(row)
+        text::status_label(row.status).to_owned()
     };
     h_flex()
         .gap_2()
