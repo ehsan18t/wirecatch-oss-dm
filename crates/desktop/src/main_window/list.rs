@@ -744,7 +744,7 @@ fn state_part(row: &DownloadSummary, tone: Hsla, cx: &App) -> Option<AnyElement>
 fn link_part(row: &DownloadSummary, cx: &App) -> AnyElement {
     let link = row.url.clone();
     let host = text::host(&link).to_owned();
-    let path = Group::of(row.status)
+    let after_host = Group::of(row.status)
         .is_over()
         .then(|| link_path(&link).to_owned());
     h_flex()
@@ -757,7 +757,7 @@ fn link_part(row: &DownloadSummary, cx: &App) -> AnyElement {
                 .text_color(cx.theme().foreground.opacity(0.8))
                 .child(host),
         )
-        .children(path.map(|path| div().min_w_0().truncate().child(path)))
+        .children(after_host.map(|rest| div().min_w_0().truncate().child(rest)))
         .tooltip(move |window, cx| whole(link.clone(), window, cx))
         .into_any_element()
 }
