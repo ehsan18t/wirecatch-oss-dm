@@ -19,7 +19,7 @@ export function dialogsHeadedElsewhere(text, headless) {
   const code = codeOnly(text);
   const tests = code.search(/#\[cfg\(test\)\]/);
   const found = [];
-  for (const match of code.matchAll(/\b(?:open_dialog|open_alert_dialog)\s*\(/g)) {
+  for (const match of code.matchAll(/\b(?:open_dialog|open_alert\w*)\s*\(/g)) {
     found.push({ line: line(code, match.index), why: 'opens a dialog past ui::dialog' });
   }
   for (const match of code.matchAll(/\bopen_headless\s*\(/g)) {
@@ -39,7 +39,7 @@ export function dialogsHeadedElsewhere(text, headless) {
 }
 
 function dialogHeader() {
-  const hits = filesMatching('open_dialog|open_alert_dialog|open_headless|dialog::open', [
+  const hits = filesMatching('open_dialog|open_alert|open_headless|dialog::open', [
     SOURCES,
     `:!${DIALOG}`,
   ]).flatMap((file) =>

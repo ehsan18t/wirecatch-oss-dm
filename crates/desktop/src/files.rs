@@ -125,7 +125,7 @@ pub fn ask_to_open(path: PathBuf, warning: ProgramWarning, window: &mut Window, 
         go: "Open",
     };
     crate::ui::dialog::ask(question, window, cx, move |_, cx| {
-        cx.open_with_system(&path)
+        cx.open_with_system(&path);
     });
 }
 

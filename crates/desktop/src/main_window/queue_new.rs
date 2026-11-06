@@ -207,18 +207,22 @@ pub(super) fn open(main: WeakEntity<MainWindow>, window: &mut Window, cx: &mut A
         }
     });
     crate::ui::dialog::focus_after_opening(&name, window, cx);
-    crate::ui::dialog::open(window, cx, move |dialog, _, cx| {
-        let creating = form.clone();
-        dialog
-            .title("New queue")
-            .w(px(WIDTH))
-            .child(form.clone())
-            .on_ok(move |_, window, cx| {
-                creating.update(cx, |form, cx| form.create(window, cx));
-                false
-            })
-            .footer(footer(&form, cx))
-    });
+    crate::ui::dialog::open(
+        window,
+        cx,
+        |_| "New queue".into(),
+        move |dialog, _, cx| {
+            let creating = form.clone();
+            dialog
+                .w(px(WIDTH))
+                .child(form.clone())
+                .on_ok(move |_, window, cx| {
+                    creating.update(cx, |form, cx| form.create(window, cx));
+                    false
+                })
+                .footer(footer(&form, cx))
+        },
+    );
 }
 
 /// Cancel, More settings and Create queue, under what stops the queue being made.

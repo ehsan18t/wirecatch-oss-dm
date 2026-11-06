@@ -4,11 +4,11 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use gpui_kit::component::button::ButtonVariant;
 use gpui_kit::{App, Context, Window};
 
 use super::{MainWindow, Screen};
 use crate::closing::may_have_closed;
+use crate::ui::dialog::Question;
 
 type Then = Box<dyn FnOnce(&mut MainWindow, &mut Window, &mut Context<'_, MainWindow>)>;
 
@@ -31,19 +31,14 @@ impl MainWindow {
         }
         let then: Rc<Cell<Option<Then>>> = Rc::new(Cell::new(Some(Box::new(then))));
         let main = cx.entity().downgrade();
-        crate::ui::dialog::open_alert(window, cx, move |alert, _, _| {
-            let (then, main) = (then.clone(), main.clone());
-            alert
-                .title("Discard changes?")
-                .description("The changes to this queue are not saved.")
-                .confirm()
-                .ok_text("Discard")
-                .ok_variant(ButtonVariant::Danger)
-                .cancel_text("Keep editing")
-                .on_ok(move |_, window, cx| {
-                    discard(&main, then.take(), window, cx);
-                    true
-                })
+        let question = Question {
+            title: "Discard changes?".to_owned(),
+            body: "The changes to this queue are not saved.".to_owned(),
+            keep: "Keep editing",
+            go: "Discard",
+        };
+        crate::ui::dialog::ask(question, window, cx, move |window, cx| {
+            discard(&main, then.take(), window, cx);
         });
     }
 }
