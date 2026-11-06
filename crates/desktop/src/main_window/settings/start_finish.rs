@@ -1,4 +1,5 @@
-//! Notifications: how finished, failed and started downloads are told (D52, D64, D65).
+//! When downloads start and finish (D262): whether a download or a video asks first, whether its
+//! progress shows, and how started, finished and failed downloads are told (D52, D64, D65).
 
 use gpui_kit::component::setting::{SettingGroup, SettingItem, SettingPage};
 use gpui_kit::{App, Entity};
@@ -39,13 +40,9 @@ const START_TIMES: &[(StartNoticeTime, &str)] = &[
 const ONLY_IN_BROWSER: &str = "Used only with Show a notice in the browser.";
 
 pub(super) fn page(library: &Entity<Library>, cx: &App) -> SettingPage {
-    SettingPage::new(super::Page::Notifications.title())
+    SettingPage::new(super::Page::StartAndFinish.title())
         .resettable(false)
-        .groups([
-            finished(library, cx),
-            started(library, cx),
-            do_not_disturb(library),
-        ])
+        .groups([started(library, cx), finished(library, cx)])
 }
 
 fn finished(library: &Entity<Library>, cx: &App) -> SettingGroup {
@@ -56,7 +53,7 @@ fn finished(library: &Entity<Library>, cx: &App) -> SettingGroup {
         NotifyOnFinish::default(),
     );
     SettingGroup::new()
-        .title("Finished downloads")
+        .title("Finishing")
         .item(
             SettingItem::new(
                 "When a download finishes",
@@ -99,13 +96,16 @@ fn finished(library: &Entity<Library>, cx: &App) -> SettingGroup {
             )
             .keywords(["seconds", "duration", "browser"]),
         )
+        .item(do_not_disturb(library))
 }
 
 fn started(library: &Entity<Library>, cx: &App) -> SettingGroup {
     let on_start = current(library, cx, |s| s.notify_on_start, NotifyOnStart::default());
     SettingGroup::new()
-        .title("Started downloads")
-        .description("Browser downloads that start without a window.")
+        .title("Starting")
+        .item(super::browser::ask_each_download(library))
+        .item(super::media::ask_each_video(library))
+        .item(super::browser::show_progress(library))
         .item(
             SettingItem::new(
                 "When a download starts",
@@ -117,7 +117,7 @@ fn started(library: &Entity<Library>, cx: &App) -> SettingGroup {
                 }),
             )
             .description(
-                "A notice in the current tab, or a system notification while the browser is in the background.",
+                "For browser downloads that start without asking: a notice in the current tab, or a system notification while the browser is in the background.",
             )
             .keywords(["started", "begin", "notice", "browser", "tab"]),
         )
@@ -139,22 +139,20 @@ fn started(library: &Entity<Library>, cx: &App) -> SettingGroup {
         )
 }
 
-fn do_not_disturb(library: &Entity<Library>) -> SettingGroup {
-    SettingGroup::new().item(
-        SettingItem::new(
-            "Show notifications during Do Not Disturb",
-            switch(library, |s| s.notify_during_do_not_disturb, |on| {
-                AppSettingsPatch {
-                    notify_during_do_not_disturb: Some(on),
-                    ..AppSettingsPatch::default()
-                }
-            }),
-        )
-        .description(
-            "Finished and failed downloads and problems still notify you. The system can still block them in its own settings.",
-        )
-        .keywords(["dnd", "focus", "quiet", "silent", "mute"]),
+fn do_not_disturb(library: &Entity<Library>) -> SettingItem {
+    SettingItem::new(
+        "Show notifications during Do Not Disturb",
+        switch(library, |s| s.notify_during_do_not_disturb, |on| {
+            AppSettingsPatch {
+                notify_during_do_not_disturb: Some(on),
+                ..AppSettingsPatch::default()
+            }
+        }),
     )
+    .description(
+        "Finished and failed downloads and problems still notify you. The system can still block them in its own settings.",
+    )
+    .keywords(["dnd", "focus", "quiet", "silent", "mute", "notifications"])
 }
 
 trait BrowserOnly {
