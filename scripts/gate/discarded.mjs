@@ -4,6 +4,14 @@ import { join } from 'node:path';
 import { filesMatching, GateError, ROOT } from './process.mjs';
 import { codeOnly } from './rust-attributes.mjs';
 
+/** The end that a top-level `at` makes, if any: a `,` before a `select!` arm's `if` precondition is none. */
+function endAt(code, at) {
+  if (code.startsWith('=>', at)) return '=>';
+  if (code[at] === ';') return ';';
+  if (code[at] === ',' && !/^,\s*if\b/.test(code.slice(at, at + 64))) return ',';
+  return null;
+}
+
 /** What ends the expression starting at `start`: `=>` only for a `select!` pattern. */
 function ending(code, start) {
   let depth = 0;
@@ -13,8 +21,8 @@ function ending(code, start) {
     else if (')]}'.includes(c)) {
       if (depth === 0) return c;
       depth -= 1;
-    } else if (depth === 0 && (c === ';' || c === ',' || code.startsWith('=>', at))) {
-      return code.startsWith('=>', at) ? '=>' : c;
+    } else if (depth === 0 && endAt(code, at) !== null) {
+      return endAt(code, at);
     }
   }
   return ';';

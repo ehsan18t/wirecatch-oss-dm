@@ -30,6 +30,7 @@ test('a result dropped inside a line is reported', () => {
 test('a pattern or binding named `_` is not', () => {
   assert.deepEqual(lines('let _ = keep;\nlet (a, _) = pair;\n(_, b) = pair;'), []);
   assert.deepEqual(lines('select! { biased; _ = stop.cancelled() => {}, _ = tick => {} }'), []);
+  assert.deepEqual(lines('select! {\n    _ = fut, if go => {}\n}'), []);
 });
 
 test('a select arm, a comparison and text are not', () => {
