@@ -162,6 +162,16 @@ impl Laid {
             .rposition(|line| matches!(line, Line::Heading(..) | Line::Day(_)))
     }
 
+    /// The first heading after `line`.
+    pub fn heading_after(&self, line: usize) -> Option<usize> {
+        let from = line + 1;
+        self.lines
+            .get(from..)?
+            .iter()
+            .position(|line| matches!(line, Line::Heading(..) | Line::Day(_)))
+            .map(|at| from + at)
+    }
+
     /// The heading to pin over the list whose top is `top`: the one its top line sits under, once
     /// that heading's text, `text_from` down its own line, has begun to scroll away, so the pinned
     /// copy always covers it.
@@ -409,6 +419,17 @@ mod tests {
         assert_eq!(shown.heading_over(5), None);
         let page = laid(asked(View::Group(Group::Paused), "", &[]), &downloads);
         assert_eq!(page.heading_over(1), None);
+    }
+
+    #[test]
+    fn the_next_heading_is_found_after_a_line() {
+        let downloads = [
+            row(1, 1, DownloadStatus::Downloading),
+            row(2, 1, DownloadStatus::Paused),
+        ];
+        let shown = laid(asked(View::All, "", &[]), &downloads);
+        assert_eq!(shown.heading_after(0), Some(2));
+        assert_eq!(shown.heading_after(2), None);
     }
 
     #[test]

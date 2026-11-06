@@ -1695,5 +1695,5 @@ Decided with the maintainer on 2026-11-07. Once the sidebar had been folded and 
 
 Decided with the maintainer on 2026-11-06. In a long list nothing said which day or state the rows in view belonged to, and Pause all and Resume all read as plain text.
 
-1. The heading of the group or day the top of the list is in stays pinned over the list while its rows scroll under it, with its circle, count, size and action.
+1. The heading of the group or day the top of the list is in stays pinned over the list while its rows scroll under it, with its circle, count, size and action, until the next heading pushes it up and away. Clicks on it reach only the heading.
 2. Pause all and Resume all are outlined buttons with their icons. A day heading offers Remove from list, which asks first as Remove does.

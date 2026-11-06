@@ -13,7 +13,7 @@ use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, Context, ElementId, Hsla, InteractiveElement as _, IntoElement, ListAlignment,
-    ListOffset, ListState, MouseButton, ParentElement as _, SharedString,
+    ListOffset, ListState, MouseButton, ParentElement as _, Pixels, SharedString,
     StatefulInteractiveElement as _, Styled as _, Window, canvas, div, list, px, relative,
 };
 use wirecatch_protocol::DownloadId;
@@ -206,9 +206,13 @@ impl MainWindow {
         }
         self.sync_scroll(&laid, cx);
         let top = self.scroll.state.logical_scroll_top();
-        let pinned = laid
-            .pinned(top, px(HEADING_SPACE))
-            .map(|line| self.line(&laid, line, top, cx));
+        let pinned = laid.pinned(top, px(HEADING_SPACE)).map(|line| {
+            let next = laid.heading_after(line).and_then(|next| {
+                let drawn = self.scroll.state.bounds_for_item(next)?;
+                Some(drawn.origin.y - self.scroll.state.viewport_bounds().origin.y)
+            });
+            (self.line(&laid, line, top, cx), pushed_up(next))
+        });
         let drawn = laid.clone();
         let lines = list(
             self.scroll.state.clone(),
@@ -216,7 +220,7 @@ impl MainWindow {
         )
         .flex_1()
         .pb_4();
-        let Some(pinned) = pinned else {
+        let Some((pinned, lift)) = pinned else {
             return lines.into_any_element();
         };
         v_flex()
@@ -227,8 +231,10 @@ impl MainWindow {
             .child(lines)
             .child(
                 div()
+                    .id("pinned-heading")
+                    .block_mouse_except_scroll()
                     .absolute()
-                    .top(px(-HEADING_SPACE))
+                    .top(px(-HEADING_SPACE) - lift)
                     .left_0()
                     .right_0()
                     .bg(cx.theme().background)
@@ -634,6 +640,14 @@ fn tile(row: &DownloadSummary, compact: bool, tone: Hsla) -> AnyElement {
         .text_color(tone)
         .child(Icon::new(icon::category(row.category)).with_size(tokens::ICON))
         .into_any_element()
+}
+
+/// How far the pinned heading moves up so the next heading, whose line starts `next` below the
+/// list's top, pushes it away instead of sliding under it.
+fn pushed_up(next: Option<Pixels>) -> Pixels {
+    next.map_or(px(0.), |next| {
+        (px(HEADING_HEIGHT) - (next + px(HEADING_SPACE))).max(px(0.))
+    })
 }
 
 /// A heading's line, in the rows' grid, with room above it to set it apart from the rows before.
@@ -1419,6 +1433,18 @@ mod tests {
                 ..reading
             }
         );
+    }
+
+    #[test]
+    fn the_next_heading_pushes_the_pinned_one_up() {
+        assert_eq!(pushed_up(None), px(0.));
+        assert_eq!(pushed_up(Some(px(200.))), px(0.));
+        assert_eq!(pushed_up(Some(px(HEADING_HEIGHT - HEADING_SPACE))), px(0.));
+        assert_eq!(
+            pushed_up(Some(px(10.))),
+            px(HEADING_HEIGHT - HEADING_SPACE - 10.)
+        );
+        assert_eq!(pushed_up(Some(px(-HEADING_SPACE))), px(HEADING_HEIGHT));
     }
 
     #[test]
