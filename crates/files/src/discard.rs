@@ -111,7 +111,7 @@ mod home_trash {
     }
 
     /// Where `trash` keeps the home trash.
-    fn location() -> Option<PathBuf> {
+    pub(super) fn location() -> Option<PathBuf> {
         let set = |name: &str| std::env::var_os(name).filter(|value| !value.is_empty());
         set("XDG_DATA_HOME")
             .map(|data| PathBuf::from(data).join("Trash"))
@@ -237,7 +237,7 @@ mod tests {
     #[test]
     fn a_file_moved_to_the_trash_can_be_restored_from_there() {
         test_trash::REAL.store(true, std::sync::atomic::Ordering::Release);
-        let folder = tempfile::tempdir().unwrap();
+        let folder = beside_the_home_trash();
         let file = folder.path().join("finished.bin");
         std::fs::write(&file, b"kept").unwrap();
         let taken_name = folder.path().join("taken-by-a-folder");
@@ -264,5 +264,45 @@ mod tests {
             .collect();
         assert_eq!(ours.len(), 1, "the file is not in the trash");
         trash::os_limited::purge_all(ours).unwrap();
+    }
+
+    /// A folder the trash takes from: on Linux on the home trash's drive, since
+    /// `/tmp` is a mount of its own on many systems.
+    fn beside_the_home_trash() -> tempfile::TempDir {
+        #[cfg(target_os = "linux")]
+        {
+            let trash = home_trash::location().unwrap();
+            let data = trash.parent().unwrap();
+            std::fs::create_dir_all(data).unwrap();
+            tempfile::tempdir_in(data).unwrap()
+        }
+        #[cfg(not(target_os = "linux"))]
+        tempfile::tempdir().unwrap()
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_file_on_another_drive_than_the_home_trash_is_kept_and_counted() {
+        test_trash::REAL.store(true, std::sync::atomic::Ordering::Release);
+        let mounts = mount_points(&std::fs::read_to_string("/proc/mounts").unwrap());
+        let trash = home_trash::location().unwrap();
+        let trash_mount = trash
+            .ancestors()
+            .find_map(|folder| std::fs::canonicalize(folder).ok())
+            .and_then(|found| mount_of(&found, &mounts).map(Path::to_path_buf));
+        let other = [std::env::temp_dir(), PathBuf::from("/dev/shm")]
+            .into_iter()
+            .filter_map(|folder| std::fs::canonicalize(folder).ok())
+            .find(|folder| mount_of(folder, &mounts).map(Path::to_path_buf) != trash_mount)
+            .and_then(|folder| tempfile::tempdir_in(folder).ok());
+        let Some(folder) = other else {
+            eprintln!("skipped: no writable folder on another mount than the home trash");
+            return;
+        };
+        let file = folder.path().join("finished.bin");
+        std::fs::write(&file, b"kept").unwrap();
+
+        assert_eq!(to_trash(std::slice::from_ref(&file)), 1);
+        assert!(file.exists(), "a file on another drive left its folder");
     }
 }
