@@ -107,13 +107,6 @@ impl RenderOnce for SwitchRow {
     }
 }
 
-pub fn group(title: &'static str, rows: Vec<AnyElement>, cx: &App) -> gpui_kit::Div {
-    v_flex()
-        .gap_2()
-        .child(div().text_role(Role::Label, cx).child(title))
-        .child(panel(cx).children(rows))
-}
-
 /// A bordered box the rows of one subject sit in.
 pub fn panel(cx: &App) -> gpui_kit::Div {
     let theme = cx.theme();

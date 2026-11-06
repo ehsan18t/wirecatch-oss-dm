@@ -117,7 +117,7 @@ impl MainWindow {
                         .bg(theme.primary),
                 )
             })
-            .on_click(cx.listener(move |this, _, _, cx| this.open_screen(screen, cx)))
+            .on_click(cx.listener(move |this, _, window, cx| this.open_screen(screen, window, cx)))
             .into_any_element()
     }
 
@@ -185,7 +185,8 @@ impl MainWindow {
             .into_iter()
             .map(|queue| {
                 let theme = cx.theme();
-                let current = self.page.screen == Screen::Downloads && self.view == queue.view;
+                let current = matches!(self.page.screen, Screen::Downloads | Screen::QueuePage)
+                    && self.view == queue.view;
                 let behind = if current {
                     theme.sidebar_accent
                 } else {
@@ -221,11 +222,7 @@ impl MainWindow {
                 item.bg(theme.sidebar_accent).text_color(theme.primary)
             })
             .child(content)
-            .on_click(cx.listener(move |this, _, window, cx| {
-                this.page.screen = Screen::Downloads;
-                this.page.drawer = false;
-                this.show(view, window, cx);
-            }))
+            .on_click(cx.listener(move |this, _, window, cx| this.show(view, window, cx)))
             .into_any_element()
     }
 }

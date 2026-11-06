@@ -187,7 +187,6 @@ impl MainWindow {
     fn views(&self, cx: &App) -> Vec<Entry> {
         let show = |title: String, view: View| {
             entry(title, "view show list", move |main, window, cx| {
-                main.page.screen = Screen::Downloads;
                 main.show(view, window, cx);
             })
         };
@@ -261,8 +260,7 @@ fn general() -> Vec<Entry> {
             },
         ),
         entry("Search the list", "find filter", |main, w, cx| {
-            main.page.screen = Screen::Downloads;
-            main.focus_search(w, cx);
+            main.search_list(w, cx);
         }),
         entry(text::PAUSE_ALL, "stop every download", |_, w, cx| {
             act(w.window_handle(), cx, api::pause_all);
@@ -274,13 +272,13 @@ fn general() -> Vec<Entry> {
                 act(w.window_handle(), cx, api::resume_all);
             },
         ),
-        entry("Keyboard shortcuts", "keys help", |main, _, cx| {
-            main.open_screen(Screen::Shortcuts, cx);
+        entry("Keyboard shortcuts", "keys help", |main, w, cx| {
+            main.open_screen(Screen::Shortcuts, w, cx);
         }),
         entry(
             "About",
             "version licence license website report problem help support",
-            |main, _, cx| main.open_screen(Screen::About, cx),
+            |main, w, cx| main.open_screen(Screen::About, w, cx),
         ),
     ]
 }
@@ -293,7 +291,7 @@ fn settings_pages() -> Vec<Entry> {
             entry(
                 format!("Open {} settings", page.title()),
                 "settings preferences options",
-                move |main, _, cx| main.open_settings(page, cx),
+                move |main, w, cx| main.open_settings(page, w, cx),
             )
         })
         .collect()

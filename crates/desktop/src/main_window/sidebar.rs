@@ -35,7 +35,9 @@ pub(super) fn foot_page(screen: Screen) -> (&'static str, &'static str, Lucide) 
     match screen {
         Screen::Shortcuts => ("open-shortcuts", "Keyboard shortcuts", Lucide::Keyboard),
         Screen::About => ("open-about", "About", Lucide::Info),
-        Screen::Downloads | Screen::Settings => ("open-settings", "Settings", Lucide::Settings),
+        Screen::Downloads | Screen::QueuePage | Screen::Settings => {
+            ("open-settings", "Settings", Lucide::Settings)
+        }
     }
 }
 
@@ -128,7 +130,8 @@ impl MainWindow {
         let on_settings = self.page.screen == Screen::Settings;
         let shortcuts = self.foot_icon(Screen::Shortcuts, cx);
         let about = self.foot_icon(Screen::About, cx);
-        let open_settings = cx.listener(|this, _, _, cx| this.open_screen(Screen::Settings, cx));
+        let open_settings =
+            cx.listener(|this, _, window, cx| this.open_screen(Screen::Settings, window, cx));
         let theme = cx.theme();
         let settings = h_flex()
             .id("open-settings")
@@ -204,7 +207,7 @@ impl MainWindow {
                         .bg(theme.primary),
                 )
             })
-            .on_click(cx.listener(move |this, _, _, cx| this.open_screen(screen, cx)))
+            .on_click(cx.listener(move |this, _, window, cx| this.open_screen(screen, window, cx)))
     }
 
     /// The queues, in one panel: the first few, the one on screen, and the rest behind "more

@@ -201,7 +201,7 @@ impl Render for LinkTrial {
                     )
                     .child(
                         Button::new("try-link")
-                            .label("Try")
+                            .label("Test")
                             .loading(self.trying)
                             .disabled(self.link.read(cx).value().trim().is_empty())
                             .on_click(cx.listener(|trial, _, window, cx| {

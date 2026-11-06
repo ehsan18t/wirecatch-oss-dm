@@ -11,6 +11,7 @@ mod empty;
 pub mod fixes;
 mod keymap;
 mod laid;
+mod leaving;
 mod link_trial;
 mod list;
 mod notices_bar;
@@ -18,8 +19,9 @@ mod order;
 mod palette;
 mod proxy_dialog;
 mod queue_delete;
-mod queue_dialog;
+mod queue_editor;
 mod queue_header;
+mod queue_new;
 mod queue_proxy;
 mod queue_rules;
 mod rail;
@@ -174,6 +176,8 @@ impl Group {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Screen {
     Downloads,
+    /// A queue's own page, where its settings are changed (D255).
+    QueuePage,
     Settings,
     Shortcuts,
     About,
@@ -344,6 +348,8 @@ pub struct MainWindow {
     hovered: Option<DownloadId>,
     scroll: list::Scroll,
     settings_on: settings::OpenOn,
+    /// The queue page's form, while that page is open.
+    queue_page: Option<Entity<queue_editor::QueueForm>>,
     focus: FocusHandle,
     _subscriptions: Vec<Subscription>,
 }
@@ -377,28 +383,40 @@ impl MainWindow {
         match asked {
             Asked::Window => {}
             Asked::Links(links) => self.new_download(links, window, cx),
-            Asked::BrowserSettings => self.open_settings(settings::Page::Browser, cx),
-            Asked::Reveal(reveal) => self.reveal(reveal, window, cx),
+            Asked::BrowserSettings => self.open_settings(settings::Page::Browser, window, cx),
+            Asked::Reveal(reveal) => {
+                let reveal = reveal.clone();
+                self.leave_queue_page_then(window, cx, move |main, window, cx| {
+                    main.reveal(&reveal, window, cx);
+                });
+            }
         }
     }
 
-    fn open_settings(&mut self, page: settings::Page, cx: &mut Context<'_, Self>) {
-        self.settings_on = settings::OpenOn {
-            opening: self.settings_on.opening + 1,
-            page: Some(page),
-        };
-        self.page.open(Screen::Settings);
-        cx.notify();
+    fn open_settings(
+        &mut self,
+        page: settings::Page,
+        window: &mut Window,
+        cx: &mut Context<'_, Self>,
+    ) {
+        self.leave_queue_page_then(window, cx, move |main, _, cx| {
+            main.settings_on = settings::OpenOn {
+                opening: main.settings_on.opening + 1,
+                page: Some(page),
+            };
+            main.page.open(Screen::Settings);
+            cx.notify();
+        });
     }
 
     /// Shows `reveal`'s downloads selected in their queue, the first in view and its details open
     /// when asked, or in every download when the queue is gone (D98); or the settings page it names.
     fn reveal(&mut self, reveal: &Reveal, window: &mut Window, cx: &mut Context<'_, Self>) {
         if reveal.browser_settings {
-            return self.open_settings(settings::Page::Browser, cx);
+            return self.open_settings(settings::Page::Browser, window, cx);
         }
         if reveal.proxy_settings {
-            return self.open_settings(settings::Page::Network, cx);
+            return self.open_settings(settings::Page::Network, window, cx);
         }
         self.page.screen = Screen::Downloads;
         let library = self.library.read(cx);
@@ -414,7 +432,7 @@ impl MainWindow {
             .collect();
         self.search
             .update(cx, |search, cx| search.set_value("", window, cx));
-        self.show(view, window, cx);
+        self.show_now(view, window, cx);
         for group in groups {
             self.folded.remove(&group);
         }
@@ -487,6 +505,7 @@ impl MainWindow {
             hovered: None,
             scroll: list::Scroll::default(),
             settings_on: settings::OpenOn::default(),
+            queue_page: None,
             all_queues: false,
             queue_speeds: HashMap::new(),
             focus,
@@ -518,35 +537,55 @@ impl MainWindow {
     }
 
     fn show(&mut self, view: View, window: &mut Window, cx: &mut Context<'_, Self>) {
+        self.leave_queue_page_then(window, cx, move |main, window, cx| {
+            main.show_now(view, window, cx);
+        });
+    }
+
+    fn show_now(&mut self, view: View, window: &mut Window, cx: &mut Context<'_, Self>) {
         self.view = view;
         self.page.screen = Screen::Downloads;
         self.page.drawer = false;
+        self.queue_page = None;
         self.clear_selection();
-        let placeholder = match view {
-            View::All => ALL_PLACEHOLDER.to_owned(),
-            View::Group(_) | View::Queue(_) => {
-                format!("Search in {} or paste links", self.title(cx))
-            }
-        };
+        let title = self.title(cx);
+        self.name_search(view, &title, window, cx);
+        cx.notify();
+    }
+
+    fn name_search(
+        &mut self,
+        view: View,
+        title: &str,
+        window: &mut Window,
+        cx: &mut Context<'_, Self>,
+    ) {
+        let placeholder = search_placeholder(view, title);
         self.search.update(cx, |search, cx| {
             search.set_placeholder(placeholder, window, cx);
         });
-        cx.notify();
     }
 
-    pub(super) fn open_screen(&mut self, screen: Screen, cx: &mut Context<'_, Self>) {
-        self.page.open(screen);
-        cx.notify();
+    pub(super) fn open_screen(
+        &mut self,
+        screen: Screen,
+        window: &mut Window,
+        cx: &mut Context<'_, Self>,
+    ) {
+        self.leave_queue_page_then(window, cx, move |main, _, cx| {
+            main.page.open(screen);
+            cx.notify();
+        });
     }
 
     /// Ctrl+,: Settings, or back to the downloads from there.
-    fn toggle_settings(&mut self, cx: &mut Context<'_, Self>) {
+    fn toggle_settings(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
         let screen = if self.page.screen == Screen::Settings {
             Screen::Downloads
         } else {
             Screen::Settings
         };
-        self.open_screen(screen, cx);
+        self.open_screen(screen, window, cx);
     }
 
     /// The full navigation over the list, beside the rail; it closes on a choice or a click
@@ -581,6 +620,12 @@ impl MainWindow {
 
     /// F6 and Shift+F6: the keyboard moves between the search and the list.
     fn next_region(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
+        if self.page.screen == Screen::QueuePage && self.queue_page.is_some() {
+            return self.leave_queue_page_then(window, cx, |main, window, cx| {
+                main.queue_page = None;
+                main.next_region(window, cx);
+            });
+        }
         self.page.screen = Screen::Downloads;
         if self.search.read(cx).focus_handle(cx).is_focused(window) {
             self.focus.focus(window, cx);
@@ -591,6 +636,15 @@ impl MainWindow {
             self.focus_search(window, cx);
         }
         cx.notify();
+    }
+
+    /// The downloads, with the keyboard in the search.
+    fn search_list(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
+        self.leave_queue_page_then(window, cx, |this, window, cx| {
+            this.queue_page = None;
+            this.page.screen = Screen::Downloads;
+            this.focus_search(window, cx);
+        });
     }
 
     /// The selection's bar gives the row back, since the field sits under it.
@@ -604,14 +658,16 @@ impl MainWindow {
     }
 
     /// Escape outside a field goes back to the downloads, else clears the selection; a dialog
-    /// closes on its own Escape first.
-    fn dismiss(&mut self, cx: &mut Context<'_, Self>) {
+    /// closes on its own Escape first. On the queue page it is Cancel.
+    fn dismiss(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
         if self.page.screen == Screen::Downloads {
             self.clear_selection();
+            cx.notify();
+        } else if self.page.screen == Screen::QueuePage {
+            self.close_queue_page(window, cx);
         } else {
-            self.page.screen = Screen::Downloads;
+            self.open_screen(Screen::Downloads, window, cx);
         }
-        cx.notify();
     }
 
     /// Opens the Add dialog, on the queue shown when a queue is; links while it is open join it.
@@ -635,20 +691,64 @@ impl MainWindow {
         ));
     }
 
-    /// Opens the queue editor on `queue`, or on a new queue.
+    /// Opens the page of `queue`, shown in the navigation, or New queue when `None`.
     fn edit_queue(
         &mut self,
         queue: Option<QueueId>,
         window: &mut Window,
         cx: &mut Context<'_, Self>,
     ) {
-        queue_dialog::open(
-            self.library.clone(),
-            queue,
-            cx.entity().downgrade(),
-            window,
-            cx,
-        );
+        match queue {
+            Some(id) if self.library.read(cx).queue(id).is_some() => {
+                self.leave_queue_page_then(window, cx, move |main, window, cx| {
+                    main.show_now(View::Queue(id), window, cx);
+                    main.open_queue_page(queue_editor::Opening::Queue(id), window, cx);
+                });
+            }
+            Some(_) => {}
+            None => self.leave_queue_page_then(window, cx, |main, window, cx| {
+                if main.page.screen == Screen::QueuePage {
+                    main.show_now(main.view, window, cx);
+                }
+                queue_new::open(cx.entity().downgrade(), window, cx);
+            }),
+        }
+    }
+
+    /// Shows the queue page; Cancel leads back to the view shown now.
+    fn open_queue_page(
+        &mut self,
+        opening: queue_editor::Opening,
+        window: &mut Window,
+        cx: &mut Context<'_, Self>,
+    ) {
+        let new = matches!(opening, queue_editor::Opening::New(_));
+        let (library, main) = (self.library.clone(), cx.entity().downgrade());
+        let form = cx.new(|cx| queue_editor::QueueForm::new(library, opening, main, window, cx));
+        if new {
+            queue_editor::QueueForm::focus_name(&form, window, cx);
+        }
+        self.queue_page = Some(form);
+        self.page.open(Screen::QueuePage);
+        cx.notify();
+    }
+
+    /// Back to the downloads from the queue page.
+    fn close_queue_page(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
+        self.show(self.view, window, cx);
+    }
+
+    /// Queue `id` was saved as `name`: its downloads show.
+    fn leave_queue_page(
+        &mut self,
+        id: QueueId,
+        name: &str,
+        window: &mut Window,
+        cx: &mut Context<'_, Self>,
+    ) {
+        self.show_now(View::Queue(id), window, cx);
+        // The library may not hold the new queue or its new name yet.
+        self.name_search(View::Queue(id), name, window, cx);
     }
 
     /// Asks before deleting queue `id`, its name typed to confirm.
@@ -726,6 +826,14 @@ impl MainWindow {
     }
 }
 
+/// The search's placeholder in `view`, whose title is `title`.
+fn search_placeholder(view: View, title: &str) -> String {
+    match view {
+        View::All => ALL_PLACEHOLDER.to_owned(),
+        View::Group(_) | View::Queue(_) => format!("Search in {title} or paste links"),
+    }
+}
+
 /// The element holding focus left the window, which leaves the window's keys out of reach (D182). An open dialog keeps the keyboard from the list behind it, and takes focus itself: GPUI reports a loss only from a frame with focus, so focus lost now would go unreported when the dialog closes.
 fn list_takes_lost_focus(list: &FocusHandle, window: &mut Window, cx: &mut App) {
     if !window.has_active_dialog(cx) {
@@ -755,20 +863,21 @@ impl Render for MainWindow {
                 this.new_download(&[], window, cx);
             }))
             .on_action(cx.listener(|this, _: &PasteLinks, window, cx| this.paste_links(window, cx)))
-            .on_action(cx.listener(|this, _: &Dismiss, _, cx| this.dismiss(cx)))
-            .on_action(cx.listener(|this, _: &FocusSearch, window, cx| {
-                this.page.screen = Screen::Downloads;
-                this.focus_search(window, cx);
+            .on_action(cx.listener(|this, _: &Dismiss, window, cx| this.dismiss(window, cx)))
+            .on_action(
+                cx.listener(|this, _: &FocusSearch, window, cx| this.search_list(window, cx)),
+            )
+            .on_action(cx.listener(|this, _: &ToggleSettings, window, cx| {
+                this.toggle_settings(window, cx);
             }))
-            .on_action(cx.listener(|this, _: &ToggleSettings, _, cx| this.toggle_settings(cx)))
             .on_action(
                 cx.listener(|this, _: &OpenPalette, window, cx| this.open_palette(window, cx)),
             )
             .on_drop(cx.listener(|this, paths: &ExternalPaths, window, cx| {
                 this.drop_paths(paths, window, cx);
             }))
-            .on_action(cx.listener(|this, _: &ShowShortcuts, _, cx| {
-                this.open_screen(Screen::Shortcuts, cx);
+            .on_action(cx.listener(|this, _: &ShowShortcuts, window, cx| {
+                this.open_screen(Screen::Shortcuts, window, cx);
             }))
             .on_action(cx.listener(|this, _: &NextRegion, window, cx| this.next_region(window, cx)))
             .on_action(
@@ -796,6 +905,11 @@ impl Render for MainWindow {
                         .children(self.queue_header(cx))
                         .child(self.list(cx)),
                 ),
+                Screen::QueuePage => layout::body(
+                    navigation,
+                    div(),
+                    div().flex_1().min_h_0().children(self.queue_page.clone()),
+                ),
                 Screen::Settings => self.settings(cx),
                 Screen::Shortcuts => {
                     layout::body(navigation, div(), settings::shortcuts_screen(cx))
@@ -817,6 +931,15 @@ impl Render for MainWindow {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_search_names_the_queue_it_was_given() {
+        assert_eq!(
+            search_placeholder(View::Queue(QueueId(7)), "Videos"),
+            "Search in Videos or paste links"
+        );
+        assert_eq!(search_placeholder(View::All, "Videos"), ALL_PLACEHOLDER);
+    }
 
     #[test]
     fn opening_a_page_closes_the_drawer() {
