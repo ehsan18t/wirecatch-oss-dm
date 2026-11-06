@@ -76,7 +76,11 @@ impl Backend {
             if let Some(serving) = serving {
                 serving.abort();
                 // Ends once the task, and the listener it holds, is dropped.
-                _ = serving.await;
+                if let Err(ended) = serving.await
+                    && ended.is_panic()
+                {
+                    tracing::warn!("serving the browser panicked: {ended}");
+                }
             }
         }
     }
@@ -223,7 +227,11 @@ async fn serve(core: Arc<Core>, listener: Option<Listener>, launch: Launch) {
         Err(unopened) if unopened.another_copy => {
             tracing::error!("{}; this copy exits", unopened.reason);
             drop(listener);
-            _ = tokio::task::spawn_blocking(move || launch.say_already_running()).await;
+            if let Err(failed) =
+                tokio::task::spawn_blocking(move || launch.say_already_running()).await
+            {
+                tracing::warn!("could not say another copy is running: {failed}");
+            }
             std::process::exit(0);
         }
         Err(unopened) => {
