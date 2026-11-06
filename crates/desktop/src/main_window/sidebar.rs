@@ -358,7 +358,7 @@ impl MainWindow {
             panel
         };
         let group = SharedString::new(format!("queue-{}", id.0));
-        let tile = queue_tile(queue, &facts, behind, cx)
+        let tile = queue_tile(queue, facts.running > 0, behind, cx)
             .rules(rules)
             .when(!current, |tile| tile.hover_behind(group.clone(), hovered));
         h_flex()
@@ -478,11 +478,11 @@ fn drops(
 }
 
 /// A queue's tile: paused, downloading, waiting for its hours, or holding.
-fn queue_tile(queue: &Queue, facts: &QueueFacts, behind: Hsla, cx: &App) -> QueueTile {
+pub(super) fn queue_tile(queue: &Queue, running: bool, behind: Hsla, cx: &App) -> QueueTile {
     let theme = cx.theme();
     if queue.status.paused {
         QueueTile::new(IconName::Pause, behind)
-    } else if facts.running > 0 {
+    } else if running {
         QueueTile::new(IconName::Play, behind).tone(theme.primary)
     } else if outside_schedule(queue).is_some() {
         QueueTile::new(Icon::new(Lucide::Moon), behind).tone(theme.warning)
