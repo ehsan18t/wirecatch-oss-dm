@@ -15,7 +15,7 @@ use wirecatch_product::{
     ISSUES_URL, PRODUCT_LICENSE, PRODUCT_VERSION, PUBLISHER_NAME, REPOSITORY_URL, SUPPORT_EMAIL,
     WEBSITE_URL,
 };
-use wirecatch_protocol::app::AddonId;
+use wirecatch_protocol::app::{AddonId, AddonInfo, AddonState};
 use wirecatch_shell::host;
 
 use crate::library::Library;
@@ -93,7 +93,18 @@ fn product(library: &Entity<Library>) -> SettingGroup {
         .item(
             SettingItem::new(
                 "Media add-on",
-                SettingField::render(move |_, _, cx| value(addon_versions(&library, cx), cx)),
+                SettingField::render(move |_, _, cx| {
+                    let addon = library
+                        .read(cx)
+                        .addons
+                        .iter()
+                        .find(|addon| addon.id == AddonId::Media)
+                        .cloned();
+                    h_flex()
+                        .gap_2()
+                        .child(value(addon_versions(addon.as_ref()), cx))
+                        .children(addon.as_ref().and_then(super::addon::main_button))
+                }),
             )
             .description("The programs it installs, with their versions.")
             .keywords(["yt-dlp", "ffmpeg", "deno", "addon", "version"]),
@@ -223,18 +234,54 @@ fn system() -> String {
     format!("{os} {arch}")
 }
 
-fn addon_versions(library: &Entity<Library>, cx: &App) -> String {
-    let addon = library
-        .read(cx)
-        .addons
-        .iter()
-        .find(|addon| addon.id == AddonId::Media)
-        .cloned();
+/// The add-on's versions, or how far its install is.
+fn addon_versions(addon: Option<&AddonInfo>) -> String {
     match addon {
+        Some(addon) if matches!(addon.state, AddonState::Installing { .. }) => {
+            super::addon::status(addon)
+        }
         Some(addon) if addon.usable => addon
             .installed_version
+            .clone()
             .unwrap_or_else(|| "Installed".to_owned()),
         Some(_) => "Not installed".to_owned(),
         None => "Checking".to_owned(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_media_add_on_says_how_far_an_install_is() {
+        let addon = |state, usable| AddonInfo {
+            id: AddonId::Media,
+            name: "Media add-on".to_owned(),
+            description: String::new(),
+            state,
+            usable,
+            installed_version: Some("yt-dlp 2026.10.1".to_owned()),
+            latest_version: None,
+            size: None,
+            note: None,
+        };
+        let installing = AddonState::Installing {
+            done: 0,
+            total: None,
+        };
+        assert_eq!(
+            addon_versions(Some(&addon(AddonState::Installed, true))),
+            "yt-dlp 2026.10.1"
+        );
+        assert_eq!(
+            addon_versions(Some(&addon(AddonState::NotInstalled, false))),
+            "Not installed"
+        );
+        assert_eq!(
+            addon_versions(Some(&addon(installing, false))),
+            "Installing"
+        );
+        assert_eq!(addon_versions(None), "Checking");
     }
 }
