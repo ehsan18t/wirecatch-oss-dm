@@ -77,8 +77,8 @@ struct InView {
 }
 
 /// The id of a part of row `id` holding tooltips, from where the row sits in view. GPUI hides a
-/// tooltip only on a wheel scroll or a pointer move, so a row that moves under a still pointer
-/// takes new ids, which drops a tooltip it left over another row; a row that stays keeps them.
+/// tooltip on a wheel scroll, a pointer move or keyboard input, not when lines move otherwise, so
+/// a row that moved takes new ids, which drops its tooltip; a row that stays keeps them.
 fn tip_id(part: &'static str, id: DownloadId, at: InView) -> ElementId {
     let (below, lines) = (
         at.index >= at.top.item_ix,
