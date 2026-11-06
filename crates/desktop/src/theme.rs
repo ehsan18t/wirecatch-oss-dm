@@ -140,11 +140,11 @@ pub fn apply(setting: ThemeSetting, accent: Accent, cx: &mut App) {
         theme.drag_border = tone;
         theme.drop_target = tone.opacity(0.16);
         theme.selection = tone.opacity(0.32);
-        theme.list_active = tone.opacity(0.14);
+        theme.list_active = tone.opacity(SELECTED_ROW_TINT);
         theme.list_active_border = tone.opacity(0.6);
-        theme.table_active = tone.opacity(0.14);
+        theme.table_active = tone.opacity(SELECTED_ROW_TINT);
         theme.table_active_border = tone.opacity(0.6);
-        theme.sidebar_accent = tone.opacity(0.12);
+        theme.sidebar_accent = tone.opacity(SIDEBAR_CURRENT_TINT);
         theme.sidebar_accent_foreground = tone;
         theme.sidebar_primary = tone;
         theme.sidebar_primary_foreground = on_tone;
@@ -153,6 +153,10 @@ pub fn apply(setting: ThemeSetting, accent: Accent, cx: &mut App) {
 
 const MIN_CONTRAST: f32 = 4.5;
 const LIGHTNESS_STEP: f32 = 0.005;
+/// How strongly the accent tints a selected row.
+const SELECTED_ROW_TINT: f32 = 0.14;
+/// How strongly the accent tints the current item in the sidebar.
+const SIDEBAR_CURRENT_TINT: f32 = 0.12;
 
 /// The accent in this scheme and the text that goes on it, each pair at 4.5:1 contrast or more.
 /// The system accent takes the hue and saturation of the colour chosen in Windows, at Wirecatch's
@@ -237,6 +241,10 @@ fn fixed_colors(accent: Accent, dark: bool) -> (Hsla, Hsla) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gpui_kit::rgba;
+    use wirecatch_protocol::app::ACCENTS;
+
+    use crate::ui::queue_tile;
 
     #[test]
     fn every_system_colour_keeps_its_text_readable_in_both_schemes() {
@@ -256,6 +264,78 @@ mod tests {
                     contrast(shade, on_tone)
                 );
                 assert!((shade.h - system.h).abs() < f32::EPSILON);
+            }
+        }
+    }
+
+    /// Every accent a scheme can show: the fixed ones and the system's in each hue.
+    fn every_accent(dark: bool) -> Vec<Hsla> {
+        let (tone, on_tone) = fixed_colors(Accent::System, dark);
+        let system = (0..=72_u8).map(|hue| {
+            let system = Hsla {
+                h: f32::from(hue) / 72.,
+                s: 1.,
+                l: 0.5,
+                a: 1.,
+            };
+            system_tone(system, tone, on_tone)
+        });
+        ACCENTS
+            .iter()
+            .map(|accent| fixed_colors(*accent, dark).0)
+            .chain(system)
+            .collect()
+    }
+
+    #[test]
+    fn muted_text_reads_on_rows_and_queue_tiles_in_both_schemes() {
+        let file: serde_json::Value = serde_json::from_str(THEMES).unwrap();
+        for scheme in file["themes"].as_array().unwrap() {
+            let color = |name: &str| -> Hsla {
+                let hex = &scheme["colors"][name].as_str().unwrap()[1..];
+                let value = u32::from_str_radix(hex, 16).unwrap();
+                if hex.len() == 8 {
+                    rgba(value)
+                } else {
+                    rgb(value)
+                }
+                .into()
+            };
+            let (list, sidebar) = (color("list.background"), color("sidebar.background"));
+            let muted = color("muted.foreground");
+            let accents = every_accent(scheme["mode"] == "dark");
+            let selected = accents
+                .iter()
+                .map(|tone| list.blend(tone.opacity(SELECTED_ROW_TINT)));
+            let tiles: Vec<Hsla> = accents
+                .iter()
+                .map(|tone| queue_tile::tinted(sidebar, *tone))
+                .collect();
+            // Over the current queue's highlight or a hovered item, the tile looks the same.
+            let hovered = sidebar.blend(color("list.hover.background"));
+            for (tone, tile) in accents.iter().zip(&tiles) {
+                let current = sidebar.blend(tone.opacity(SIDEBAR_CURRENT_TINT));
+                for behind in [current, hovered] {
+                    let shown = behind.blend(*tile);
+                    assert!(
+                        contrast(muted, shown) >= MIN_CONTRAST,
+                        "{} tile over {behind:?}: {}",
+                        scheme["name"],
+                        contrast(muted, shown)
+                    );
+                }
+            }
+            let rows = [list, list.blend(color("list.hover.background"))]
+                .into_iter()
+                .chain(selected)
+                .chain(tiles.iter().copied());
+            for row in rows {
+                let said = contrast(muted, row);
+                assert!(
+                    said >= MIN_CONTRAST,
+                    "{} on {row:?}: {said}",
+                    scheme["name"]
+                );
             }
         }
     }

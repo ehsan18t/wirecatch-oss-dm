@@ -12,6 +12,14 @@ use super::{Role, Typed as _, tokens};
 
 const SIZE: f32 = 30.;
 const BADGE: f32 = 16.;
+/// How strongly a tile's tone tints it; its letters stay muted text, which reads on the tint.
+const TINT: f32 = 0.15;
+
+/// A toned tile's fill: `tone` mixed once onto `sidebar`, opaque, so a highlighted or hovered
+/// item behind it cannot darken it further.
+pub fn tinted(sidebar: Hsla, tone: Hsla) -> Hsla {
+    sidebar.blend(tone.opacity(TINT))
+}
 
 #[derive(IntoElement)]
 pub struct QueueTile {
@@ -118,7 +126,7 @@ impl RenderOnce for QueueTile {
             .items_center()
             .justify_center()
             .rounded(theme.radius)
-            .bg(tone.map_or(theme.secondary, |tone| tone.opacity(0.15)))
+            .bg(tone.map_or(theme.secondary, |tone| tinted(theme.sidebar, tone)))
             .text_color(tone.unwrap_or(theme.muted_foreground))
             .child(match self.face {
                 Face::Icon(icon) => icon.with_size(tokens::ICON).into_any_element(),
