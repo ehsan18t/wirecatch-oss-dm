@@ -85,9 +85,12 @@ pub(super) fn typed_sites(typed: &str) -> Vec<String> {
         .collect()
 }
 
-const SITES: (Split, &str) = (Split::Words(typed_sites), "youtube.com");
-const FILE_NAMES: (Split, &str) = (Split::Lines, "*.iso");
-const FILE_TYPES: (Split, &str) = (Split::Words(text::typed_extensions), "mp4, mkv");
+const SITES: (Split, &str) = (Split::Words(typed_sites), "Add a site, such as youtube.com");
+const FILE_NAMES: (Split, &str) = (Split::Lines, "Add a name, such as *.iso");
+const FILE_TYPES: (Split, &str) = (
+    Split::Words(text::typed_extensions),
+    "Add a type, such as mp4",
+);
 
 /// The field a kind of rule types its values in; `None` for the kinds picked from a list.
 pub(super) fn values_field(
@@ -313,7 +316,7 @@ impl Render for RulesForm {
             card.children(rows)
                 .when(self.rows.len() < Kind::ALL.len(), |card| {
                     card.child(
-                        div()
+                        h_flex()
                             .px_4()
                             .py_2p5()
                             .border_t_1()
@@ -372,7 +375,6 @@ impl RulesForm {
         let shown = self.rows.clone();
         let picker = Button::new(("rule-kind", index))
             .outline()
-            .small()
             .w(px(KIND_WIDTH))
             .label(kind.label())
             .dropdown_caret(true)
