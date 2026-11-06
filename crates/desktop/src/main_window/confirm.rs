@@ -313,7 +313,7 @@ mod tests {
     }
 
     #[test]
-    fn cancel_leaves_out_finished_and_unknown_rows() {
+    fn cancel_leaves_out_finished_empty_and_unknown_rows() {
         let row = |id, status| DownloadSummary {
             status,
             ..download(id)
@@ -323,9 +323,13 @@ mod tests {
             row(1, DownloadStatus::Downloading),
             row(2, DownloadStatus::Completed),
             row(3, DownloadStatus::Cancelled),
-            row(4, DownloadStatus::Failed),
+            DownloadSummary {
+                done: 1,
+                ..row(4, DownloadStatus::Failed)
+            },
+            row(6, DownloadStatus::Failed),
         ]);
-        let ids = [1, 2, 3, 4, 5].map(DownloadId);
+        let ids = [1, 2, 3, 4, 5, 6].map(DownloadId);
         assert_eq!(cancellable(&rows, &ids), [DownloadId(1), DownloadId(4)]);
     }
 }

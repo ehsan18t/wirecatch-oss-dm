@@ -224,11 +224,13 @@ fn about_one(menu: PopupMenu, target: &Target) -> PopupMenu {
         return menu.item(copy_item(&target.rows)).separator();
     };
     let id = row.id;
-    menu.item(
-        PopupMenuItem::new("Show in folder")
-            .icon(IconName::FolderOpen)
-            .on_click(move |_, window, cx| files::show_in_folder(id, window, cx)),
-    )
+    menu.when(applies::has_file(&row), |menu| {
+        menu.item(
+            PopupMenuItem::new("Show in folder")
+                .icon(IconName::FolderOpen)
+                .on_click(move |_, window, cx| files::show_in_folder(id, window, cx)),
+        )
+    })
     .item(copy_item(&target.rows))
     .when(
         applies::offers_new_link(&row)

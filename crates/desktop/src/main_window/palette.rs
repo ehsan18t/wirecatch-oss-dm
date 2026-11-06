@@ -232,11 +232,13 @@ fn about_one(only: &wirecatch_protocol::app::DownloadSummary, named: &str) -> Ve
         ));
     }
     let id = only.id;
-    entries.push(entry(
-        format!("Show {named} in its folder"),
-        "folder explorer",
-        move |_, w, cx| files::show_in_folder(id, w, cx),
-    ));
+    if applies::has_file(only) {
+        entries.push(entry(
+            format!("Show {named} in its folder"),
+            "folder explorer",
+            move |_, w, cx| files::show_in_folder(id, w, cx),
+        ));
+    }
     entries.push(entry(
         format!("Show the details of {named}"),
         "info properties",

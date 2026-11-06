@@ -81,21 +81,35 @@ impl RowAction {
     }
 }
 
-/// Cancelling discards the partial file, so it is for a download that still has one.
+/// Cancelling discards the partial file, so it is for a download that still has one, or one that
+/// may still start; a failure that wrote nothing has nothing to cancel.
 pub fn can_cancel(row: &DownloadSummary) -> bool {
-    !matches!(
-        row.status,
-        DownloadStatus::Completed | DownloadStatus::Cancelled
-    )
+    match row.status {
+        DownloadStatus::Completed | DownloadStatus::Cancelled => false,
+        DownloadStatus::Failed => row.done > 0,
+        _ => true,
+    }
 }
 
-/// A fresh link stands in for an expired one while bytes are still to come from it.
+/// The file, whole or in part, is on disk to show in its folder.
+pub fn has_file(row: &DownloadSummary) -> bool {
+    match row.status {
+        DownloadStatus::Completed => true,
+        DownloadStatus::Cancelled => false,
+        _ => row.done > 0,
+    }
+}
+
+/// A fresh link stands in for an expired one while the download waits, is paused, or waits to try
+/// again after its server refused it; a download reading its link needs none.
 pub fn can_refresh_link(row: &DownloadSummary) -> bool {
-    can_cancel(row)
-        && !matches!(
-            row.status,
-            DownloadStatus::Failed | DownloadStatus::Processing
-        )
+    match row.status {
+        DownloadStatus::Queued | DownloadStatus::Paused => true,
+        DownloadStatus::Connecting => {
+            matches!(row.waiting, Some(WaitReason::ServerRefused { .. }))
+        }
+        _ => false,
+    }
 }
 
 /// A new link is offered for what still downloads from its link, and for a failure whose fix is one.
@@ -224,6 +238,53 @@ mod tests {
                 "{status:?}"
             );
         }
+    }
+
+    #[test]
+    fn a_failure_that_wrote_nothing_offers_no_folder_and_no_cancel() {
+        let failed = |done| DownloadSummary {
+            status: DownloadStatus::Failed,
+            done,
+            ..download(1)
+        };
+        assert!(!can_cancel(&failed(0)));
+        assert!(!has_file(&failed(0)));
+        assert!(can_cancel(&failed(1)));
+        assert!(has_file(&failed(1)));
+        let finished = DownloadSummary {
+            status: DownloadStatus::Completed,
+            done: 0,
+            ..download(2)
+        };
+        assert!(has_file(&finished));
+    }
+
+    #[test]
+    fn a_running_download_is_offered_no_new_link() {
+        let row = |status| DownloadSummary {
+            status,
+            error: None,
+            ..download(1)
+        };
+        for status in [DownloadStatus::Connecting, DownloadStatus::Downloading] {
+            assert!(!offers_new_link(&row(status)), "{status:?}");
+        }
+        for status in [DownloadStatus::Queued, DownloadStatus::Paused] {
+            assert!(offers_new_link(&row(status)), "{status:?}");
+        }
+    }
+
+    #[test]
+    fn a_download_its_server_refused_is_offered_a_new_link() {
+        let refused = DownloadSummary {
+            status: DownloadStatus::Connecting,
+            waiting: Some(WaitReason::ServerRefused {
+                retry_at: wirecatch_protocol::UnixMillis(1),
+            }),
+            ..download(1)
+        };
+        assert!(offers_new_link(&refused));
+        assert!(link_may_have_expired(&refused));
     }
 
     #[test]
