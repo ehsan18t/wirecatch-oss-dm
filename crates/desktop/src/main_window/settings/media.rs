@@ -8,8 +8,8 @@ use gpui_kit::component::setting::{SettingField, SettingGroup, SettingItem, Sett
 use gpui_kit::component::{Disableable as _, IndexPath};
 use gpui_kit::{App, Axis, Entity, IntoElement as _, SharedString, Styled as _, px};
 use wirecatch_protocol::app::{
-    AddonId, AppSettings, AppSettingsPatch, MediaDefaultsPatch, OutputDefaultsPatch, OutputFormat,
-    QualityFallback, SubtitleChoice, UnembeddedSubtitles, Update, VideoQuality,
+    AddonId, AddonInfo, AppSettings, AppSettingsPatch, MediaDefaultsPatch, OutputDefaultsPatch,
+    OutputFormat, QualityFallback, SubtitleChoice, UnembeddedSubtitles, Update, VideoQuality,
 };
 use wirecatch_protocol::extension::ExtensionSettingsPatch;
 use wirecatch_protocol::languages::LANGUAGES;
@@ -44,7 +44,7 @@ const NEEDS_ADDON: &str = "Install the media add-on above to use these settings.
 const SUBTITLE_LANGUAGES_HELP: &str = "The creator's subtitles, or auto-generated ones if allowed. Languages a video doesn't have are skipped. With none chosen, the video's own language is used.";
 
 pub(super) fn page(library: &Entity<Library>, cx: &App) -> SettingPage {
-    let ready = addon_ready(library, cx);
+    let ready = addon_ready(&library.read(cx).addons);
     let video = needing_addon("Video", video(library, cx), ready);
     SettingPage::new(super::Page::Media.title())
         .resettable(false)
@@ -64,10 +64,8 @@ pub(super) fn page(library: &Entity<Library>, cx: &App) -> SettingPage {
 
 /// Whether the media add-on works; true until the add-ons are known, so the page does not open
 /// dimmed for a moment.
-fn addon_ready(library: &Entity<Library>, cx: &App) -> bool {
-    library
-        .read(cx)
-        .addons
+fn addon_ready(addons: &[AddonInfo]) -> bool {
+    addons
         .iter()
         .find(|addon| addon.id == AddonId::Media)
         .is_none_or(|addon| addon.usable)
@@ -156,7 +154,43 @@ fn quality_field(library: &Entity<Library>, cx: &App) -> SettingField<SharedStri
     )
 }
 
-/// The video settings, asking first: whether the quality window opens decides what the rest mean.
+/// A switch about the quality window.
+struct WindowSwitch {
+    title: &'static str,
+    description: &'static str,
+    keywords: &'static [&'static str],
+    read: fn(&AppSettings) -> bool,
+    patch: fn(bool) -> AppSettingsPatch,
+}
+
+/// Asking first: whether the quality window opens decides what remembering its picks means.
+const QUALITY_WINDOW: [WindowSwitch; 2] = [
+    WindowSwitch {
+        title: ASK_EACH_VIDEO,
+        description: "Opens the quality window for each video. Off, videos start at once with the settings below.",
+        keywords: &["ask", "quality window", "prompt"],
+        read: |s| s.media.ask_each_time,
+        patch: |on| {
+            media(MediaDefaultsPatch {
+                ask_each_time: Some(on),
+                ..MediaDefaultsPatch::default()
+            })
+        },
+    },
+    WindowSwitch {
+        title: REMEMBER_CHOICES,
+        description: "Saves your quality window picks as the settings below. Off, they apply to that video only.",
+        keywords: &["remember", "save", "last", "quality window"],
+        read: |s| s.media.remember_choices,
+        patch: |on| {
+            media(MediaDefaultsPatch {
+                remember_choices: Some(on),
+                ..MediaDefaultsPatch::default()
+            })
+        },
+    },
+];
+
 fn video(library: &Entity<Library>, cx: &App) -> Vec<SettingItem> {
     let by_height = current(
         library,
@@ -164,33 +198,19 @@ fn video(library: &Entity<Library>, cx: &App) -> Vec<SettingItem> {
         |s| matches!(s.media.quality, VideoQuality::Height(_)),
         false,
     );
-    let mut items = vec![
-        SettingItem::new(
-            ASK_EACH_VIDEO,
-            switch(library, |s| s.media.ask_each_time, |on| {
-                media(MediaDefaultsPatch {
-                    ask_each_time: Some(on),
-                    ..MediaDefaultsPatch::default()
-                })
-            }),
-        )
-        .description("Opens the quality window for each video. Off, videos start at once with the settings below.")
-        .keywords(["ask", "quality window", "prompt"]),
-        SettingItem::new(
-            REMEMBER_CHOICES,
-            switch(library, |s| s.media.remember_choices, |on| {
-                media(MediaDefaultsPatch {
-                    remember_choices: Some(on),
-                    ..MediaDefaultsPatch::default()
-                })
-            }),
-        )
-        .description("Saves your quality window picks as the settings below. Off, they apply to that video only.")
-        .keywords(["remember", "save", "last", "quality window"]),
+    let mut items: Vec<SettingItem> = QUALITY_WINDOW
+        .iter()
+        .map(|it| {
+            SettingItem::new(it.title, switch(library, it.read, it.patch))
+                .description(it.description)
+                .keywords(it.keywords.iter().copied())
+        })
+        .collect();
+    items.push(
         SettingItem::new("Resolution", quality_field(library, cx))
             .description(format!("Used when {} doesn't ask, and chosen first in the quality window. Audio-only downloads use the audio settings.", host::CHANNEL.name()))
             .keywords(["quality", "1080p", "4k", "720p", "best"]),
-    ];
+    );
     if by_height {
         items.push(fallback(library));
     }
@@ -698,6 +718,8 @@ fn languages(
 
 #[cfg(test)]
 mod tests {
+    use wirecatch_protocol::app::AddonState;
+
     use super::*;
 
     #[test]
@@ -708,6 +730,30 @@ mod tests {
         assert_eq!(place, Some(3));
         assert_eq!(options[3].1.as_ref(), "1200p");
         assert_eq!(options.len(), QUALITIES.len() + 1);
+    }
+
+    #[test]
+    fn the_video_settings_wait_only_for_an_add_on_that_does_not_work() {
+        let media = |usable| AddonInfo {
+            id: AddonId::Media,
+            name: "Media add-on".to_owned(),
+            description: String::new(),
+            state: AddonState::NotInstalled,
+            usable,
+            installed_version: None,
+            latest_version: None,
+            size: None,
+            note: None,
+        };
+        assert!(addon_ready(&[]));
+        assert!(addon_ready(&[media(true)]));
+        assert!(!addon_ready(&[media(false)]));
+    }
+
+    #[test]
+    fn asking_comes_before_remembering() {
+        let titles = QUALITY_WINDOW.map(|it| it.title);
+        assert_eq!(titles, [ASK_EACH_VIDEO, REMEMBER_CHOICES]);
     }
 
     #[test]
