@@ -153,11 +153,14 @@ impl Manager {
                 continue;
             };
             let reason = reasons.remove(&entry.row.id);
-            // A running video waiting to try again keeps the time of its next try;
-            // the run sets and clears that one itself.
+            // A running download waiting to try again keeps what its run says about the next
+            // try; the run sets and clears that itself.
             if reason.is_none()
                 && entry.run.is_some()
-                && matches!(entry.row.waiting, Some(WaitReason::ServerRefused { .. }))
+                && matches!(
+                    entry.row.waiting,
+                    Some(WaitReason::ServerRefused { .. } | WaitReason::Reconnecting { .. })
+                )
             {
                 continue;
             }

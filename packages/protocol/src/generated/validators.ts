@@ -1753,7 +1753,14 @@ export function isWaitReason(value: unknown): value is WaitReason {
       value1['type'] === 'server_refused' &&
       ((value2: unknown): boolean => isRecord(value2) && isUnixMillis(value2['retry_at']))(
         value1['data'],
-      ))(value)
+      ))(value) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) &&
+      value1['type'] === 'reconnecting' &&
+      ((value2: unknown): boolean =>
+        isRecord(value2) &&
+        typeof value2['attempt'] === 'number' &&
+        typeof value2['of'] === 'number')(value1['data']))(value)
   );
 }
 

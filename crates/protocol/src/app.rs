@@ -45,7 +45,8 @@ pub struct DownloadSummary {
     pub eta_secs: Option<u64>,
     /// Why it failed, when it did.
     pub error: Option<UserError>,
-    /// Why a `Queued` download is not running yet; `None` for every other status.
+    /// Why a `Queued` download is not running yet, or why a running one receives nothing for now
+    /// ([`WaitReason::ServerRefused`], [`WaitReason::Reconnecting`]); `None` otherwise.
     pub waiting: Option<WaitReason>,
     /// Set for video and audio downloaded from a stream or a media page.
     pub media: Option<MediaSummary>,
@@ -983,6 +984,14 @@ pub enum WaitReason {
     ServerRefused {
         /// When the next try starts, in Unix time in milliseconds.
         retry_at: UnixMillis,
+    },
+    /// A connection failed or dropped and nothing arrives meanwhile; the download tries again by
+    /// itself, keeping what was downloaded (D271). Only on a download that is downloading.
+    Reconnecting {
+        /// Which try this is, counting from 1; a try that received data starts the count again.
+        attempt: u32,
+        /// Tries before the download fails.
+        of: u32,
     },
 }
 

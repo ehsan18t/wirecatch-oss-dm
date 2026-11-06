@@ -8,8 +8,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use wirecatch_engine::units::KIB_USIZE;
 use wirecatch_engine::{
-    Backoff, CancellationToken, DownloadOptions, DownloadRequest, Error, NetworkFailure, Progress,
-    Url, download,
+    Backoff, CancellationToken, DownloadOptions, DownloadRequest, Error, NetworkFailure, Outcome,
+    Progress, Url, download,
 };
 use wirecatch_test_support::{PATIENCE, TestResult, private_dir};
 
@@ -97,5 +97,42 @@ async fn a_closed_port_could_not_be_reached() -> TestResult {
         Err(Error::Network(error)) => assert_eq!(error.failure(), NetworkFailure::Unreachable),
         other => return Err(format!("not a network error: {other:?}").into()),
     }
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_dropped_connection_says_which_try_comes_next() -> TestResult {
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let port = listener.local_addr()?.port();
+    let server = tokio::spawn(async move {
+        while let Ok((socket, _)) = listener.accept().await {
+            tokio::spawn(answer(socket, HEADERS_THEN_CLOSE));
+        }
+    });
+    let dir = private_dir("network-retry")?;
+    let url = Url::parse(&format!("http://127.0.0.1:{port}/f.bin"))?;
+    let mut request = DownloadRequest::new(url, dir.to_path_buf());
+    request.options.connections = 1;
+    request.options.max_retries = 3;
+    // The next try waits longer than the test looks.
+    request.options.retry_backoff = Backoff::new(PATIENCE * 2, PATIENCE * 2);
+    let progress = Arc::new(Progress::default());
+    let cancel = CancellationToken::new();
+    let run = tokio::spawn(download(request, Arc::clone(&progress), cancel.clone()));
+    let retry = tokio::time::timeout(PATIENCE, async {
+        loop {
+            if let Some(retry) = progress.retry() {
+                return retry;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await?;
+    assert_eq!((retry.attempt, retry.of), (1, 3));
+    cancel.cancel();
+    let ended = tokio::time::timeout(PATIENCE, run).await??;
+    assert!(matches!(ended, Ok(Outcome::Paused { .. })), "{ended:?}");
+    server.abort();
+    dir.remove()?;
     Ok(())
 }

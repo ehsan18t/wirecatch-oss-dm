@@ -154,6 +154,8 @@ pub struct Reading {
     /// for fresh addresses) at this Unix time in milliseconds; nothing is being
     /// received meanwhile.
     pub retry_at: Option<UnixMillis>,
+    /// A file part trying again after its connection failed or dropped, while nothing arrives.
+    pub retry: Option<wirecatch_engine::Retry>,
 }
 
 impl MediaProgress {
@@ -292,6 +294,14 @@ impl MediaProgress {
             stream_joining |= joining;
             total = total.zip(part_total).map(|(a, b)| a.saturating_add(b));
         }
+        // Another part still receiving is not a download reconnecting.
+        reading.retry = parts
+            .iter()
+            .find_map(|part| match part {
+                Part::File(p, _) => p.retry(),
+                _ => None,
+            })
+            .filter(|_| reading.connections == 0);
         if stream_joining && reading.processing.is_none() {
             reading.processing = Some(ProcessingProgress {
                 step: ProcessingStep::Joining,

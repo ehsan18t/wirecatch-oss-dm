@@ -171,6 +171,16 @@ impl Attempts {
         }
     }
 
+    /// The try that follows the last failure, counting from 1, out of [`Self::of`].
+    pub fn retry(&self) -> u32 {
+        self.failures.max(1)
+    }
+
+    /// Tries a connection makes before it gives up.
+    pub fn of(&self) -> u32 {
+        self.retries.max
+    }
+
     /// Decides what follows a failed attempt. `progressed` says whether it
     /// received anything, which resets the count.
     ///
