@@ -285,7 +285,7 @@ impl QueueForm {
     fn read(&self, cx: &App) -> Result<QueueSettings, Problem> {
         let settings = self.typed(cx)?;
         if settings.name.is_empty() {
-            return Err((Section::General, "Give the queue a name.".to_owned()));
+            return Err((self.section, "Give the queue a name.".to_owned()));
         }
         Ok(settings)
     }

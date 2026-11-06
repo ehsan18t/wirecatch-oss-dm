@@ -51,8 +51,8 @@ impl Render for QueueForm {
 }
 
 impl QueueForm {
-    /// The page's title, then Cancel and Save on the right, as a queue's own header places its
-    /// actions, with the tabs under it.
+    /// The queue's name as the page's title, edited in place, then Cancel and Save on the right,
+    /// as a queue's own header places its actions; what stops saving under them, then the tabs.
     fn header(&self, cx: &mut Context<'_, Self>) -> impl IntoElement {
         let theme = cx.theme();
         let (danger, border) = (theme.danger, theme.border);
@@ -66,22 +66,12 @@ impl QueueForm {
             .child(
                 h_flex()
                     .gap_3()
-                    .child(div().flex_shrink_0().text_role(Role::PageTitle, cx).child(
-                        if self.original.is_some() {
-                            "Edit queue"
-                        } else {
-                            "New queue"
-                        },
-                    ))
                     .child(
                         div()
                             .flex_1()
                             .min_w_0()
-                            .truncate()
-                            .text_right()
-                            .text_role(Role::Secondary, cx)
-                            .text_color(danger)
-                            .children(self.problem.clone()),
+                            .text_role(Role::PageTitle, cx)
+                            .child(Input::new(&self.name).large().aria_label("Queue name")),
                     )
                     .child(
                         Button::new("queue-page-cancel")
@@ -103,6 +93,12 @@ impl QueueForm {
                             .on_click(cx.listener(|form, _, window, cx| form.save(window, cx))),
                     ),
             )
+            .children(self.problem.clone().map(|problem| {
+                div()
+                    .text_role(Role::Secondary, cx)
+                    .text_color(danger)
+                    .child(problem)
+            }))
             .child(self.tab_bar(cx))
     }
 
@@ -159,7 +155,6 @@ impl QueueForm {
         );
         v_flex()
             .gap_5()
-            .child(Field::new("Name", Input::new(&self.name)))
             .child(
                 Field::new("Description", Input::new(&self.description))
                     .note("Optional. Shown under the queue's name."),
