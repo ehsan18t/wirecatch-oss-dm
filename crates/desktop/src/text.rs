@@ -304,10 +304,7 @@ pub fn wait_short(wait: &WaitReason, queue: Option<&str>) -> Sentence {
         WaitReason::QueueSchedule { starts_at: None } => {
             named(said, queue, true).text(" is outside its schedule")
         }
-        WaitReason::QueueFull { .. } => {
-            named(said.text("Waiting for a free slot in "), queue, false)
-        }
-        WaitReason::GlobalLimit { .. } => {
+        WaitReason::QueueFull { .. } | WaitReason::GlobalLimit { .. } => {
             named(said.text("Next in "), queue, false).text(", waiting for a free slot")
         }
         WaitReason::InLine { position } => named(said.text(&place(*position)), queue, false),
@@ -963,7 +960,7 @@ mod tests {
             running: 2,
             limit: 2,
         };
-        assert_eq!(short(full).said(), "Waiting for a free slot in Main");
+        assert_eq!(short(full).said(), "Next in Main, waiting for a free slot");
         assert_eq!(short(WaitReason::QueuePaused).said(), "Main is paused");
     }
 
@@ -971,7 +968,7 @@ mod tests {
     fn a_wait_in_a_queue_not_known_yet_says_its_queue() {
         let in_line = wait_short(&WaitReason::InLine { position: 2 }, None);
         assert_eq!(in_line.said(), "2nd to start in its queue");
-        assert!(in_line.marked().is_empty());
+        assert_eq!(in_line.marked(), Vec::<&str>::new());
         assert_eq!(
             wait_short(&WaitReason::QueuePaused, None).said(),
             "Its queue is paused"

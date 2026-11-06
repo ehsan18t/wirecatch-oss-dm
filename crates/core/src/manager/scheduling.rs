@@ -176,8 +176,8 @@ impl Manager {
 }
 
 /// The single most useful reason a download waits, by priority: its queue is
-/// paused, outside its schedule, the app runs as many downloads as allowed (for
-/// the first in line), its queue runs as many as allowed, or others are ahead.
+/// paused, outside its schedule, the app or its queue runs as many downloads as
+/// allowed (for the first in line), or others are ahead.
 fn wait_reason(
     gate: Option<&GateView>,
     place: usize,
@@ -199,10 +199,14 @@ fn wait_reason(
             running: running_total,
             limit: global_limit,
         },
-        None if let Some(limit) = queue_limit => WaitReason::QueueFull {
-            running: in_queue,
-            limit,
-        },
+        None if place == 0
+            && let Some(limit) = queue_limit =>
+        {
+            WaitReason::QueueFull {
+                running: in_queue,
+                limit,
+            }
+        }
         None => in_line,
     }
 }
@@ -290,13 +294,8 @@ mod tests {
             }
         );
         assert_eq!(reason(&open, 1, 1, 3), WaitReason::InLine { position: 2 });
-        assert_eq!(
-            reason(&open, 1, 2, 3),
-            WaitReason::QueueFull {
-                running: 2,
-                limit: 2
-            }
-        );
+        // The queue is full: likewise only the first in line waits for that.
+        assert_eq!(reason(&open, 1, 2, 3), WaitReason::InLine { position: 2 });
         assert_eq!(
             reason(&open, 0, 2, 2),
             WaitReason::QueueFull {

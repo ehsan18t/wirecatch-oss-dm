@@ -435,6 +435,13 @@ impl MainWindow {
             .into_any_element()
     }
 
+    fn queue_name(&self, row: &DownloadSummary, cx: &App) -> Option<String> {
+        self.library
+            .read(cx)
+            .queue_name(row.queue)
+            .map(str::to_owned)
+    }
+
     fn row(
         &self,
         index: usize,
@@ -452,11 +459,7 @@ impl MainWindow {
         let id = row.id;
         let selected = self.selected.contains(&id);
         let hovered = self.hovered == Some(id);
-        let queue = self
-            .library
-            .read(cx)
-            .queue(row.queue)
-            .map(|queue| queue.settings.name.clone());
+        let queue = self.queue_name(&row, cx);
         let tone = status_tone(&row, cx);
         let compact = !has_second_line(shown);
         let shows_circle = hovered || (self.picked && self.selection_facts(cx).count > 0);

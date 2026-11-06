@@ -1679,5 +1679,6 @@ Decided with the maintainer on 2026-11-06. A dialog's title sat as close to its 
 
 Decided with the maintainer on 2026-11-06. It amends D47.2: the shared status words had dropped the queue's name ("2nd in line", "Queue paused"), so on All downloads a wait did not say which queue it was in.
 
-1. A waiting download's short status names its queue, standing out as D240 says: "Next in Main", "3rd to start in Main". A reason of its own follows the place or names the queue itself: "Next in Main, waiting for a free slot", "Waiting for a free slot in Main", "Main is paused", "Main starts at 2:00 AM". Rows, the download window and the details say the same (`text::wait_short`, `text::wait_long`).
-2. A queue not known yet reads "its queue".
+1. A waiting download's short status names its queue, standing out as D240 says: "Next in Main", "3rd to start in Main". A reason of its own follows the place or names the queue itself: "Next in Main, waiting for a free slot", "Main is paused", "Main starts at 2:00 AM". Rows, the download window and the details say the same (`text::wait_short`, `text::wait_long`).
+2. Only the first in line waits for a free slot, whether the app's limit or its queue's is reached; the others wait for those ahead of them (`wait_reason` in core), so each says its place.
+3. A queue not known yet reads "its queue".
