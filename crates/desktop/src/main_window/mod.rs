@@ -95,6 +95,10 @@ actions!(
 /// The main window's key context.
 const KEY_CONTEXT: &str = "MainWindow";
 
+/// Small enough to share a 1440-logical-pixel workspace with a browser (D268).
+const MIN_WIDTH: f32 = 720.;
+const MIN_HEIGHT: f32 = 600.;
+
 /// The search field's context, where Down leaves the field for the list.
 const SEARCH_CONTEXT: &str = "MainSearch";
 
@@ -356,6 +360,14 @@ pub struct MainWindow {
     _subscriptions: Vec<Subscription>,
 }
 
+fn window_options(bounds: Bounds<Pixels>) -> WindowOptions {
+    WindowOptions {
+        window_bounds: Some(WindowBounds::Windowed(bounds)),
+        window_min_size: Some(size(px(MIN_WIDTH), px(MIN_HEIGHT))),
+        ..crate::window_options()
+    }
+}
+
 impl MainWindow {
     /// Opens the main window on `library`.
     ///
@@ -364,11 +376,7 @@ impl MainWindow {
     /// The system would not open a window.
     fn open(library: Entity<Library>, cx: &mut App) -> gpui_kit::Result<Shown> {
         let bounds = gpui_kit::Bounds::centered(None, size(px(1280.), px(800.)), cx);
-        let options = WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(bounds)),
-            window_min_size: Some(size(px(960.), px(600.))),
-            ..crate::window_options()
-        };
+        let options = window_options(bounds);
         let (window, view) = gpui_kit::open_window(options, cx, |window, cx| {
             cx.new(|cx| Self::new(library, window, cx))
         })?;
@@ -935,6 +943,18 @@ impl Render for MainWindow {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_main_window_fits_beside_a_browser_in_a_1440_logical_pixel_workspace() {
+        let workspace = Bounds::new(gpui_kit::point(px(0.), px(0.)), size(px(1440.), px(900.)));
+        let options = window_options(workspace);
+        let minimum = options
+            .window_min_size
+            .expect("a main window has a minimum size");
+        assert!(options.is_resizable);
+        assert!(minimum.width <= workspace.size.width / 2.);
+        assert!(minimum.height <= workspace.size.height);
+    }
 
     #[test]
     fn the_search_names_the_queue_it_was_given() {
