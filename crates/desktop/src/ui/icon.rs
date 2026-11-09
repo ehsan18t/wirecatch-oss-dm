@@ -9,6 +9,7 @@ use wirecatch_protocol::app::Category;
 gpui_kit::assets::icon_assets!(
     Extra,
     [
+        AppWindow,
         ArrowLeft,
         ArrowRightLeft,
         ArrowUpDown,

@@ -6,7 +6,9 @@ use std::time::Instant;
 
 use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::dialog::Dialog;
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
+use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::{
     ActiveTheme as _, Icon, IconName, Sizable as _, WindowExt as _, h_flex, v_flex,
 };
@@ -35,13 +37,12 @@ use crate::{files, text};
 const WIDTH: f32 = 600.;
 
 /// The label column of Saved to and From.
-const PLACE_LABEL_WIDTH: f32 = 112.;
+const PLACE_LABEL_WIDTH: f32 = 80.;
 
 /// The date column of Activity.
-const ACTIVITY_LABEL_WIDTH: f32 = 132.;
+const ACTIVITY_LABEL_WIDTH: f32 = 148.;
 
-/// The tallest the details grow before their middle scrolls.
-const MAX_HEIGHT: f32 = 640.;
+const ACTIVITY_HEIGHT: f32 = 112.;
 
 /// The details of one download, kept current while the dialog is open.
 pub struct Details {
@@ -135,9 +136,24 @@ pub(super) fn open(library: Entity<Library>, id: DownloadId, window: &mut Window
         details.read_activity(cx);
         details
     });
-    crate::ui::dialog::open_headless(window, cx, move |dialog, _, _| {
-        dialog.w(px(WIDTH)).p_0().child(details.clone())
+    crate::ui::dialog::open_headless(window, cx, move |dialog, _, cx| {
+        frame(dialog, details.clone(), cx)
     });
+}
+
+fn frame(dialog: Dialog, details: Entity<Details>, cx: &App) -> Dialog {
+    let view = details.read(cx);
+    let library = view.library.clone();
+    let Some(row) = library.read(cx).downloads.find(view.id).cloned() else {
+        return dialog;
+    };
+    dialog
+        .w(px(WIDTH))
+        .p_0()
+        .gap_0()
+        .title(header(&row, cx))
+        .child(details)
+        .footer(footer(&row, library, cx))
 }
 
 impl Render for Details {
@@ -155,56 +171,38 @@ impl Render for Details {
             .collect();
         v_flex()
             .id("details")
-            .max_h(px(MAX_HEIGHT))
             .text_sm()
-            .child(header(&row, cx))
-            .child(
-                v_flex()
-                    .id("details-body")
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_y_scroll()
-                    .child(self.now_section(&row, queue.as_deref(), cx))
-                    .child(facts(
-                        &row,
-                        queue.as_deref().unwrap_or("Its queue"),
-                        &others,
-                        cx,
-                    ))
-                    .child(places(&row, self.library.clone(), cx))
-                    .child(activity(&row, &self.activity, cx)),
-            )
-            .child(footer(&row, self.library.clone(), cx))
+            .child(self.now_section(&row, queue.as_deref(), cx))
+            .child(facts(
+                &row,
+                queue.as_deref().unwrap_or("Its queue"),
+                &others,
+                cx,
+            ))
+            .child(places(&row, self.library.clone(), cx))
+            .child(activity(&row, &self.activity, cx))
             .into_any_element()
     }
 }
 
 /// The name, its status and where it comes from.
-fn header(row: &DownloadSummary, cx: &mut Context<'_, Details>) -> impl IntoElement {
+fn header(row: &DownloadSummary, cx: &App) -> impl IntoElement + use<> {
     let tone = status_tone(row, cx);
-    layout::bar(Rule::Below, cx).items_start().child(
-        v_flex()
-            .flex_1()
-            .min_w_0()
-            .gap_1()
-            .child(
-                div()
-                    .text_role(Role::Title, cx)
-                    .child(row.file_name.clone()),
-            )
-            .child(
-                h_flex()
-                    .gap_2()
-                    .text_role(Role::Meta, cx)
-                    .child(
-                        h_flex()
-                            .gap_1()
-                            .text_color(tone)
-                            .child(div().size(px(6.)).rounded_full().bg(tone))
-                            .child(text::status_name(row)),
-                    )
-                    .child(div().child(text::host(&row.url).to_owned())),
-            ),
+    div().px_4().pt_3().flex_shrink_0().child(
+        crate::ui::dialog::Header::new(row.file_name.clone()).description(
+            h_flex()
+                .gap_2()
+                .min_w_0()
+                .text_role(Role::Meta, cx)
+                .child(
+                    h_flex()
+                        .gap_1()
+                        .text_color(tone)
+                        .child(div().size(px(6.)).rounded_full().bg(tone))
+                        .child(text::status_name(row)),
+                )
+                .child(div().truncate().child(text::host(&row.url).to_owned())),
+        ),
     )
 }
 
@@ -297,12 +295,13 @@ fn facts(
                         .when(index > 0, |fact| {
                             fact.border_l_1().border_color(theme.border)
                         })
-                        .child(div().text_role(Role::Meta, cx).child(label))
+                        .child(div().text_role(Role::Caption, cx).child(label))
                         .child(if label == "Queue" && !others.is_empty() {
                             queue_picker(row.id, value, others.to_vec()).into_any_element()
                         } else {
                             div()
-                                .text_role(Role::Strong, cx)
+                                .text_role(Role::Meta, cx)
+                                .text_color(theme.foreground)
                                 .child(value)
                                 .into_any_element()
                         })
@@ -350,7 +349,7 @@ fn failure(
             callout.action(
                 Button::new("details-fix")
                     .small()
-                    .primary()
+                    .outline()
                     .label(text::fix_label(fix))
                     .on_click(cx.listener(move |_, _, window, cx| {
                         fixes::run(id, fix, window, cx);
@@ -390,7 +389,7 @@ fn places(
     let copied = link.clone();
     let path = row.path.clone();
     layout::section(Rule::None, cx)
-        .text_sm()
+        .text_role(Role::Meta, cx)
         .child(place(
             IconName::FolderOpen,
             "Saved to",
@@ -426,8 +425,10 @@ fn places(
             IconName::Globe,
             "From",
             div()
+                .id("details-source")
                 .truncate()
                 .child(text::readable_link(&link))
+                .tooltip(crate::ui::tooltip::plain(text::readable_link(&link)))
                 .into_any_element(),
             Some(
                 Button::new("details-copy-link")
@@ -477,7 +478,11 @@ fn place(
             .gap_1p5()
             .child(Icon::new(icon).with_size(tokens::ICON_SMALL))
             .child(label),
-        div().min_w_0().text_role(Role::Strong, cx).child(value),
+        div()
+            .min_w_0()
+            .text_role(Role::Meta, cx)
+            .text_color(cx.theme().foreground)
+            .child(value),
         cx,
     )
     .py_2()
@@ -489,10 +494,25 @@ fn activity(row: &DownloadSummary, happened: &[Happened], cx: &App) -> impl Into
     let lines = activity_lines(row, happened);
     layout::section(Rule::Above, cx)
         .gap_2()
+        .text_role(Role::Meta, cx)
         .child(div().text_role(Role::Label, cx).child("Activity"))
-        .children(lines.into_iter().map(|(at, what)| {
-            layout::label_row(ACTIVITY_LABEL_WIDTH, text::date(at), what, cx).items_start()
-        }))
+        .child(
+            div()
+                .debug_selector(|| "details-activity".to_owned())
+                .child(
+                    v_flex()
+                        .id("details-activity")
+                        .debug_selector(|| "details-activity-entries".to_owned())
+                        .max_h(px(ACTIVITY_HEIGHT))
+                        .gap_2()
+                        .children(lines.into_iter().map(|(at, what)| {
+                            layout::label_row(ACTIVITY_LABEL_WIDTH, text::date(at), what, cx)
+                                .items_start()
+                                .flex_shrink_0()
+                        }))
+                        .overflow_y_scrollbar(),
+                ),
+        )
 }
 
 /// The activity's lines in time order, from its adding to its finish.
@@ -529,75 +549,194 @@ fn said(event: &ActivityEvent) -> String {
     }
 }
 
-/// The labelled actions at the foot, in the row menu's order: Progress window and Show in folder,
-/// More with Cancel and Remove, and on the right the one action its state calls for.
-fn footer(
-    row: &DownloadSummary,
-    library: Entity<Library>,
-    cx: &mut Context<'_, Details>,
-) -> impl IntoElement {
+/// Every applicable action is visible; the state action is labelled on the right.
+fn footer(row: &DownloadSummary, library: Entity<Library>, cx: &App) -> impl IntoElement + use<> {
     let id = row.id;
     let main = RowAction::offered(row.status).first().cloned();
     let cancellable = applies::can_cancel(row);
+    let (cancelled, removed) = (library.clone(), library);
     layout::bar(Rule::Above, cx)
+        .debug_selector(|| "details-footer".to_owned())
+        .flex_shrink_0()
         .child(
             Button::new("details-window")
                 .small()
-                .outline()
-                .label("Progress window")
+                .ghost()
+                .icon(Icon::new(Lucide::AppWindow))
+                .accessibility_label("Progress window")
+                .tooltip("Progress window")
                 .on_click(move |_, _, cx| crate::download_windows::show_download(id, cx)),
         )
         .when(applies::has_file(row), |bar| {
             bar.child(
                 Button::new("details-folder")
                     .small()
-                    .outline()
-                    .label("Show in folder")
+                    .ghost()
+                    .icon(IconName::FolderOpen)
+                    .accessibility_label("Show in folder")
+                    .tooltip("Show in folder")
                     .on_click(move |_, window, cx| files::show_in_folder(id, window, cx)),
             )
         })
         .child(
-            Button::new("details-more")
+            Button::new("details-remove")
                 .small()
-                .outline()
-                .label("More")
-                .dropdown_caret(true)
-                .dropdown_menu(move |menu, _, _| {
-                    let (cancelled, removed) = (library.clone(), library.clone());
-                    menu.when(cancellable, |menu| {
-                        menu.item(
-                            PopupMenuItem::new("Cancel")
-                                .icon(IconName::CircleX)
-                                .on_click(move |_, window, cx| {
-                                    confirm::cancel(&cancelled, &[id], &[], None, window, cx);
-                                }),
-                        )
-                    })
-                    .item(
-                        PopupMenuItem::new("Remove")
-                            .icon(Icon::new(Lucide::Trash))
-                            .on_click(move |_, window, cx| {
-                                confirm::remove(&removed, &[id], &[], None, window, cx);
-                            }),
-                    )
+                .ghost()
+                .icon(Icon::new(Lucide::Trash))
+                .accessibility_label("Remove download")
+                .tooltip("Remove download")
+                .on_click(move |_, window, cx| {
+                    confirm::remove(&removed, &[id], &[], None, window, cx);
                 }),
         )
         .child(div().flex_1())
+        .when(cancellable, |bar| {
+            bar.child(
+                Button::new("details-cancel")
+                    .small()
+                    .outline()
+                    .icon(IconName::CircleX)
+                    .label("Cancel")
+                    .accessibility_label("Cancel download")
+                    .tooltip("Cancel download")
+                    .on_click(move |_, window, cx| {
+                        confirm::cancel(&cancelled, &[id], &[], None, window, cx);
+                    }),
+            )
+        })
         .when_some(main, |bar, (action, label, icon)| {
             bar.child(
-                Button::new("details-main")
-                    .small()
-                    .primary()
-                    .icon(icon)
-                    .label(label)
-                    .on_click(cx.listener(move |_, _, window, cx| action.run(id, window, cx))),
+                div()
+                    .flex_shrink_0()
+                    .debug_selector(|| "details-state-action".to_owned())
+                    .child(
+                        Button::new("details-main")
+                            .small()
+                            .outline()
+                            .icon(icon)
+                            .label(if matches!(action, RowAction::Open) {
+                                "Open file"
+                            } else {
+                                label
+                            })
+                            .on_click(move |_, window, cx| action.run(id, window, cx)),
+                    ),
             )
         })
 }
 
 #[cfg(test)]
 mod tests {
+    use gpui_kit::{Empty, TestAppContext, size};
+
     use super::*;
+
+    fn details_with_history(status: DownloadStatus, cx: &mut App) -> Entity<Details> {
+        let file_name =
+            "a-long-file-name.with-many-parts-that-must-leave-the-close-button-free.zip";
+        let row = DownloadSummary {
+            file_name: file_name.into(),
+            path: format!("C:/Downloads/a-long-project-folder/{file_name}"),
+            status,
+            total: Some(1000),
+            done: 500,
+            completed_at: (status == DownloadStatus::Completed).then_some(UnixMillis(10)),
+            error: (status == DownloadStatus::Failed).then(|| wirecatch_protocol::app::UserError {
+                message: "The link has expired. Get a new link to continue.".into(),
+                fix: Some(FixAction::RefreshLink),
+            }),
+            ..wirecatch_test_support::downloads::download(1)
+        };
+        let id = row.id;
+        let library = cx.new(|_| {
+            let mut library = Library::empty();
+            library.downloads.replace(vec![row]);
+            library
+        });
+        cx.new(|_| Details {
+            library,
+            id,
+            record: RunRecord::default(),
+            activity: (1..30)
+                .map(|at| Happened {
+                    at: UnixMillis(at),
+                    event: ActivityEvent::Paused,
+                })
+                .collect(),
+            reads: (0, 0),
+            _subscriptions: Vec::new(),
+        })
+    }
+
+    #[gpui_kit::test]
+    fn the_details_keep_their_footer_inside_a_short_window(cx: &mut TestAppContext) {
+        struct Host;
+        impl Render for Host {
+            fn render(&mut self, _: &mut Window, _: &mut Context<'_, Self>) -> impl IntoElement {
+                Empty
+            }
+        }
+        cx.update(|cx| {
+            gpui_kit::component::init(cx);
+            cx.set_reduce_motion(true);
+        });
+        let (_, cx) = cx.add_window_view(|window, cx| {
+            let host = cx.new(|_| Host);
+            gpui_kit::component::Root::new(host, window, cx)
+        });
+        cx.simulate_resize(size(px(720.), px(600.)));
+        for status in [
+            DownloadStatus::Downloading,
+            DownloadStatus::Paused,
+            DownloadStatus::Completed,
+            DownloadStatus::Failed,
+        ] {
+            cx.update(|window, cx| {
+                let details = details_with_history(status, cx);
+                crate::ui::dialog::open_headless(window, cx, move |dialog, _, cx| {
+                    frame(dialog, details.clone(), cx)
+                });
+            });
+            cx.run_until_parked();
+            cx.update(|window, cx| window.draw(cx).clear(cx));
+            let dialog = cx.debug_bounds("dialog-0").expect("the dialog is drawn");
+            let footer = cx
+                .debug_bounds("details-footer")
+                .expect("the footer is drawn");
+            assert!(
+                footer.bottom() <= dialog.bottom() && footer.right() <= dialog.right(),
+                "the footer runs outside the dialog for {status:?}: {footer:?}, {dialog:?}"
+            );
+            let title = cx.debug_bounds("dialog-title").expect("the title is drawn");
+            let activity = cx
+                .debug_bounds("details-activity")
+                .expect("the activity is drawn");
+            assert!(
+                activity.size.height <= px(ACTIVITY_HEIGHT),
+                "the activity grows beyond its allotted space: {activity:?}"
+            );
+            let entries = cx
+                .debug_bounds("details-activity-entries")
+                .expect("the activity entries are drawn");
+            assert!(
+                entries.size.height > activity.size.height,
+                "a long history must overflow its viewport, keeping every event available"
+            );
+            let state_action = cx
+                .debug_bounds("details-state-action")
+                .expect("the state action is drawn");
+            assert!(
+                state_action.right() <= footer.right() - px(16.),
+                "the labelled actions run outside the footer for {status:?}: {state_action:?}, {footer:?}"
+            );
+            assert!(
+                title.right() <= dialog.right() - px(48.),
+                "the title covers Close for {status:?}"
+            );
+            cx.update(gpui_kit::component::WindowExt::close_dialog);
+            cx.run_until_parked();
+        }
+    }
 
     #[test]
     fn the_details_do_not_offer_a_fix_that_another_button_offers() {
