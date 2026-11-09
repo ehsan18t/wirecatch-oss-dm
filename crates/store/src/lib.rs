@@ -200,9 +200,10 @@ const MIGRATIONS: &[&str] = &[
 ",
     // D270: a type folder inside the download folder follows it once written as plain names. Builds
     // before it wrote the defaults as `{Downloads}/Video`; a folder picked by hand is a full path.
+    // A scalar subquery returns text, so mark its array as JSON before json_set embeds it.
     r"
     UPDATE settings
-    SET value = json_set(value, '$.categories', (
+    SET value = json_set(value, '$.categories', json((
         WITH rules AS (
             SELECT rule.key AS at, rule.value AS rule,
                 json_extract(rule.value, '$.folder') AS folder,
@@ -223,7 +224,7 @@ const MIGRATIONS: &[&str] = &[
             ELSE rule
         END) ORDER BY at)
         FROM tails
-    ))
+    )))
     WHERE key = 'app' AND json_valid(value)
         AND json_type(value, '$.categories') = 'array'
         AND json_extract(value, '$.default_folder') LIKE '{%';
