@@ -11,13 +11,17 @@ mod network;
 mod speed;
 mod start_finish;
 
+use std::collections::HashSet;
 use std::rc::Rc;
 use std::time::Duration;
 
 use gpui_kit::assets::IconName as Lucide;
+use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::group_box::GroupBoxVariant;
 use gpui_kit::component::input::{InputEvent, Textarea, TextareaState};
-use gpui_kit::component::setting::{SelectIndex, SettingField, SettingPage, Settings};
+use gpui_kit::component::setting::{
+    SelectIndex, SettingField, SettingGroup, SettingItem, SettingPage, Settings,
+};
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, h_flex};
 use gpui_kit::{
     App, AppContext as _, Context, Div, Entity, Focusable as _, InteractiveElement as _,
@@ -29,6 +33,7 @@ use wirecatch_shell::api;
 
 use super::{MainWindow, Screen, sidebar};
 use crate::backend::act;
+use crate::closing::may_have_closed;
 use crate::library::Library;
 use crate::text;
 use crate::ui::{Role, Typed as _, tokens};
@@ -41,6 +46,7 @@ impl MainWindow {
             &self.library,
             &cx.entity().downgrade(),
             self.settings_on,
+            &self.advanced_shown,
             cx,
         );
         let foot = self.foot(cx);
@@ -124,7 +130,7 @@ const SAVE_AFTER: Duration = Duration::from_millis(800);
 const FIELD_WIDTH: f32 = 320.;
 
 /// A settings page.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub(super) enum Page {
     General,
     Files,
@@ -185,18 +191,86 @@ fn page(
     page: Page,
     library: &Entity<Library>,
     main: &WeakEntity<MainWindow>,
+    advanced: bool,
     cx: &App,
 ) -> SettingPage {
+    let fold = Fold {
+        page,
+        shown: advanced,
+        main: main.clone(),
+    };
     match page {
-        Page::General => general::page(library),
+        Page::General => general::page(library, &fold),
         Page::Files => files::page(library),
         Page::StartAndFinish => start_finish::page(library, cx),
         Page::Browser => browser::page(library, cx),
         Page::Media => media::page(library, cx),
         Page::Speed => speed::page(library, main, cx),
-        Page::Network => network::page(library, cx),
+        Page::Network => network::page(library, &fold, cx),
     }
     .icon(Icon::new(page.icon()))
+}
+
+/// Where a page's Advanced settings are folded, and whether they are shown (D263).
+struct Fold {
+    page: Page,
+    shown: bool,
+    main: WeakEntity<MainWindow>,
+}
+
+impl Fold {
+    /// The page's Advanced group, found by its hidden items' titles and search keywords (D263).
+    fn group(&self, items: Vec<SettingItem>) -> SettingGroup {
+        let group = SettingGroup::new().item(self.toggle(&items));
+        if self.shown {
+            group.items(items)
+        } else {
+            group
+        }
+    }
+
+    fn toggle(&self, items: &[SettingItem]) -> SettingItem {
+        let (page, shown, main) = (self.page, self.shown, self.main.clone());
+        let label = SharedString::from("Advanced");
+        let mut keywords = vec![label.clone()];
+        for item in items {
+            let hidden = match item {
+                SettingItem::Item {
+                    title,
+                    keywords: hidden,
+                    ..
+                } => {
+                    keywords.push(title.clone());
+                    hidden
+                }
+                SettingItem::Element { keywords, .. } => keywords,
+            };
+            keywords.extend(hidden.iter().cloned());
+        }
+        SettingItem::render(move |_, _, _| {
+            let main = main.clone();
+            Button::new("advanced")
+                .small()
+                .ghost()
+                .w_full()
+                .justify_start()
+                .icon(if shown {
+                    Lucide::ChevronDown
+                } else {
+                    Lucide::ChevronRight
+                })
+                .label(label.clone())
+                .on_click(move |_, _, cx| {
+                    may_have_closed(main.update(cx, |main, cx| {
+                        if !main.advanced_shown.remove(&page) {
+                            main.advanced_shown.insert(page);
+                        }
+                        cx.notify();
+                    }));
+                })
+        })
+        .keywords(keywords)
+    }
 }
 
 /// Every page, headed like the downloads' page.
@@ -204,6 +278,7 @@ fn screen(
     library: &Entity<Library>,
     main: &WeakEntity<MainWindow>,
     open_on: OpenOn,
+    advanced: &HashSet<Page>,
     cx: &App,
 ) -> Settings {
     let header = page_header(cx);
@@ -221,7 +296,9 @@ fn screen(
         .sidebar_size_range(px(sidebar::WIDTH)..px(sidebar::WIDTH))
         .header_style(&StyleRefinement::default().mt(px(BACK_HEIGHT)))
         .with_group_variant(GroupBoxVariant::Outline)
-        .pages(PAGES.map(|shown| page(shown, library, main, cx).header_style(&header)))
+        .pages(PAGES.map(|shown| {
+            page(shown, library, main, advanced.contains(&shown), cx).header_style(&header)
+        }))
 }
 
 /// Sends `patch` to the manager; a refusal shows in the window in front.
@@ -396,6 +473,67 @@ fn list_field(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_folded_group_is_found_by_its_label_and_hidden_settings() {
+        let fold = Fold {
+            page: Page::Network,
+            shown: false,
+            main: WeakEntity::new_invalid(),
+        };
+        let items = [
+            SettingItem::new(
+                "Hidden network setting",
+                SettingField::switch(|_| false, |_, _| {}),
+            )
+            .keywords(["protocol"]),
+            SettingItem::render(|_, _, _| div()).keywords(["manual check"]),
+        ];
+        let SettingItem::Element { keywords, .. } = fold.toggle(&items) else {
+            panic!("the disclosure must be a custom setting item");
+        };
+        for query in ["advanced", "hidden network", "protocol", "manual check"] {
+            assert!(
+                keywords
+                    .iter()
+                    .any(|word| word.to_lowercase().contains(query)),
+                "the folded group cannot be found by {query}"
+            );
+        }
+    }
+
+    #[gpui_kit::test]
+    fn the_advanced_toggle_can_receive_keyboard_focus(cx: &mut gpui_kit::TestAppContext) {
+        struct Toggle;
+        impl gpui_kit::Render for Toggle {
+            fn render(
+                &mut self,
+                window: &mut Window,
+                cx: &mut Context<'_, Self>,
+            ) -> impl IntoElement {
+                let fold = Fold {
+                    page: Page::General,
+                    shown: false,
+                    main: WeakEntity::new_invalid(),
+                };
+                let SettingItem::Element { render, .. } = fold.toggle(&[]) else {
+                    panic!("the disclosure must be a custom setting item");
+                };
+                div().tab_group().child(render(
+                    &gpui_kit::component::setting::RenderOptions::new(),
+                    window,
+                    cx,
+                ))
+            }
+        }
+        cx.update(gpui_kit::component::init);
+        let (_, cx) = cx.add_window_view(|_, _| Toggle);
+        cx.run_until_parked();
+        assert!(cx.update(|window, cx| {
+            window.focus_next(cx);
+            window.focused(cx).is_some()
+        }));
+    }
 
     #[test]
     fn typed_lists_keep_what_holds_something() {

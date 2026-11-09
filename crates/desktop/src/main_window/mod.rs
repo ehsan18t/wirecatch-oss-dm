@@ -348,6 +348,8 @@ pub struct MainWindow {
     hovered: Option<DownloadId>,
     scroll: list::Scroll,
     settings_on: settings::OpenOn,
+    /// The settings pages whose Advanced settings are shown.
+    advanced_shown: HashSet<settings::Page>,
     /// The queue page's form, while that page is open.
     queue_page: Option<Entity<queue_editor::QueueForm>>,
     focus: FocusHandle,
@@ -505,6 +507,7 @@ impl MainWindow {
             hovered: None,
             scroll: list::Scroll::default(),
             settings_on: settings::OpenOn::default(),
+            advanced_shown: HashSet::new(),
             queue_page: None,
             all_queues: false,
             queue_speeds: HashMap::new(),

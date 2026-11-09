@@ -31,10 +31,14 @@ use crate::ui::{Role, Typed as _};
 const SYSTEM: &str = "system";
 const DIRECT: &str = "direct";
 
-pub(super) fn page(library: &Entity<Library>, cx: &App) -> SettingPage {
+pub(super) fn page(library: &Entity<Library>, fold: &super::Fold, cx: &App) -> SettingPage {
     SettingPage::new(super::Page::Network.title())
         .resettable(false)
-        .groups([proxy(library, cx), local_network(library)])
+        .groups([
+            proxy(library, cx),
+            local_network(library),
+            advanced(library, fold),
+        ])
 }
 
 fn proxy(library: &Entity<Library>, cx: &App) -> SettingGroup {
@@ -65,11 +69,17 @@ fn proxy(library: &Entity<Library>, cx: &App) -> SettingGroup {
                 .description("Queues using the global list connect to these hosts directly.")
                 .keywords(["exceptions", "bypass", "no_proxy", "direct", "intranet", "local"]),
         )
-        .item(
+}
+
+/// FTP and the proxy, folded under Advanced (D263).
+fn advanced(library: &Entity<Library>, fold: &super::Fold) -> SettingGroup {
+    fold.group(
+        vec![
             SettingItem::new("FTP links skip the proxy", ftp_bypass(library))
-            .description("On, FTP links connect directly when the proxy cannot carry them; off, they fail. Only SOCKS5 proxies carry FTP.")
-            .keywords(["ftp", "ftps", "direct"]),
-        )
+                .description("On, FTP links connect directly when the proxy cannot carry them; off, they fail. Only SOCKS5 proxies carry FTP.")
+                .keywords(["ftp", "ftps", "socks5", "direct"]),
+        ],
+    )
 }
 
 fn local_network(library: &Entity<Library>) -> SettingGroup {

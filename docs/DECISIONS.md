@@ -1739,3 +1739,12 @@ Decided with the maintainer on 2026-11-06. It amends D87.2: folded, the sidebar 
 
 1. On the rail, Needs attention carries its count in a badge in the danger colour, and Downloading its count in a neutral grey badge; past 99 a badge says "99+". A badge sits on the item's top right corner, cut out of the colour behind the item. The other views keep their count in their tooltip.
 2. A queue on the rail is the tile the docked sidebar draws for it: paused, downloading, waiting for its hours or holding, with the badge of its rules (`sidebar::queue_tile`). While it downloads, a ring around the tile fills clockwise from the top with how much of its running and waiting downloads is done, as the docked sidebar's progress line does; it stays a bare track while a size is not known. Its tooltip still names it and says what it is doing.
+
+### D263. Technical settings fold under Advanced
+
+Decided with the maintainer on 2026-11-06. It amends D85.1 and D169: a few settings asked a person to know terms such as the Public Suffix List or which proxies carry FTP, in among the settings most people look for.
+
+1. A page with such settings ends with an Advanced group: one row, "Advanced" with a chevron, that shows or hides them. They start hidden, and stay as the person left them on each page while the app runs. Search finds the row by the hidden settings' words.
+2. General: the site list's updates, "Update the site list automatically" with the list's state and Check now, move from Updates to Advanced (D169.1's place). The setting and its behaviour are unchanged.
+3. Network: "FTP links skip the proxy" moves from Proxy to Advanced.
+4. The start and finish settings stay where D262 puts them; none of them is folded.
