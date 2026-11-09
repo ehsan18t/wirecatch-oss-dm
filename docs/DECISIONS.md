@@ -1754,3 +1754,11 @@ Decided with the maintainer on 2026-11-06. It amends D85.1 and D169: a few setti
 Decided with the maintainer on 2026-11-06, as part of the UX review.
 
 1. When a row offers a fix such as Get a new link, the space for Details beside it is reserved while Details is hidden. Hovering changes its visibility, without moving the fix under the pointer.
+
+### D268. The main window fits beside a browser
+
+Decided with the maintainer on 2026-11-06, as part of the UX review.
+
+1. The main window can be resized down to 720 logical pixels wide and 600 high, so it fits beside a browser in a workspace 1440 logical pixels wide. It opens at 1280 by 800. Navigation at a narrow width follows D266.
+
+2. A queue's name can shrink before its action buttons, so every action stays inside the header at the minimum width.

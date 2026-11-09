@@ -8,7 +8,8 @@ use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::{Icon, IconName, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, Context, IntoElement, ParentElement as _, Styled as _, Window, div, relative,
+    AnyElement, App, Context, Div, IntoElement, ParentElement as _, Styled as _, Window, div,
+    relative,
 };
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{Queue, QueueSettings};
@@ -34,27 +35,12 @@ impl MainWindow {
             .pt_3()
             .pb_1()
             .gap_0p5()
-            .child(
-                h_flex()
-                    .gap_3()
-                    .child(
-                        div()
-                            .flex_shrink_0()
-                            .max_w(relative(0.4))
-                            .truncate()
-                            .text_role(Role::PageTitle, cx)
-                            .child(queue.settings.name.clone()),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .truncate()
-                            .text_role(Role::Meta, cx)
-                            .child(format!("{summary} · {facts}")),
-                    )
-                    .child(queue_actions(&queue, cx)),
-            )
+            .child(heading(
+                queue.settings.name.clone(),
+                format!("{summary} · {facts}"),
+                queue_actions(&queue, cx),
+                cx,
+            ))
             .when(!queue.settings.description.is_empty(), |header| {
                 header.child(
                     div()
@@ -118,6 +104,34 @@ impl MainWindow {
     }
 }
 
+/// The name yields space to the actions at the window's minimum width (D268).
+fn heading(
+    name: impl IntoElement,
+    summary: impl IntoElement,
+    actions: impl IntoElement,
+    cx: &App,
+) -> Div {
+    h_flex()
+        .gap_3()
+        .child(
+            div()
+                .min_w_0()
+                .max_w(relative(0.4))
+                .truncate()
+                .text_role(Role::PageTitle, cx)
+                .child(name),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .text_role(Role::Meta, cx)
+                .child(summary),
+        )
+        .child(actions)
+}
+
 /// Whether a queue's rules are on; `None` when it has none.
 pub(super) fn rules_on(queue: &Queue) -> Option<bool> {
     match &queue.settings.add_downloads {
@@ -140,7 +154,7 @@ pub(super) fn set_rules(queue: &Queue, on: bool, window: &Window, cx: &mut App) 
 }
 
 /// Rules on or off, Start now outside the queue's hours, Pause or Resume, and Edit.
-fn queue_actions(queue: &Queue, cx: &mut Context<'_, MainWindow>) -> impl IntoElement {
+fn queue_actions(queue: &Queue, cx: &mut Context<'_, MainWindow>) -> impl IntoElement + use<> {
     let id = queue.id;
     let outside = sidebar::outside_schedule(queue).is_some() && !queue.status.paused;
     let paused = queue.status.paused;
@@ -252,9 +266,41 @@ fn count(n: usize) -> String {
 
 #[cfg(test)]
 mod tests {
+    use gpui_kit::{InteractiveElement as _, px};
     use wirecatch_protocol::app::Setting;
 
     use super::*;
+
+    #[gpui_kit::test]
+    fn a_long_queue_name_keeps_every_header_action_in_view(cx: &mut gpui_kit::TestAppContext) {
+        struct Header;
+        impl gpui_kit::Render for Header {
+            fn render(&mut self, _: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
+                div().w(px(600.)).child(
+                    heading(
+                        div().w(px(250.)).h(px(20.)),
+                        "",
+                        div()
+                            .w(px(400.))
+                            .h(px(20.))
+                            .flex_shrink_0()
+                            .debug_selector(|| "actions".to_owned()),
+                        cx,
+                    )
+                    .debug_selector(|| "header".to_owned()),
+                )
+            }
+        }
+        cx.update(gpui_kit::component::init);
+        let (_, cx) = cx.add_window_view(|_, _| Header);
+        cx.run_until_parked();
+        let header = cx.debug_bounds("header").expect("the header is drawn");
+        let actions = cx.debug_bounds("actions").expect("the actions are drawn");
+        assert!(
+            actions.right() <= header.right(),
+            "an action runs out of the header"
+        );
+    }
 
     #[test]
     fn a_queue_with_some_limits_of_its_own_says_the_rest_are_global() {
