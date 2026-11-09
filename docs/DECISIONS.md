@@ -1724,3 +1724,11 @@ Decided with the maintainer on 2026-11-06. It amends D85.1, D85.4, D50.1 and D25
 2. Starting, in the order they happen: Ask before each download, Ask before each video, Show progress while downloading, When a download starts, and how long its notice stays. Finishing: When a download finishes, how long its notice stays, and Show notifications during Do Not Disturb.
 3. Browser keeps Capture and What is caught; its Download window group is gone (D85.4). Media keeps Remember these choices with the other video settings; Ask before each video moves here (D50.1), dimmed while the media add-on does not work as D259.1 dims the video settings, with a line saying it is used once the add-on is installed. D259.2's order no longer applies: the two switches are on different pages.
 4. No setting key changes, so saved settings and export files read as before.
+
+### D247. A link is shown decoded, as an address bar shows it
+
+Decided with the maintainer on 2026-11-06. Rows and the details showed links as sent, so a name in another script read as a run of escapes (`%E6%97%A5…`).
+
+1. A row's link and its hover, and From in the details, show the link through `text::readable_link`: its path, query and fragment each decoded on its own. The scheme and host are never decoded, and the escapes of `/ ? # @ % : & = + ; , $ \` stay, since decoded they would change where the link seems to point or how its query splits. A space stays `%20` beside another escaped space or at the end of a part or segment, where spaces could push a file's real extension out of view.
+2. A part stays as sent when decoding gives no UTF-8, a space other than the plain one (a no-break or ideographic space could stretch a name), or a character that is not drawn as itself: a control, a format mark such as a direction override, a line or paragraph separator, a private or unassigned one, another default-ignorable, or a blank symbol such as the empty Braille pattern.
+3. Copy link and every other use of the link keep it exactly as sent.

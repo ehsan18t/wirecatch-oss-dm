@@ -835,7 +835,7 @@ fn state_part(
 
 /// The link's host, brighter, and once the download is over its path; hovering shows it whole.
 fn link_part(row: &DownloadSummary, cx: &App) -> AnyElement {
-    let link = row.url.clone();
+    let link = text::readable_link(&row.url);
     let host = text::host(&link).to_owned();
     let after_host = Group::of(row.status)
         .is_over()
