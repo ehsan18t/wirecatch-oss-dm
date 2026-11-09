@@ -975,23 +975,35 @@ fn fix_button(
     details: bool,
     cx: &mut Context<'_, MainWindow>,
 ) -> impl IntoElement {
+    fix_end(
+        Button::new(row_id("fix", id))
+            .small()
+            .outline()
+            .label(text::fix_label(fix))
+            .on_click(move |_, window, cx| {
+                // The row under it would open the details too.
+                cx.stop_propagation();
+                fixes::run(id, fix, window, cx);
+            }),
+        details_button(id, cx),
+        details,
+    )
+}
+
+/// A fix with the Details button beside it, which keeps its place while hidden so the fix stays
+/// still when the row is hovered.
+fn fix_end(fix: impl IntoElement, details: impl IntoElement, shown: bool) -> gpui_kit::Div {
     h_flex()
         .min_w(px(END_WIDTH))
         .flex_shrink_0()
         .gap_1()
         .justify_end()
+        .child(fix)
         .child(
-            Button::new(row_id("fix", id))
-                .small()
-                .outline()
-                .label(text::fix_label(fix))
-                .on_click(move |_, window, cx| {
-                    // The row under it would open the details too.
-                    cx.stop_propagation();
-                    fixes::run(id, fix, window, cx);
-                }),
+            div()
+                .when(!shown, gpui_kit::Styled::invisible)
+                .child(details),
         )
-        .when(details, |end| end.child(details_button(id, cx)))
 }
 
 /// The buttons a row offers on hover, then its details; its menu opens on a right click.
@@ -1442,6 +1454,31 @@ mod tests {
                 ..reading
             }
         );
+    }
+
+    #[gpui_kit::test]
+    fn a_fix_keeps_its_place_when_details_show_beside_it(cx: &mut gpui_kit::TestAppContext) {
+        struct End(bool);
+        impl gpui_kit::Render for End {
+            fn render(&mut self, _: &mut Window, _: &mut Context<'_, Self>) -> impl IntoElement {
+                div().w(px(400.)).child(fix_end(
+                    div()
+                        .w(px(80.))
+                        .h(px(20.))
+                        .debug_selector(|| "fix".to_owned()),
+                    div().w(px(24.)).h(px(20.)),
+                    self.0,
+                ))
+            }
+        }
+        let mut fix_at = |shown: bool| {
+            let (_, cx) = cx.add_window_view(|_, _| End(shown));
+            cx.run_until_parked();
+            cx.debug_bounds("fix").map(|bounds| bounds.origin.x)
+        };
+        let hidden = fix_at(false);
+        assert!(hidden.is_some());
+        assert_eq!(fix_at(true), hidden);
     }
 
     #[test]
