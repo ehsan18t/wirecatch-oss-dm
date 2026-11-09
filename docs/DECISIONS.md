@@ -1732,3 +1732,10 @@ Decided with the maintainer on 2026-11-06. Rows and the details showed links as 
 1. A row's link and its hover, and From in the details, show the link through `text::readable_link`: its path, query and fragment each decoded on its own. The scheme and host are never decoded, and the escapes of `/ ? # @ % : & = + ; , $ \` stay, since decoded they would change where the link seems to point or how its query splits. A space stays `%20` beside another escaped space or at the end of a part or segment, where spaces could push a file's real extension out of view.
 2. A part stays as sent when decoding gives no UTF-8, a space other than the plain one (a no-break or ideographic space could stretch a name), or a character that is not drawn as itself: a control, a format mark such as a direction override, a line or paragraph separator, a private or unassigned one, another default-ignorable, or a blank symbol such as the empty Braille pattern.
 3. Copy link and every other use of the link keep it exactly as sent.
+
+### D267. The icon rail shows counts and each queue's state
+
+Decided with the maintainer on 2026-11-06. It amends D87.2: folded, the sidebar hid what needs attention and how much downloads, and a queue's initials ("MA") said nothing about what it was doing.
+
+1. On the rail, Needs attention carries its count in a badge in the danger colour, and Downloading its count in a neutral grey badge; past 99 a badge says "99+". A badge sits on the item's top right corner, cut out of the colour behind the item. The other views keep their count in their tooltip.
+2. A queue on the rail is the tile the docked sidebar draws for it: paused, downloading, waiting for its hours or holding, with the badge of its rules (`sidebar::queue_tile`). While it downloads, a ring around the tile fills clockwise from the top with how much of its running and waiting downloads is done, as the docked sidebar's progress line does; it stays a bare track while a size is not known. Its tooltip still names it and says what it is doing.
