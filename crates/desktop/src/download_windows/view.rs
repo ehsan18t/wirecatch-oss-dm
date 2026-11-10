@@ -41,7 +41,7 @@ use wirecatch_shell::download_windows::{Shows, fitted_height};
 
 use super::media_form::{MediaAnswer, MediaForm};
 use super::proposed_name::ProposedName;
-use super::run_record::{Look, RunRecord};
+use super::run_record::RunRecord;
 use crate::backend::{Backend, act, said};
 use crate::library::Library;
 use crate::main_window::fixes::run_from_download_window;
@@ -775,16 +775,7 @@ impl DownloadWindow {
         };
         self.question = None;
         self.media = None;
-        let per_mille = text::per_mille(&row);
-        self.record.see(
-            Look {
-                per_mille,
-                speed: row.speed,
-                done: row.done,
-                running: row.status == DownloadStatus::Downloading,
-            },
-            Instant::now(),
-        );
+        self.record.watch(&row, Instant::now());
         let queue = self
             .library
             .read(cx)
@@ -849,8 +840,8 @@ impl DownloadWindow {
 
 /// The progress bar and speed graph in one: across is how much is done, height is how fast,
 /// with the speed and percent over it. It is in every state and takes the spare height, so the
-/// rows keep even gaps: a failure's reason fills it, and a download too short to draw says it
-/// finished. `queue` is the download's queue, which a wait names.
+/// rows keep even gaps: a failure's reason fills it, and a finished download with no observed
+/// speed says it finished. `queue` is the download's queue, which a wait names.
 pub(crate) fn run_panel(
     record: &RunRecord,
     row: &DownloadSummary,
@@ -942,8 +933,13 @@ fn panel_label(record: &RunRecord, row: &DownloadSummary, queue: Option<&str>) -
         }
         DownloadStatus::Downloading if row.speed > 0 => Some(text::speed(row.speed).into()),
         DownloadStatus::Completed => record
-            .peak()
-            .map(|peak| format!("Peak {}", text::speed(peak)).into()),
+            .finished_average()
+            .map(|average| format!("Observed average {}", text::speed(average)).into())
+            .or_else(|| {
+                record
+                    .peak()
+                    .map(|peak| format!("Peak {}", text::speed(peak)).into())
+            }),
         DownloadStatus::Failed => None,
         DownloadStatus::Cancelled => Some("Download cancelled".into()),
         _ => Some(text::status_short(row, queue)),
