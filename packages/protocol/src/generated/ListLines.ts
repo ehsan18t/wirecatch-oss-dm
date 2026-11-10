@@ -9,7 +9,11 @@ export type ListLines = {
    */
   link: boolean;
   /**
-   * The folder it is saved in.
+   * The name of the folder it is saved in.
    */
   folder: boolean;
+  /**
+   * The full path of the save folder, on a line of its own.
+   */
+  full_path: boolean;
 };

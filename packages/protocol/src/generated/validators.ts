@@ -832,7 +832,8 @@ export function isListLines(value: unknown): value is ListLines {
   return ((value1: unknown): boolean =>
     isRecord(value1) &&
     typeof value1['link'] === 'boolean' &&
-    typeof value1['folder'] === 'boolean')(value);
+    typeof value1['folder'] === 'boolean' &&
+    typeof value1['full_path'] === 'boolean')(value);
 }
 
 /** Whether `value` has the shape of a {@link MediaChoice}; fields it does not name are not checked. */

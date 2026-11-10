@@ -158,10 +158,18 @@ impl MainWindow {
                         },
                     ))
                     .item(toggle(
-                        "Save folder",
+                        "Folder name",
                         shown.folder,
                         ListLines {
                             folder: !shown.folder,
+                            ..shown
+                        },
+                    ))
+                    .item(toggle(
+                        "Full folder path",
+                        shown.full_path,
+                        ListLines {
+                            full_path: !shown.full_path,
                             ..shown
                         },
                     ))

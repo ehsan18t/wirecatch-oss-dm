@@ -5,12 +5,13 @@ use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     App, ElementId, InteractiveElement as _, IntoElement, ParentElement as _, RenderOnce,
-    SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, px,
+    SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, px, relative,
 };
 
 use super::{Role, Typed as _, tooltip};
 
 const HEIGHT: f32 = 20.;
+const MAX_WIDTH_FRACTION: f32 = 0.5;
 
 #[derive(IntoElement)]
 pub struct Chip {
@@ -40,7 +41,9 @@ impl RenderOnce for Chip {
         let theme = cx.theme();
         div()
             .id(self.id)
+            .debug_selector(|| "chip".to_owned())
             .flex_shrink_0()
+            .max_w(relative(MAX_WIDTH_FRACTION))
             .h(px(HEIGHT))
             .px_1p5()
             .flex()
@@ -49,7 +52,7 @@ impl RenderOnce for Chip {
             .bg(theme.secondary)
             .text_role(Role::Meta, cx)
             .text_color(theme.secondary_foreground)
-            .child(self.label)
+            .child(div().min_w_0().truncate().child(self.label))
             .when_some(self.whole, |chip, whole| {
                 chip.tooltip(tooltip::plain(whole))
             })

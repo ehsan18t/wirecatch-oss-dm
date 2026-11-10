@@ -1078,9 +1078,12 @@ pub struct ListLines {
     /// The link it is downloaded from.
     #[serde(default = "default_true")]
     pub link: bool,
-    /// The folder it is saved in.
+    /// The name of the folder it is saved in.
     #[serde(default = "default_true")]
     pub folder: bool,
+    /// The full path of the save folder, on a line of its own.
+    #[serde(default)]
+    pub full_path: bool,
 }
 
 impl Default for ListLines {
@@ -1088,6 +1091,7 @@ impl Default for ListLines {
         Self {
             link: true,
             folder: true,
+            full_path: false,
         }
     }
 }

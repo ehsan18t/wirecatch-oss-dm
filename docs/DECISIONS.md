@@ -1588,10 +1588,10 @@ Decided with the maintainer on 2026-11-06. A queue's name is one someone made up
 
 Decided with the maintainer on 2026-11-06. It changes D115.1 and D115.2, where the link and the whole save folder each took a line of their own under the name, so a window showed about a third of the rows a download manager does.
 
-1. A row is its name over one line: what matters for its state (a failure's first sentence, a running download's speed and size, how far a paused one got, a word for one that waits), then the link's host, with its path once the download is over, then the folder's last name as a chip. Hovering the link or the chip shows it whole.
+1. A row is its name over one line: what matters for its state (a failure's first sentence, a running download's speed and size, how far a paused one got, a word for one that waits), then the folder's last name as a chip, then the link's host, with its path once the download is over. Hovering the link or the chip shows it whole.
 2. The time column says what the heading does not: a running download's time left, Paused, a place in a queue's line, or when the download finished or was added, to the second. A waiting row outside a queue's page leaves it empty.
 3. Work under way or paused draws its bar under the row's text.
-4. The View menu still keeps the link and the folder on the second line; with neither, a row is the one compact line it was.
+4. The View menu can show the link, the folder name chip and the full folder path independently. The full path sits on its own line under the link. Turning all three off keeps the row compact.
 
 ### D231. Removed files go to the Recycle Bin
 
