@@ -13,8 +13,8 @@ use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, Bounds, Context, IntoElement, Modifiers, ParentElement as _, Pixels,
-    SharedString, Styled as _, Window, div, px,
+    AnyElement, App, Bounds, Context, InteractiveElement as _, IntoElement, Modifiers,
+    ParentElement as _, Pixels, SharedString, Styled as _, Window, div, px,
 };
 use wirecatch_protocol::app::DownloadSummary;
 use wirecatch_protocol::wire::ProtocolError;
@@ -29,8 +29,13 @@ use crate::files;
 use crate::ui::select_circle::{Picked, SelectCircle};
 use crate::ui::{Role, Typed as _};
 
+mod file_actions;
+use file_actions::FolderCache;
+
 /// How far Page Up and Page Down move the cursor.
 const PAGE: usize = 10;
+/// Below this window width, use icons so every selection action stays in reach.
+const LABELLED_BAR_WIDTH: f32 = 900.;
 
 /// The selected downloads. Reaching the set to change it moves the revision, so nothing kept from
 /// the selection can miss a change.
@@ -55,8 +60,7 @@ impl DerefMut for Selected {
     }
 }
 
-/// What the selection comes to in the list, kept until the lines, the selection or the queues
-/// change: status and queue, all it reads, move only with the lines.
+/// What the selection comes to in the list, kept until the rows, queues or selection change.
 pub(super) struct Facts {
     from: FactsFrom,
     /// How many selected rows the commands reach.
@@ -64,6 +68,7 @@ pub(super) struct Facts {
     /// Those of them in collapsed groups.
     folded: Rc<[DownloadId]>,
     can: Applicable,
+    folder: RefCell<FolderCache>,
     pub ids: Rc<[DownloadId]>,
     queues: Rc<[(QueueId, String)]>,
     many_queues: bool,
@@ -140,6 +145,7 @@ impl MainWindow {
         let facts = Rc::new(Facts {
             count: rows.len(),
             can: Applicable::to(&rows),
+            folder: RefCell::default(),
             ids: ids.clone().into(),
             folded: folded_among(&ids, &from.laid.ids).into(),
             queues: library
@@ -343,8 +349,9 @@ impl MainWindow {
     }
 
     /// The bar that takes the command bar's row while the selection is held.
-    pub(super) fn selection_bar(&self, cx: &mut Context<'_, Self>) -> AnyElement {
+    pub(super) fn selection_bar(&self, window: &Window, cx: &mut Context<'_, Self>) -> AnyElement {
         let facts = self.selection_facts(cx);
+        let compact = window.viewport_size().width < px(LABELLED_BAR_WIDTH);
         let count = facts.count;
         let folded = facts.folded.clone();
         let ids = facts.ids.clone();
@@ -369,27 +376,33 @@ impl MainWindow {
                     .child(format!("{count} selected")),
             )
             .child(div().flex_1())
-            .children(state_buttons(&facts.can, cx))
+            .children(state_buttons(&facts.can, compact, cx))
+            .when_some(self.selected_folder(cx), |bar, folder| {
+                bar.child(file_actions::folder_button(&folder, count, cx))
+            })
+            .child(file_actions::copy_button(count, cx))
             .when(facts.many_queues && !facts.queues.is_empty(), |bar| {
-                bar.child(move_button(facts.queues.clone(), ids.clone()))
+                bar.child(move_button(facts.queues.clone(), ids.clone(), compact))
             })
             .child(
-                bar_button("sel-remove", "Remove", Icon::new(Lucide::Trash)).on_click(
+                bar_button("sel-remove", "Remove", Icon::new(Lucide::Trash), compact).on_click(
                     move |_, window, cx| {
                         confirm::remove(&library, &ids, &folded, cursor.bounds(), window, cx);
                     },
                 ),
             )
             .child(
-                Button::new("sel-clear")
-                    .small()
-                    .ghost()
-                    .icon(IconName::Close)
-                    .tooltip("Clear the selection")
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.clear_selection();
-                        cx.notify();
-                    })),
+                div().debug_selector(|| "sel-clear".to_owned()).child(
+                    Button::new("sel-clear")
+                        .small()
+                        .ghost()
+                        .icon(IconName::Close)
+                        .tooltip("Clear the selection")
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.clear_selection();
+                            cx.notify();
+                        })),
+                ),
             );
         super::command_bar::command_row()
             .child(bar)
@@ -416,7 +429,7 @@ struct Offer {
 }
 
 /// Pause, Resume and Try again, each while some of the selection takes it, saying how many rows when not all of them do.
-fn state_buttons(can: &Applicable, cx: &mut Context<'_, MainWindow>) -> Vec<Button> {
+fn state_buttons(can: &Applicable, compact: bool, cx: &mut Context<'_, MainWindow>) -> Vec<Button> {
     let offered = [
         Offer {
             shown: can.pause > 0,
@@ -455,7 +468,7 @@ fn state_buttons(can: &Applicable, cx: &mut Context<'_, MainWindow>) -> Vec<Butt
                  command,
                  ..
              }| {
-                bar_button(id, label, Icon::new(icon)).on_click(cx.listener(
+                bar_button(id, label, Icon::new(icon), compact).on_click(cx.listener(
                     move |this, _, window, cx| {
                         let rows = this.selected_rows(cx);
                         let rows: Vec<&DownloadSummary> = rows.iter().collect();
@@ -468,11 +481,16 @@ fn state_buttons(can: &Applicable, cx: &mut Context<'_, MainWindow>) -> Vec<Butt
 }
 
 /// Move to queue, with the `queues` some of `ids` are not in.
-fn move_button(queues: Rc<[(QueueId, String)]>, ids: Rc<[DownloadId]>) -> impl IntoElement {
+fn move_button(
+    queues: Rc<[(QueueId, String)]>,
+    ids: Rc<[DownloadId]>,
+    compact: bool,
+) -> impl IntoElement {
     bar_button(
         "sel-move",
         "Move to queue",
         Icon::new(Lucide::ArrowRightLeft),
+        compact,
     )
     .dropdown_menu(move |menu, _, _| {
         queues.iter().fold(menu, |menu, (queue, name)| {
@@ -489,8 +507,19 @@ fn move_button(queues: Rc<[(QueueId, String)]>, ids: Rc<[DownloadId]>) -> impl I
     })
 }
 
-fn bar_button(id: &'static str, label: impl Into<SharedString>, icon: Icon) -> Button {
-    Button::new(id).small().ghost().icon(icon).label(label)
+fn bar_button(
+    id: &'static str,
+    label: impl Into<SharedString>,
+    icon: Icon,
+    compact: bool,
+) -> Button {
+    let button = Button::new(id).small().ghost().icon(icon);
+    let label = label.into();
+    if compact {
+        button.accessibility_label(label.clone()).tooltip(label)
+    } else {
+        button.label(label)
+    }
 }
 
 /// Runs `command` on each of `rows` that `takes` it; the first refusal shows in the window.
@@ -633,7 +662,6 @@ mod tests {
     use super::super::laid::Asked;
     use super::super::{View, sort};
     use super::*;
-
     #[test]
     fn a_selection_is_held_when_built_on_purpose() {
         assert!(holds_on_purpose(2, false));

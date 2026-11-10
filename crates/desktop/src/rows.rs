@@ -113,6 +113,7 @@ pub struct Rows {
     all: Tally,
     queues: HashMap<QueueId, Tally>,
     revision: u64,
+    folder_revision: u64,
 }
 
 impl Deref for Rows {
@@ -152,6 +153,9 @@ impl Rows {
         let known = self.list[place].clone();
         if !sits_alike(&known, &row) {
             self.revision += 1;
+        }
+        if known.path != row.path || (known.done == 0) != (row.done == 0) {
+            self.folder_revision += 1;
         }
         self.count_out(&known);
         self.count_in(&row);
@@ -221,6 +225,11 @@ impl Rows {
     /// Moves whenever the list's grouping or order may differ; a progress tick leaves it.
     pub fn revision(&self) -> u64 {
         self.revision
+    }
+
+    /// Moves when a download changes paths or starts or stops having bytes on disk.
+    pub fn folder_revision(&self) -> u64 {
+        self.folder_revision
     }
 
     fn index(&mut self) {
@@ -371,6 +380,23 @@ mod tests {
         let paused = rows.revision();
         rows.put(row(2, 1, DownloadStatus::Queued, 0));
         assert_ne!(rows.revision(), paused);
+    }
+
+    #[test]
+    fn the_first_bytes_change_folder_availability_without_moving_the_list() {
+        let downloading = DownloadSummary {
+            done: 0,
+            ..row(1, 1, DownloadStatus::Downloading, 0)
+        };
+        let mut rows = rows(vec![downloading.clone()]);
+        let list = rows.revision();
+        let folders = rows.folder_revision();
+        rows.put(DownloadSummary {
+            done: 1,
+            ..downloading
+        });
+        assert_eq!(rows.revision(), list);
+        assert_ne!(rows.folder_revision(), folders);
     }
 
     #[test]

@@ -1772,3 +1772,11 @@ Decided with the maintainer on 2026-11-09. It amends D245.3 and completes D260.4
 3. Every applicable footer action is visible directly. Progress window, Show in folder and Remove are quiet icon buttons grouped on the left, with tooltips and accessible names. Cancel and the state action are outlined with their icons and text on the right, with Open called Open file. Their applicability and confirmation dialogs stay the same. A failure's contextual fix is also outlined. There is no overflow menu.
 4. Details is 600 logical pixels wide and fits at the 720 by 600 minimum window size. The header and footer do not shrink while the middle scrolls.
 5. Activity has its own bounded scroll area, at most 112 logical pixels high, with a vertical scrollbar. Every recorded event stays available inside it; a long history does not keep expanding the dialog.
+
+### D275. The selection bar copies links and shows a common folder
+
+Decided on 2026-11-10 as part of the UX review.
+
+1. Copy link or Copy links copies the ticked downloads' links in list order, one per line. The same rows are in reach as for the other selection bar actions (D160).
+2. Show in folder reveals the file when one ticked download has a file to show, or opens the folder once when several have the same saved folder path. If those paths differ, the bar leaves the action out. Downloads without files do not count towards the action (D224.2).
+3. Both actions use icons with tooltips and accessible names. At narrow widths the other actions also use icons so every action fits.

@@ -132,6 +132,39 @@ pub fn ask_to_open(path: PathBuf, warning: ProgramWarning, window: &mut Window, 
 /// Shows download `id`'s file selected in its folder, or opens the folder while the file is not
 /// there yet.
 pub fn show_in_folder(id: DownloadId, window: &mut Window, cx: &mut App) {
+    show_location(id, FolderFocus::File, window, cx);
+}
+
+/// Opens download `id`'s folder without singling it out from other downloads there.
+pub fn show_containing_folder(id: DownloadId, folder: PathBuf, window: &mut Window, cx: &mut App) {
+    show_location(id, FolderFocus::Folder(folder), window, cx);
+}
+
+enum FolderFocus {
+    File,
+    Folder(PathBuf),
+}
+
+impl FolderFocus {
+    fn location(self, found: Reveal) -> Result<Reveal, ProtocolError> {
+        let Self::Folder(expected) = self else {
+            return Ok(found);
+        };
+        let folder = match &found {
+            Reveal::File(path) => path.parent(),
+            Reveal::Folder(path) => Some(path.as_path()),
+        };
+        if folder == Some(expected.as_path()) {
+            Ok(Reveal::Folder(expected))
+        } else {
+            Err(api::failed(
+                "A selected download moved to another folder. Check the selection and try again.",
+            ))
+        }
+    }
+}
+
+fn show_location(id: DownloadId, focus: FolderFocus, window: &mut Window, cx: &mut App) {
     let found = Backend::run(cx, move |manager| async move {
         api::item_to_reveal(&manager, id).await
     });
@@ -140,7 +173,8 @@ pub fn show_in_folder(id: DownloadId, window: &mut Window, cx: &mut App) {
             let Some(shown) = answer(found.await) else {
                 return;
             };
-            crate::closing::may_have_closed(cx.update(|window, cx| match shown {
+            let location = shown.and_then(|found| focus.location(found));
+            crate::closing::may_have_closed(cx.update(|window, cx| match location {
                 Ok(Reveal::File(path)) => cx.reveal_path(&path),
                 Ok(Reveal::Folder(folder)) => cx.open_with_system(&folder),
                 Err(refused) => window.push_notification(refused.message, cx),
@@ -177,6 +211,20 @@ mod tests {
     }
 
     type Answer = Result<Result<Option<u8>, &'static str>, ()>;
+
+    #[test]
+    fn revealing_a_shared_folder_never_follows_a_download_that_moved() {
+        let expected = PathBuf::from("Downloads");
+        let file = Reveal::File(expected.join("file.zip"));
+        assert_eq!(
+            FolderFocus::Folder(expected.clone())
+                .location(file)
+                .unwrap(),
+            Reveal::Folder(expected.clone())
+        );
+        let moved = Reveal::File(PathBuf::from("Elsewhere").join("file.zip"));
+        assert!(FolderFocus::Folder(expected).location(moved).is_err());
+    }
 
     #[test]
     fn a_chooser_that_could_not_open_is_not_taken_for_a_cancel() {
