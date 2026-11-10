@@ -76,6 +76,12 @@ pub enum RemoveFiles {
     Delete,
 }
 
+/// Whether the download can be moved by hand to the given queue.
+#[must_use]
+pub fn can_move_to_queue(row: &DownloadSummary, queue: QueueId) -> bool {
+    row.status != DownloadStatus::Completed && row.queue != queue
+}
+
 impl Manager {
     /// Every download, grouped by queue: the queues in the order
     /// [`list_queues`](Self::list_queues) returns them, and within each queue in
@@ -458,8 +464,8 @@ impl Manager {
         Ok(())
     }
 
-    /// Moves downloads to the end of another queue. Running ones restart there, under
-    /// that queue's limits, continuing their part files.
+    /// Moves unfinished downloads to the end of another queue. Running ones restart there, under
+    /// that queue's limits, continuing their part files. Completed downloads keep their queue.
     ///
     /// # Errors
     ///
@@ -475,7 +481,7 @@ impl Manager {
         for id in ids {
             let position = state.ids.position();
             if let Some(entry) = state.downloads.get_mut(id)
-                && entry.row.queue != queue
+                && can_move_to_queue(&entry.row, queue)
             {
                 entry.row.queue = queue;
                 entry.row.queue_reason = QueueReason::Picked;

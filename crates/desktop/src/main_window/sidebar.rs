@@ -8,10 +8,11 @@ use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
 use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, Context, ElementId, FontWeight, Hsla, InteractiveElement as _, IntoElement,
-    ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _, WeakEntity,
-    div, px, relative,
+    AnyElement, App, Context, ElementId, Entity, FontWeight, Hsla, InteractiveElement as _,
+    IntoElement, ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _,
+    WeakEntity, div, px, relative,
 };
+use wirecatch_core::can_move_to_queue;
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{Queue, Setting};
 use wirecatch_protocol::proxy::ProxyUse;
@@ -21,6 +22,7 @@ use wirecatch_shell::api;
 use super::drag::{self, DraggedQueue, DraggedRows};
 use super::{Group, MainWindow, Screen, View, queue_header};
 use crate::backend::act;
+use crate::library::Library;
 use crate::rows::Tally;
 use crate::text;
 use crate::ui::speed_graph::{SpeedHistory, speed_graph};
@@ -393,7 +395,7 @@ impl MainWindow {
                 graph,
                 cx,
             ))
-            .map(|item| drops(item, id, index, &queue.settings.name, cx))
+            .map(|item| drops(item, id, index, &queue.settings.name, &self.library, cx))
             .on_click(cx.listener(move |this, _, window, cx| this.show(view, window, cx)))
             .context_menu(move |menu, _, _| {
                 queue_menu(menu, &shown, index, total, order.clone(), main.clone())
@@ -457,8 +459,10 @@ fn drops(
     id: QueueId,
     index: usize,
     name: &str,
+    library: &Entity<Library>,
     cx: &mut Context<'_, MainWindow>,
 ) -> gpui_kit::Stateful<gpui_kit::Div> {
+    let library = library.clone();
     item.when(index > 0, |item| {
         item.on_drag(
             DraggedQueue::new(id, name.to_owned()),
@@ -467,6 +471,15 @@ fn drops(
     })
     .drag_over::<DraggedRows>(|style, _, _, cx| drag::drop_target(style, cx))
     .drag_over::<DraggedQueue>(|style, _, _, cx| drag::drop_target(style, cx))
+    .can_drop(move |dragged, _, cx| {
+        dragged.downcast_ref::<DraggedRows>().is_none_or(|rows| {
+            let downloads = &library.read(cx).downloads;
+            rows.ids
+                .iter()
+                .filter_map(|&id| downloads.find(id))
+                .any(|row| can_move_to_queue(row, id))
+        })
+    })
     .on_drop(move |dragged: &DraggedRows, window, cx| {
         MainWindow::drop_rows_on_queue(id, dragged, window, cx);
     })

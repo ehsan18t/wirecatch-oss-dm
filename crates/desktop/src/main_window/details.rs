@@ -18,7 +18,7 @@ use gpui_kit::{
     IntoElement, ParentElement as _, Render, StatefulInteractiveElement as _, Styled as _,
     Subscription, Window, div, px,
 };
-use wirecatch_core::{ActivityEvent, Happened};
+use wirecatch_core::{ActivityEvent, Happened, can_move_to_queue};
 use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, FixAction};
 use wirecatch_protocol::{DownloadId, QueueId, UnixMillis};
 use wirecatch_shell::api;
@@ -166,7 +166,7 @@ impl Render for Details {
         let others: Vec<(QueueId, String)> = library
             .queues
             .iter()
-            .filter(|q| q.id != row.queue)
+            .filter(|q| can_move_to_queue(&row, q.id))
             .map(|q| (q.id, q.settings.name.clone()))
             .collect();
         v_flex()
@@ -244,8 +244,7 @@ impl Details {
     }
 }
 
-/// The short facts in one strip, each one the rest of the dialog does not already say. With other
-/// queues, the queue is a menu that moves the download.
+/// The short facts in one strip. The queue is a menu when the download can move.
 fn facts(
     row: &DownloadSummary,
     queue: &str,

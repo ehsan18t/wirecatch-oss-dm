@@ -553,6 +553,28 @@ async fn downloads_move_between_queues_and_keep_their_order() -> TestResult {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn moving_downloads_keeps_completed_files_in_their_original_queue() -> TestResult {
+    let h = Harness::new().await?;
+    let server = fast_server(KIB).await?;
+    let finished = h.add(server.url("finished.bin")).await?;
+    let finished = h.wait_status(finished.id, DownloadStatus::Completed).await;
+    let paused = h
+        .add_with(server.url("paused.bin"), |r| r.start = false)
+        .await?;
+    let later = h.manager.create_queue(QueueSettings::new("Later"))?.id;
+
+    h.manager.move_to_queue(&[finished.id, paused.id], later)?;
+
+    let after = h.row(finished.id);
+    assert_eq!(
+        (after.queue, after.queue_reason),
+        (finished.queue, finished.queue_reason)
+    );
+    assert_eq!(h.row(paused.id).queue, later);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_running_download_moves_folder_and_continues() -> TestResult {
     let len = 512 * KIB;
     let server = held_server(len, 64 * KIB).await?;
