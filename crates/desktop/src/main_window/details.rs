@@ -27,7 +27,7 @@ use super::applies::RowAction;
 use super::list::status_tone;
 use super::{Group, applies, confirm, fixes, refresh_dialog};
 use crate::backend::{Backend, act};
-use crate::download_windows::run_record::{Look, RunRecord};
+use crate::download_windows::run_record::RunRecord;
 use crate::download_windows::{run_facts, run_panel};
 use crate::library::Library;
 use crate::ui::layout::{self, Rule};
@@ -111,16 +111,7 @@ pub(super) fn open(library: Entity<Library>, id: DownloadId, window: &mut Window
                     window.close_dialog(cx);
                     return;
                 };
-                let now = Instant::now();
-                details.record.see(
-                    Look {
-                        per_mille: text::per_mille(row),
-                        speed: row.speed,
-                        done: row.done,
-                        running: row.status == DownloadStatus::Downloading,
-                    },
-                    now,
-                );
+                details.record.watch(row, Instant::now());
                 details.read_activity(cx);
                 cx.notify();
             },
