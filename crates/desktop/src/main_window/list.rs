@@ -1,7 +1,7 @@
 //! The download list: one line per download, grouped by status in the order [`Group::ALL`] gives,
 //! each group under a heading that folds it; finished downloads in queue order sit under the day
 //! they finished. Every row shares one grid: a circle that picks it, its time to the second (or
-//! time left), its file tile, its name over one line of its state, link and folder, and a figure.
+//! time left), its file tile, its name and optional metadata lines, and a figure.
 
 use std::rc::Rc;
 
@@ -31,7 +31,7 @@ use crate::backend::act;
 use crate::rows::Tally;
 use crate::text;
 use crate::ui::select_circle::{Picked, SelectCircle};
-use crate::ui::{Chip, FileTile, Role, Typed as _, icon, tokens, tooltip};
+use crate::ui::{Chip, FileTile, PathText, Role, Typed as _, icon, tokens, tooltip};
 
 /// Space before the circle column and after the figure.
 pub(super) const PAD: f32 = 12.;
@@ -47,6 +47,7 @@ const END_WIDTH: f32 = 112.;
 const PROGRESS_HEIGHT: f32 = 3.;
 const ONE_LINE_HEIGHT: f32 = 36.;
 const TWO_LINES_HEIGHT: f32 = 56.;
+const THREE_LINES_HEIGHT: f32 = 72.;
 /// How far past the visible lines the list lays out, so scrolling shows no gaps.
 const OVERDRAW: f32 = 400.;
 const HEADING_HEIGHT: f32 = 32.;
@@ -184,17 +185,16 @@ fn splice_keeping_place(
     }
 }
 
-/// How tall a row is: its name alone, or over a second line when the View menu keeps the link or
-/// the folder.
+/// How tall a row is, with room for each line the View menu keeps.
 fn line_height(shown: ListLines) -> f32 {
-    if has_second_line(shown) {
-        TWO_LINES_HEIGHT
-    } else {
-        ONE_LINE_HEIGHT
+    match (has_metadata(shown), shown.full_path) {
+        (false, false) => ONE_LINE_HEIGHT,
+        (true, true) => THREE_LINES_HEIGHT,
+        _ => TWO_LINES_HEIGHT,
     }
 }
 
-fn has_second_line(shown: ListLines) -> bool {
+fn has_metadata(shown: ListLines) -> bool {
     shown.link || shown.folder
 }
 
@@ -521,7 +521,7 @@ impl MainWindow {
         let hovered = self.hovered == Some(id);
         let queue = self.queue_name(&row, cx);
         let tone = status_tone(&row, cx);
-        let compact = !has_second_line(shown);
+        let compact = !has_metadata(shown) && !shown.full_path;
         let shows_circle = hovered || (self.picked && self.selection_facts(cx).count > 0);
         let shows_actions = hovered || (selected && !self.picked);
         let main = cx.entity().downgrade();
@@ -737,8 +737,6 @@ fn time_cell(row: &DownloadSummary, place: Option<usize>, dated: bool, cx: &App)
     cell.child(shown).into_any_element()
 }
 
-/// The name, over one line of what matters for the row's state, then the link and the folder the
-/// View menu keeps; a progress bar under them while work is under way or paused.
 fn text_column(
     row: &DownloadSummary,
     queue: Option<&str>,
@@ -746,7 +744,7 @@ fn text_column(
     tone: Hsla,
     cx: &App,
 ) -> gpui_kit::Div {
-    let second_line = has_second_line(shown);
+    let metadata = has_metadata(shown);
     let failed = row.status == DownloadStatus::Failed;
     v_flex()
         .flex_1()
@@ -764,7 +762,7 @@ fn text_column(
                         .text_role(Role::Strong, cx)
                         .child(row.file_name.clone()),
                 )
-                .when(failed && !second_line, |line| {
+                .when(failed && !metadata, |line| {
                     line.child(
                         div()
                             .flex_shrink_0()
@@ -774,14 +772,24 @@ fn text_column(
                     )
                 }),
         )
-        .when(second_line, |column| {
+        .when(metadata, |column| {
             column.child(second_line_of(row, queue, shown, tone, cx))
+        })
+        .when(shown.full_path, |column| {
+            column.child(
+                div()
+                    .debug_selector(|| "row-folder-path".to_owned())
+                    .w_full()
+                    .min_w_0()
+                    .text_role(Role::Meta, cx)
+                    .child(
+                        PathText::new(saved_folder(&row.path)).tooltip(row_id("full-path", row.id)),
+                    ),
+            )
         })
         .children(progress_bar(row, tone, cx))
 }
 
-/// The row's second line: its state while that matters, then the link's host (with its path once
-/// the download is over) and the folder as a chip.
 fn second_line_of(
     row: &DownloadSummary,
     queue: Option<&str>,
@@ -799,8 +807,8 @@ fn second_line_of(
         .text_role(Role::Meta, cx)
         .children(state)
         .when(dot, |line| line.child(div().flex_shrink_0().child("·")))
-        .when(shown.link, |line| line.child(link_part(row, cx)))
         .when(shown.folder, |line| line.child(folder_chip(row, cx)))
+        .when(shown.link, |line| line.child(link_part(row, cx)))
         .into_any_element()
 }
 
@@ -842,6 +850,7 @@ fn link_part(row: &DownloadSummary, cx: &App) -> AnyElement {
         .then(|| link_path(&link).to_owned());
     h_flex()
         .id(row_id("link", row.id))
+        .debug_selector(|| "row-link".to_owned())
         .min_w_0()
         .overflow_hidden()
         .child(
@@ -1294,18 +1303,21 @@ mod tests {
         }
     }
 
-    /// How many clicks the row got from a click on `line`, and what the clipboard then holds.
-    fn click_on(
+    fn row_window(
+        row: DownloadSummary,
         line: fn(&DownloadSummary, &App) -> AnyElement,
         cx: &mut gpui_kit::TestAppContext,
-    ) -> (usize, Option<String>) {
+    ) -> (
+        gpui_kit::Entity<LineInRow>,
+        &mut gpui_kit::VisualTestContext,
+    ) {
         use gpui_kit::AppContext as _;
         cx.update(gpui_kit::component::init);
         let (window, root) = cx
             .update(|cx| {
                 gpui_kit::open_window(gpui_kit::WindowOptions::default(), cx, |_, cx| {
                     cx.new(|_| LineInRow {
-                        row: download(1),
+                        row,
                         line,
                         clicks: 0,
                     })
@@ -1314,6 +1326,15 @@ mod tests {
             .unwrap();
         let cx = gpui_kit::VisualTestContext::from_window(window, cx).into_mut();
         cx.run_until_parked();
+        (root, cx)
+    }
+
+    /// How many clicks the row got from a click on `line`, and what the clipboard then holds.
+    fn click_on(
+        line: fn(&DownloadSummary, &App) -> AnyElement,
+        cx: &mut gpui_kit::TestAppContext,
+    ) -> (usize, Option<String>) {
+        let (root, cx) = row_window(download(1), line, cx);
         cx.simulate_click(gpui_kit::point(px(4.), px(4.)), gpui_kit::Modifiers::none());
         let copied = cx.read_from_clipboard().and_then(|copied| copied.text());
         (root.read_with(cx, |root, _| root.clicks), copied)
@@ -1327,6 +1348,33 @@ mod tests {
     #[gpui_kit::test]
     fn a_click_on_the_folder_selects_the_row(cx: &mut gpui_kit::TestAppContext) {
         assert_eq!(click_on(folder_chip, cx), (1, None));
+    }
+
+    #[gpui_kit::test]
+    fn the_folder_name_precedes_the_link_and_the_path_is_below(cx: &mut gpui_kit::TestAppContext) {
+        let row = DownloadSummary {
+            status: DownloadStatus::Completed,
+            path: format!("Downloads/{}/file-1.zip", "long-folder-name".repeat(12)),
+            ..download(1)
+        };
+        let (_, cx) = row_window(
+            row,
+            |row, cx| {
+                let shown = ListLines {
+                    full_path: true,
+                    ..ListLines::default()
+                };
+                text_column(row, None, shown, cx.theme().foreground, cx).into_any_element()
+            },
+            cx,
+        );
+        let chip = cx.debug_bounds("chip").expect("folder name");
+        let link = cx.debug_bounds("row-link").expect("link");
+        let path = cx
+            .debug_bounds("row-folder-path")
+            .expect("full folder path");
+        assert!(link.size.width > px(0.) && chip.right() <= link.left());
+        assert!(path.top() >= link.bottom());
     }
 
     #[test]
@@ -1349,6 +1397,17 @@ mod tests {
         assert_eq!(gutter_of(&finished, None), Gutter::Clock);
         let failed = row(DownloadStatus::Failed, None);
         assert_eq!(gutter_of(&failed, None), Gutter::Clock);
+    }
+
+    #[test]
+    fn the_full_folder_path_has_room_below_the_link() {
+        let shown = |full_path| {
+            serde_json::from_value(serde_json::json!({
+                "link": true, "folder": false, "full_path": full_path
+            }))
+            .unwrap()
+        };
+        assert!(line_height(shown(true)) > line_height(shown(false)));
     }
 
     #[test]
