@@ -99,6 +99,15 @@ pub fn chooser_answer<T, E: Display, Gone>(
 
 /// Opens download `id`'s finished file; a program opens only once the person agrees in `window`.
 pub fn open(id: DownloadId, window: &mut Window, cx: &mut App) {
+    open_then(id, AfterHandoff::Keep, window, cx);
+}
+
+/// Opens the finished file and closes its download window after any program warning is accepted.
+pub fn open_and_close(id: DownloadId, window: &mut Window, cx: &mut App) {
+    open_then(id, AfterHandoff::Close, window, cx);
+}
+
+fn open_then(id: DownloadId, after: AfterHandoff, window: &mut Window, cx: &mut App) {
     let found = Backend::run(cx, move |manager| async move {
         api::file_to_open(&manager, id).await
     });
@@ -108,36 +117,73 @@ pub fn open(id: DownloadId, window: &mut Window, cx: &mut App) {
                 return;
             };
             crate::closing::may_have_closed(cx.update(|window, cx| match opened {
-                Ok(ToOpen::File(path)) => cx.open_with_system(&path),
-                Ok(ToOpen::Program { path, warning }) => ask_to_open(path, warning, window, cx),
+                Ok(ToOpen::File(path)) => {
+                    handoff(after, window, cx, |cx| cx.open_with_system(&path));
+                }
+                Ok(ToOpen::Program { path, warning }) => {
+                    ask_to_open_then(path, warning, after, window, cx);
+                }
                 Err(refused) => window.push_notification(refused.message, cx),
             }));
         })
         .detach();
 }
 
+#[derive(Clone, Copy)]
+enum AfterHandoff {
+    Keep,
+    Close,
+}
+
+fn handoff(after: AfterHandoff, window: &mut Window, cx: &mut App, use_path: impl FnOnce(&App)) {
+    use_path(cx);
+    if matches!(after, AfterHandoff::Close) {
+        crate::closing::close(window, cx);
+    }
+}
+
 /// Asks in `window` before a program at `path` opens.
 pub fn ask_to_open(path: PathBuf, warning: ProgramWarning, window: &mut Window, cx: &mut App) {
+    ask_to_open_then(path, warning, AfterHandoff::Keep, window, cx);
+}
+
+fn ask_to_open_then(
+    path: PathBuf,
+    warning: ProgramWarning,
+    after: AfterHandoff,
+    window: &mut Window,
+    cx: &mut App,
+) {
     let question = Question {
         title: warning.title,
         body: warning.message,
         keep: "Cancel",
         go: "Open",
     };
-    crate::ui::dialog::ask(question, window, cx, move |_, cx| {
-        cx.open_with_system(&path);
+    crate::ui::dialog::ask(question, window, cx, move |window, cx| {
+        handoff(after, window, cx, |cx| cx.open_with_system(&path));
     });
 }
 
 /// Shows download `id`'s file selected in its folder, or opens the folder while the file is not
 /// there yet.
 pub fn show_in_folder(id: DownloadId, window: &mut Window, cx: &mut App) {
-    show_location(id, FolderFocus::File, window, cx);
+    show_location(id, FolderFocus::File, AfterHandoff::Keep, window, cx);
+}
+
+pub fn show_in_folder_and_close(id: DownloadId, window: &mut Window, cx: &mut App) {
+    show_location(id, FolderFocus::File, AfterHandoff::Close, window, cx);
 }
 
 /// Opens download `id`'s folder without singling it out from other downloads there.
 pub fn show_containing_folder(id: DownloadId, folder: PathBuf, window: &mut Window, cx: &mut App) {
-    show_location(id, FolderFocus::Folder(folder), window, cx);
+    show_location(
+        id,
+        FolderFocus::Folder(folder),
+        AfterHandoff::Keep,
+        window,
+        cx,
+    );
 }
 
 enum FolderFocus {
@@ -164,7 +210,13 @@ impl FolderFocus {
     }
 }
 
-fn show_location(id: DownloadId, focus: FolderFocus, window: &mut Window, cx: &mut App) {
+fn show_location(
+    id: DownloadId,
+    focus: FolderFocus,
+    after: AfterHandoff,
+    window: &mut Window,
+    cx: &mut App,
+) {
     let found = Backend::run(cx, move |manager| async move {
         api::item_to_reveal(&manager, id).await
     });
@@ -175,8 +227,10 @@ fn show_location(id: DownloadId, focus: FolderFocus, window: &mut Window, cx: &m
             };
             let location = shown.and_then(|found| focus.location(found));
             crate::closing::may_have_closed(cx.update(|window, cx| match location {
-                Ok(Reveal::File(path)) => cx.reveal_path(&path),
-                Ok(Reveal::Folder(folder)) => cx.open_with_system(&folder),
+                Ok(location) => handoff(after, window, cx, |cx| match location {
+                    Reveal::File(path) => cx.reveal_path(&path),
+                    Reveal::Folder(folder) => cx.open_with_system(&folder),
+                }),
                 Err(refused) => window.push_notification(refused.message, cx),
             }));
         })
@@ -185,9 +239,33 @@ fn show_location(id: DownloadId, focus: FolderFocus, window: &mut Window, cx: &m
 
 #[cfg(test)]
 mod tests {
-    use gpui_kit::TestAppContext;
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    use gpui_kit::{AppContext as _, Empty, TestAppContext, WindowOptions};
 
     use super::*;
+
+    #[gpui_kit::test]
+    fn a_completed_download_window_closes_after_file_handoff(cx: &mut TestAppContext) {
+        let handed_off = Rc::new(Cell::new(false));
+        let window = cx.update(|cx| {
+            cx.open_window(WindowOptions::default(), |window, cx| {
+                let handed_off = handed_off.clone();
+                crate::closing::on_close(window, cx, move |_, _| handed_off.get());
+                cx.new(|_| Empty)
+            })
+            .unwrap()
+        });
+        window
+            .update(cx, |_, window, cx| {
+                handoff(AfterHandoff::Close, window, cx, |_| handed_off.set(true));
+            })
+            .unwrap();
+        cx.run_until_parked();
+
+        assert_eq!(cx.windows(), [] as [gpui_kit::AnyWindowHandle; 0]);
+    }
 
     fn pick(cx: &TestAppContext, folder: &str) {
         cx.simulate_path_prompt_response(|_| Some(vec![PathBuf::from(folder)]));

@@ -1275,9 +1275,9 @@ fn progress_buttons(row: &DownloadSummary, cx: &mut Context<'_, DownloadWindow>)
                 ButtonVariant::Secondary,
                 false,
             )
-            .on_click(move |_, window, cx| files::show_in_folder(id, window, cx)),
+            .on_click(move |_, window, cx| files::show_in_folder_and_close(id, window, cx)),
             button("progress-open", "Open", ButtonVariant::Primary, false)
-                .on_click(move |_, window, cx| files::open(id, window, cx)),
+                .on_click(move |_, window, cx| files::open_and_close(id, window, cx)),
         ],
         DownloadStatus::Paused => vec![
             cancel(),
