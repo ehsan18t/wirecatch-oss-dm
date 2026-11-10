@@ -60,7 +60,7 @@ use wirecatch_store::{Recovery, SaveNews, SaveWatcher, Store};
 use crate::clock::{Clock, SystemClock};
 use crate::error::{CoreError, Result, blocking};
 use crate::naming;
-pub use downloads::{LinkFrom, RemoveFiles};
+pub use downloads::{LinkFrom, RemoveFiles, can_move_to_queue};
 use state::{Entry, State, Stop};
 pub use suffix_list::PUBLIC_SUFFIX_LIST_URL;
 pub use ticker::PROGRESS_TICK;

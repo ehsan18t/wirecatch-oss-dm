@@ -3,6 +3,7 @@
 
 use gpui_kit::component::IconName;
 use gpui_kit::{App, Window};
+use wirecatch_core::can_move_to_queue;
 use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, FixAction, WaitReason};
 use wirecatch_protocol::{DownloadId, QueueId};
 use wirecatch_shell::api;
@@ -129,9 +130,9 @@ pub fn link_may_have_expired(row: &DownloadSummary) -> bool {
             || matches!(row.waiting, Some(WaitReason::ServerRefused { .. })))
 }
 
-/// Moving to `queue` is offered while some of the downloads are in another queue.
+/// Moving to `queue` is offered when it can take an unfinished download.
 pub fn can_move_to(rows: &[&DownloadSummary], queue: QueueId) -> bool {
-    rows.iter().any(|row| row.queue != queue)
+    rows.iter().any(|row| can_move_to_queue(row, queue))
 }
 
 /// What a selection offers: an action applies when at least one of its downloads takes it.
@@ -257,6 +258,23 @@ mod tests {
             ..download(2)
         };
         assert!(has_file(&finished));
+    }
+
+    #[test]
+    fn a_move_to_another_queue_is_offered_for_unfinished_downloads() {
+        let finished = DownloadSummary {
+            status: DownloadStatus::Completed,
+            queue: QueueId(1),
+            ..download(1)
+        };
+        let paused = DownloadSummary {
+            status: DownloadStatus::Paused,
+            queue: QueueId(1),
+            ..download(2)
+        };
+        assert!(!can_move_to(&[&finished], QueueId(2)));
+        assert!(can_move_to(&[&finished, &paused], QueueId(2)));
+        assert!(!can_move_to(&[&finished, &paused], QueueId(1)));
     }
 
     #[test]
