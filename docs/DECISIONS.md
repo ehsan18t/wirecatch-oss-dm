@@ -1626,7 +1626,7 @@ Decided with the maintainer on 2026-11-06. It amends D47.5: the details stay a d
 
 1. What is happening now is the progress window's own run panel and figures (D114.3), the same pieces (`download_windows::run_panel`, `run_facts`): the speed and percent over the run drawn as the bar, then Downloaded, Time left, Average and Connections, or what that window shows for the state. There is no separate bar and no line of the last minute's speeds. A failure shows its reason with its fix instead of the panel, and its figures below.
 2. Where it is saved has Copy beside it, and Change until it finishes. Its buttons, the queue menu among the facts included, are the size of the foot's, and a fact's value keeps to one line.
-3. The actions at the foot are labelled, in the row menu's order: Progress window, Show in folder and More (Cancel and Remove), with the one action its state calls for on the right. A failure's callout offers only its fix, since Try again is that action.
+3. The actions at the foot follow D274: every applicable action is visible, with the state action on the right. A failure's callout offers only its fix, since Try again is that action.
 4. A side panel beside the list was tried and rejected: a click must never shrink or reflow the list.
 
 ### D259. The media settings wait for the add-on
@@ -1670,10 +1670,10 @@ Decided with the maintainer on 2026-11-06. Settings listed the queues again, eac
 
 Decided with the maintainer on 2026-11-06. A dialog's title sat as close to its first field as the fields sit to each other, so it did not read as a header.
 
-1. A dialog's header is its title in the page title's type, over a rule across the whole dialog, with the same gap before the content as before the buttons. `ui::dialog::open` draws it from the title it is given, so a dialog cannot be titled another way; only the command palette, which is one field, and Details (point 4) open without one, and the `dialog-header` gate check refuses any other.
+1. A dialog's header is its title in the page title's type, over a rule across the whole dialog, with the same gap before the content as before the buttons. `ui::dialog::open` draws it from the title it is given. Only the command palette, which is one field, opens without a header; Details assembles the shared header in its fixed title slot (point 4). The `dialog-header` gate check refuses other custom routes.
 2. A question whose answer cannot be taken back (opening a program, removing the add-on, discarding a queue's changes) is a dialog like the others, through `ui::dialog::ask`: what happens under the header, then its two answers. gpui-kit's alert, which put that text above the rule, is not used.
 3. Enter gives a question's main answer, as its main button does, unless that answer is a danger one (deleting files, cancelling a download that has a part downloaded, opening a program, removing the add-on): then Enter does nothing and the question stays open, so a held or stray Enter never answers what cannot be taken back (`ui::dialog::enter_answers`). Deleting a queue is the exception: its name must be typed first, so Enter in that field deletes, as the button does.
-4. Details keeps the header it draws itself, with the download's state under the name, until it moves to the shared header.
+4. Details uses the shared `ui::dialog::Header` with the download's state under the name. It keeps this header and its actions in the dialog's fixed title and footer slots while the middle scrolls (D274).
 
 ### D261. A question about downloads opens beside their row
 
@@ -1762,3 +1762,13 @@ Decided with the maintainer on 2026-11-06, as part of the UX review.
 1. The main window can be resized down to 720 logical pixels wide and 600 high, so it fits beside a browser in a workspace 1440 logical pixels wide. It opens at 1280 by 800. Navigation at a narrow width follows D266.
 
 2. A queue's name can shrink before its action buttons, so every action stays inside the header at the minimum width.
+
+### D274. Details has quieter supporting text and actions
+
+Decided with the maintainer on 2026-11-09. It amends D245.3 and completes D260.4: paths and links were too prominent, the action footer was crowded, and a long file name could cover Close.
+
+1. The shared dialog header reserves the close button's space independently of its title. A title stays on one line, cut in the middle when needed, with its full text on hover. Details uses this header with its status and host below the file name.
+2. Locations, source links, fact values and activity use the existing small metadata type with normal weight. A path keeps its middle cut and full-text tooltip, a source link has a full-text tooltip, and both retain Copy. Activity's date column has room for the full date without running into its event.
+3. Every applicable footer action is visible directly. Progress window, Show in folder and Remove are quiet icon buttons grouped on the left, with tooltips and accessible names. Cancel and the state action are outlined with their icons and text on the right, with Open called Open file. Their applicability and confirmation dialogs stay the same. A failure's contextual fix is also outlined. There is no overflow menu.
+4. Details is 600 logical pixels wide and fits at the 720 by 600 minimum window size. The header and footer do not shrink while the middle scrolls.
+5. Activity has its own bounded scroll area, at most 112 logical pixels high, with a vertical scrollbar. Every recorded event stays available inside it; a long history does not keep expanding the dialog.

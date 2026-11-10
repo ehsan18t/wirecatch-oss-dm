@@ -5,13 +5,14 @@ use std::rc::Rc;
 use gpui_kit::component::button::{Button, ButtonVariant, ButtonVariants as _};
 use gpui_kit::component::dialog::{Dialog, DialogEntrance};
 use gpui_kit::component::input::InputState;
-use gpui_kit::component::{ActiveTheme as _, WindowExt as _, h_flex, v_flex, window_paddings};
+use gpui_kit::component::{WindowExt as _, h_flex, v_flex, window_paddings};
 use gpui_kit::{
-    App, AppContext as _, Bounds, Entity, IntoElement, ParentElement as _, Pixels, RenderOnce,
-    SharedString, Styled as _, Window, div, point, px,
+    AnyElement, App, AppContext as _, Bounds, Entity, InteractiveElement as _, IntoElement,
+    ParentElement as _, Pixels, RenderOnce, SharedString, Styled as _, Window, div, point, px,
 };
 
-use crate::ui::{Role, Typed as _};
+use crate::ui::layout::{self, Rule};
+use crate::ui::{PathText, Role, Typed as _};
 
 /// The default slides down from the window top for 250 ms; this settles in place.
 const ENTRANCE: DialogEntrance = DialogEntrance::FadeSlide;
@@ -21,20 +22,50 @@ const QUESTION_WIDTH: f32 = 440.;
 
 /// A dialog's title over a rule across the whole dialog, with a fixed gap before its content.
 #[derive(IntoElement)]
-struct Header {
+pub struct Header {
     title: SharedString,
+    description: Option<AnyElement>,
+}
+
+impl Header {
+    pub fn new(title: impl Into<SharedString>) -> Self {
+        Self {
+            title: title.into(),
+            description: None,
+        }
+    }
+
+    pub fn description(mut self, description: impl IntoElement) -> Self {
+        self.description = Some(description.into_any_element());
+        self
+    }
 }
 
 impl RenderOnce for Header {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
-        v_flex()
+        let role = if self.description.is_some() {
+            Role::Title
+        } else {
+            Role::PageTitle
+        };
+        layout::section(Rule::Below, cx)
             .mx(px(-DIALOG_PADDING))
-            .px(px(DIALOG_PADDING))
-            .pb_3()
+            .pt_0()
             .mb_2()
-            .border_b_1()
-            .border_color(cx.theme().border)
-            .child(div().text_role(Role::PageTitle, cx).child(self.title))
+            .child(
+                v_flex()
+                    .pr_8()
+                    .min_w_0()
+                    .gap_1()
+                    .child(
+                        div()
+                            .min_w_0()
+                            .debug_selector(|| "dialog-title".to_owned())
+                            .text_role(role, cx)
+                            .child(PathText::new(self.title).tooltip("dialog-title-tooltip")),
+                    )
+                    .children(self.description),
+            )
     }
 }
 
@@ -46,7 +77,7 @@ pub fn open(
     build: impl Fn(Dialog, &mut Window, &mut App) -> Dialog + 'static,
 ) {
     window.open_dialog(cx, move |dialog, window, cx| {
-        let header = Header { title: title(cx) };
+        let header = Header::new(title(cx));
         build(dialog.entrance(ENTRANCE).title(header), window, cx)
     });
 }
@@ -205,9 +236,29 @@ pub fn text_field(
 
 #[cfg(test)]
 mod tests {
-    use gpui_kit::size;
+    use gpui_kit::{Context, Render, TestAppContext, size};
 
     use super::*;
+
+    #[gpui_kit::test]
+    fn a_long_title_leaves_room_for_the_close_button(cx: &mut TestAppContext) {
+        struct Heading;
+        impl Render for Heading {
+            fn render(&mut self, _: &mut Window, _: &mut Context<'_, Self>) -> impl IntoElement {
+                div().w(px(360.)).p_4().child(Header::new(
+                    "a-very-long-file-name-without-spaces-that-must-not-cover-close.zip",
+                ))
+            }
+        }
+        cx.update(gpui_kit::component::init);
+        let (_, cx) = cx.add_window_view(|_, _| Heading);
+        cx.run_until_parked();
+        let title = cx.debug_bounds("dialog-title").expect("the title is drawn");
+        assert!(
+            title.right() <= px(312.),
+            "the title occupies the close button's space: {title:?}"
+        );
+    }
 
     fn row_at(top: f32) -> Bounds<Pixels> {
         Bounds::new(point(px(0.), px(top)), size(px(900.), px(40.)))
