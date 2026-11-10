@@ -261,11 +261,7 @@ fn about_one(menu: PopupMenu, target: &Target) -> PopupMenu {
 
 /// What copying the links of `rows` is called, and the links in list order.
 fn copied(rows: &[DownloadSummary]) -> (&'static str, Vec<String>) {
-    let label = if rows.len() == 1 {
-        "Copy link"
-    } else {
-        "Copy links"
-    };
+    let label = details::copy_link_label(rows.len());
     (label, rows.iter().map(|row| row.url.clone()).collect())
 }
 

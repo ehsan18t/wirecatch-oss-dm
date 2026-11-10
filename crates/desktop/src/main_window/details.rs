@@ -359,8 +359,19 @@ fn failure(
     )
 }
 
+pub(super) fn copy_link_label(count: usize) -> &'static str {
+    if count == 1 {
+        "Copy link"
+    } else {
+        "Copy links"
+    }
+}
+
 /// Puts downloads' `links` on the clipboard, one per line, and says so.
 pub(super) fn copy_links(links: &[String], window: &mut Window, cx: &mut App) {
+    if links.is_empty() {
+        return;
+    }
     cx.write_to_clipboard(ClipboardItem::new_string(links.join("\n")));
     window.push_notification(
         if links.len() == 1 {

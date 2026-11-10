@@ -905,7 +905,7 @@ impl Render for MainWindow {
                 Screen::Downloads => layout::body(
                     navigation,
                     if self.selection_held(cx) {
-                        self.selection_bar(cx)
+                        self.selection_bar(window, cx)
                     } else {
                         self.command_bar(cx).into_any_element()
                     },
