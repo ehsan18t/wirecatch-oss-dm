@@ -1157,7 +1157,7 @@ Decided with the maintainer on 2026-10-31.
 
 1. Every row shares one grid: a circle that ticks it (a running row's too, D224), its time or state, the file tile, the name over one line of its state, link and save folder (D244), and one figure. In the queue-order sort, finished downloads sit under day headings with their count and total size, each row showing its time to the second, in the 12 or 24-hour format of the `clock` setting; other sorts keep one Finished heading.
 2. A View menu beside the sort chooses which lines rows show, saved in `list_lines`; a row with neither is one compact line, and either one puts its part on the second line (D244). Rows therefore differ in height, so the list draws with GPUI's variable-height list and keeps its scroll position across changes.
-3. Circles beside each heading and in the selection bar tick a whole day, group or list.
+3. Circles beside each heading and in the selection bar tick a whole day, group or list. Clicking the date also ticks its downloads. The headings leave actions to the selection bar.
 4. A queue with rules has a Rules on or Rules off button in its one-line header and the same choice in the sidebar's menu, so its rules can be switched without opening the editor. A queue with no rules shows neither.
 
 ### D116. HTTPS on Windows trusts the system's roots and a bundled set
