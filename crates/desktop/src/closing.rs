@@ -1,7 +1,5 @@
-//! A window's step before it closes, run however it closes: by the system, or by the title bar's
-//! Close button, which on Linux takes the window away itself and so skips
-//! `on_window_should_close`. Also the one place an update of a window or view that may have
-//! closed meanwhile is let go.
+//! Runs each window's step on system or title bar close. Linux's title bar skips the system
+//! close callback. On Windows, the step and GPUI own the close from either entry point.
 
 use std::collections::HashMap;
 use std::panic::Location;
@@ -38,7 +36,15 @@ pub fn on_close(
     cx.global_mut::<Steps>()
         .steps
         .insert(window.window_handle().window_id(), Rc::clone(&step));
-    window.on_window_should_close(cx, move |window, cx| step(window, cx));
+    window.on_window_should_close(cx, move |window, cx| {
+        if cfg!(windows) {
+            // Consume WM_CLOSE so GPUI destroys the HWND after its dialogs close.
+            close(window, cx);
+            false
+        } else {
+            step(window, cx)
+        }
+    });
 }
 
 /// What a title bar's Close button does: the window's step, then the window goes unless the step
