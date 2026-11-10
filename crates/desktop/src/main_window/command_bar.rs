@@ -86,8 +86,7 @@ impl MainWindow {
             })
     }
 
-    /// The button a status's own page offers for all its downloads, which a heading offers on All
-    /// downloads.
+    /// The button a status's own page offers for all its downloads.
     fn page_command(&self, cx: &App) -> Option<(&'static str, GroupCommand)> {
         match self.view {
             View::Group(group) => self.group_command(group, cx),

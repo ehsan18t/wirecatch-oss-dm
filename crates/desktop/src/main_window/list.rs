@@ -99,7 +99,7 @@ fn tip_id(part: &'static str, id: DownloadId, at: InView) -> ElementId {
     )
 }
 
-/// What a heading's button does to every download.
+/// What a status page's button does to every download.
 #[derive(Clone, Copy)]
 pub(super) enum GroupCommand {
     PauseAll,
@@ -107,13 +107,6 @@ pub(super) enum GroupCommand {
 }
 
 impl GroupCommand {
-    pub(super) fn icon(self) -> IconName {
-        match self {
-            Self::PauseAll => IconName::Pause,
-            Self::ResumeAll => IconName::Play,
-        }
-    }
-
     pub(super) fn run(self, window: &Window, cx: &mut App) {
         let work = match self {
             Self::PauseAll => api::pause_all,
@@ -123,7 +116,7 @@ impl GroupCommand {
     }
 }
 
-/// The command over `group`, while it has downloads.
+/// The command on `group`'s page, while it has downloads.
 fn command_for(group: Group, tally: &Tally) -> Option<(&'static str, GroupCommand)> {
     if tally.in_group(group) == 0 {
         return None;
@@ -368,8 +361,7 @@ impl MainWindow {
         self.search.read(cx).value().trim().to_lowercase()
     }
 
-    /// The button a heading, or a status's own page, offers for every download: Pause all over
-    /// what runs, or over what waits when nothing runs, and Resume all over what is paused.
+    /// The button a status's own page offers for every download.
     pub(super) fn group_command(
         &self,
         group: Group,
@@ -415,7 +407,6 @@ impl MainWindow {
     ) -> AnyElement {
         let (quiet, loud) = (cx.theme().muted_foreground, cx.theme().foreground);
         let folded = self.folded.contains(&group);
-        let command = self.group_command(group, cx);
         heading_line()
             .child(self.heading_circle(format!("pick-{group:?}").into(), ids, cx))
             .child(
@@ -448,16 +439,6 @@ impl MainWindow {
                         cx.notify();
                     })),
             )
-            .when_some(command, |line, (label, command)| {
-                line.child(
-                    Button::new(ElementId::Name(SharedString::new(format!("all-{group:?}"))))
-                        .small()
-                        .outline()
-                        .icon(command.icon())
-                        .label(label)
-                        .on_click(cx.listener(move |_, _, window, cx| command.run(window, cx))),
-                )
-            })
             .into_any_element()
     }
 
@@ -467,30 +448,27 @@ impl MainWindow {
             1 => "1 file".to_owned(),
             n => format!("{n} files"),
         };
-        let (library, ids) = (self.library.clone(), facts.ids.clone());
+        let ids = facts.ids.clone();
         heading_line()
             .child(self.heading_circle(format!("pick-day-{day}").into(), facts.ids.clone(), cx))
             .child(
-                div()
-                    .text_role(Role::Strong, cx)
-                    .child(text::day_heading(day)),
-            )
-            .child(
-                div()
+                h_flex()
+                    .id(SharedString::from(format!("day-{day}")))
                     .flex_1()
-                    .text_role(Role::Meta, cx)
-                    .child(format!("{files}, {}", format_bytes(facts.bytes))),
-            )
-            .child(
-                Button::new(ElementId::Name(SharedString::new(format!(
-                    "remove-day-{day}"
-                ))))
-                .small()
-                .outline()
-                .label("Remove from list")
-                .on_click(move |_, window, cx| {
-                    super::confirm::remove(&library, &ids, &[], None, window, cx);
-                }),
+                    .gap_2()
+                    .cursor_pointer()
+                    .child(
+                        div()
+                            .debug_selector(|| "day-heading".to_owned())
+                            .text_role(Role::Strong, cx)
+                            .child(text::day_heading(day)),
+                    )
+                    .child(
+                        div()
+                            .text_role(Role::Meta, cx)
+                            .child(format!("{files}, {}", format_bytes(facts.bytes))),
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| this.toggle_rows(&ids, cx))),
             )
             .into_any_element()
     }
@@ -1081,6 +1059,60 @@ fn row_id(part: &'static str, id: DownloadId) -> ElementId {
 mod tests {
     use super::*;
     use wirecatch_test_support::downloads::download;
+
+    fn download_list(
+        cx: &mut gpui_kit::TestAppContext,
+    ) -> (
+        gpui_kit::Entity<MainWindow>,
+        &mut gpui_kit::VisualTestContext,
+    ) {
+        use gpui_kit::AppContext as _;
+
+        let (window, main) = cx
+            .update(|cx| {
+                gpui_kit::component::init(cx);
+                let library = cx.new(|_| {
+                    let mut library = crate::library::Library::empty();
+                    library.downloads.replace(vec![
+                        download(1),
+                        DownloadSummary {
+                            status: DownloadStatus::Completed,
+                            ..download(2)
+                        },
+                        DownloadSummary {
+                            status: DownloadStatus::Completed,
+                            ..download(3)
+                        },
+                    ]);
+                    library
+                });
+                crate::app_update::start(&library, cx);
+                gpui_kit::open_window(gpui_kit::WindowOptions::default(), cx, |window, cx| {
+                    cx.new(|cx| MainWindow::new(library, window, cx))
+                })
+            })
+            .unwrap();
+        let cx = gpui_kit::VisualTestContext::from_window(window, cx).into_mut();
+        cx.simulate_resize(gpui_kit::size(px(900.), px(600.)));
+        cx.run_until_parked();
+        (main, cx)
+    }
+
+    #[gpui_kit::test]
+    fn clicking_the_day_selects_its_downloads(cx: &mut gpui_kit::TestAppContext) {
+        let (main, cx) = download_list(cx);
+        let date = cx.debug_bounds("day-heading").expect("the date is visible");
+        cx.simulate_click(date.center(), gpui_kit::Modifiers::none());
+        assert_eq!(
+            main.read_with(cx, |main, _| main
+                .picked_of(&[DownloadId(2), DownloadId(3)])),
+            Picked::All
+        );
+        assert_eq!(
+            main.read_with(cx, |main, _| main.picked_of(&[DownloadId(1)])),
+            Picked::None
+        );
+    }
 
     /// A tooltip that counts how often it is drawn.
     struct Tip(Rc<std::cell::Cell<usize>>);
