@@ -5,7 +5,9 @@
 use std::path::{Path, PathBuf};
 
 use crate::host::CHANNEL;
+use tokio::sync::oneshot;
 use wirecatch_core::{LinkFrom, Manager, RemoveFiles};
+use wirecatch_engine::Url;
 use wirecatch_protocol::ProxyServerId;
 use wirecatch_protocol::app::{
     AddRequest, AddonId, AddonInfo, AppSettings, AppSettingsPatch, CaptureConfirmation,
@@ -145,6 +147,19 @@ pub fn retry(m: &Manager, id: DownloadId) -> CommandResult<()> {
 /// `id`, or the manager has shut down ([`Manager::refresh_link`]).
 pub fn refresh_link(m: &Manager, id: DownloadId, url: &str, from: LinkFrom) -> CommandResult<()> {
     plain(m.refresh_link(id, url, from))
+}
+
+/// Watches for a fresh browser link and returns the page to reopen.
+///
+/// # Errors
+///
+/// The download is missing, finished or stranded, or the manager is closed.
+pub fn watch_link(
+    m: &Manager,
+    id: DownloadId,
+    saved: oneshot::Sender<()>,
+) -> CommandResult<Option<Url>> {
+    plain(m.watch_link(id, saved))
 }
 
 /// Saves a download whose conversion failed as it was downloaded instead (D24).

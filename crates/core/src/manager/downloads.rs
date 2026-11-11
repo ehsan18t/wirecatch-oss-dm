@@ -23,10 +23,19 @@ use super::file_exists::give_up_the_name;
 use super::handovers::{Handover, Target};
 use super::placement::{Candidate, QueueRequest};
 use super::run::mark_cancelled;
-use super::state::{AfterCancel, Entry, Hold, NextRun, Partial, Seen, State, Stop};
+use super::state::{AfterCancel, Entry, Expectation, Hold, NextRun, Partial, Seen, State, Stop};
 use crate::error::{CoreError, Result};
-use crate::headers;
+use crate::headers::{self, Origin};
 use crate::naming;
+
+pub(super) enum Replacement {
+    Pasted(LinkFrom),
+    Captured {
+        origin: Origin,
+        chosen_by: ChosenBy,
+        expect: Expectation,
+    },
+}
 
 fn remember_handover(state: &mut State, handover: &str, row: &DownloadSummary) {
     let action = capture_action(row);
@@ -271,6 +280,13 @@ impl Manager {
                 }
             }
         }
+        if state
+            .link_refresh
+            .as_ref()
+            .is_some_and(|watch| begun.contains(&watch.id))
+        {
+            state.link_refresh = None;
+        }
         // Before the rows go: a kill between the two leaves a row, whose files the next start spares.
         self.save_pending_deletions(state);
         self.inner.store.delete_downloads(begun);
@@ -435,6 +451,25 @@ impl Manager {
     pub fn refresh_link(&self, id: DownloadId, url: &str, from: LinkFrom) -> Result<()> {
         let url = parse_url(url)?;
         let mut state = self.lock_open()?;
+        self.replace_link(&mut state, id, &url, Replacement::Pasted(from))?;
+        if state
+            .link_refresh
+            .as_ref()
+            .is_some_and(|watch| watch.id == id)
+        {
+            state.link_refresh = None;
+        }
+        Ok(())
+    }
+
+    /// The common link change, with fresh request context when it came from the browser.
+    pub(super) fn replace_link(
+        &self,
+        state: &mut State,
+        id: DownloadId,
+        url: &Url,
+        replacement: Replacement,
+    ) -> Result<()> {
         let entry = state.entry_mut(id)?;
         if entry.row.status == DownloadStatus::Completed {
             return Err(CoreError::WrongState(
@@ -442,25 +477,39 @@ impl Manager {
             ));
         }
         entry.refuse_if_stranded()?;
-        self.close_questions_of(&mut state, id);
+        self.close_questions_of(state, id);
         let entry = state.entry_mut(id)?;
-        let same_site = Url::parse(&entry.row.url).is_ok_and(|old| old.origin() == url.origin());
-        if !same_site {
-            entry.origin.headers = headers::for_another_site(&entry.origin.headers);
+        match replacement {
+            Replacement::Pasted(from) => {
+                let same_site =
+                    Url::parse(&entry.row.url).is_ok_and(|old| old.origin() == url.origin());
+                if !same_site {
+                    entry.origin.headers = headers::for_another_site(&entry.origin.headers);
+                }
+                entry.expect = None;
+                if from == LinkFrom::Person {
+                    entry.chosen_by = ChosenBy::Person;
+                }
+            }
+            Replacement::Captured {
+                mut origin,
+                chosen_by,
+                expect,
+            } => {
+                origin.sign_in_refreshed_at = Some(self.inner.clock.unix_millis());
+                entry.origin = origin;
+                entry.chosen_by = chosen_by;
+                entry.expect = Some(expect);
+            }
         }
         entry.row.url = url.to_string();
-        // A fresh link serves the file as it is now, not as the browser saw it then.
-        entry.expect = None;
-        if from == LinkFrom::Person {
-            entry.chosen_by = ChosenBy::Person;
-        }
         entry.row.error = None;
         // A running download restarts on the new link; the engine continues the part file.
         if !self.stop_run(entry, Stop::Requeue) {
             entry.row.status = DownloadStatus::Queued;
         }
-        self.save(&mut state, id);
-        self.reconcile(&mut state);
+        self.save(state, id);
+        self.reconcile(state);
         Ok(())
     }
 

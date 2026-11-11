@@ -42,6 +42,7 @@ pub fn capture(url: impl Into<String>) -> NewDownload {
         referrer: None,
         page_url: None,
         frame_url: None,
+        browser_route: None,
         suggested_name: None,
         mime: None,
         size_hint: None,

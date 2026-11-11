@@ -36,6 +36,7 @@ use super::addons::AddonSlot;
 use super::handovers::Handovers;
 use super::media::MediaPending;
 use super::questions::{Questions, Waiting};
+use super::refresh::WatchingLink;
 use super::suffix_list::SuffixCheck;
 use crate::batches::Batches;
 use crate::error::{CoreError, Result};
@@ -79,6 +80,7 @@ pub(super) struct State {
     /// The last time a newer list was looked for.
     pub suffix_check: SuffixCheck,
     pub handovers: Handovers,
+    pub link_refresh: Option<WatchingLink>,
     /// Rows changed since the last `DownloadsChanged` event.
     pub dirty: BTreeSet<DownloadId>,
     /// Cancelled when a removal has deleted its files; a quit waits for them.

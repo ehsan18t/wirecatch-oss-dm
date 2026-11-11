@@ -22,6 +22,7 @@ mod preferences;
 mod proxy;
 mod questions;
 mod queues;
+mod refresh;
 mod relocate;
 mod restore;
 mod run;
@@ -559,6 +560,7 @@ impl Manager {
         let exits: Vec<CancellationToken> = {
             let mut state = self.lock();
             state.closed = true;
+            state.link_refresh = None;
             self.give_back_undecided_captures(&mut state);
             state
                 .downloads
@@ -736,6 +738,14 @@ impl Manager {
         {
             entry.note_changes(now);
             self.inner.store.save_downloads(vec![entry.stored()]);
+            if entry.row.status == wirecatch_protocol::app::DownloadStatus::Completed
+                && state
+                    .link_refresh
+                    .as_ref()
+                    .is_some_and(|watch| watch.id == id)
+            {
+                state.link_refresh = None;
+            }
             state.touch(id);
             self.inner.rows_changed.notify_one();
         }

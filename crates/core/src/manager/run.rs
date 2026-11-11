@@ -156,7 +156,9 @@ impl Manager {
             return;
         }
         // Until the server has answered once, the path is only a guess: let the server's answer decide it. Until a run begins writing, its answer also records that it did.
-        let settle = (!entry.naming.writing).then(|| self.settler(id, run_id, answered.clone()));
+        // A fresh capture also checks the server's answer before touching an existing part.
+        let settle = (!entry.naming.writing || entry.expect.is_some())
+            .then(|| self.settler(id, run_id, answered.clone()));
         let target = match &settle {
             None => Target::Exact,
             Some(settle) => Target::Resolve(path_resolver(settle.clone())),

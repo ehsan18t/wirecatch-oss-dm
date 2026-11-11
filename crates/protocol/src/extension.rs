@@ -19,6 +19,8 @@ crate::exported::exported_consts! {
     pub const MAX_VIDEO_SITES: usize = 200;
     /// Longest site in the list of sites to ignore, in characters: the longest host name DNS allows.
     pub const MAX_SITE_CHARS: usize = 253;
+    /// Most redirect addresses kept for a browser download.
+    pub const MAX_DOWNLOAD_REDIRECTS: usize = 20;
 }
 
 /// A download captured in the browser. Its `Debug` hides the cookies, the values of the headers that may carry a sign-in (see [`Header`]) and any sign-in in its addresses.
@@ -43,6 +45,11 @@ pub struct NewDownload {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub frame_url: Option<String>,
+    /// Browser download provenance for reopening the source and matching a fresh link.
+    /// Older extensions did not say whether the source was a private window.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub browser_route: Option<Box<BrowserRoute>>,
     /// Name the browser or page suggested; the server's name wins if this is absent.
     pub suggested_name: Option<String>,
     /// The MIME type the browser saw, for example `video/mp4`; tells audio from video for
@@ -81,7 +88,7 @@ pub struct NewDownload {
     /// Set when the extension knows this is media rather than a plain file.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
-    pub media: Option<MediaHint>,
+    pub media: Option<Box<MediaHint>>,
 }
 
 /// Leaves out the cookies, header values and any sign-in in the addresses.
@@ -94,6 +101,7 @@ impl fmt::Debug for NewDownload {
             referrer,
             page_url,
             frame_url,
+            browser_route,
             suggested_name,
             mime,
             size_hint,
@@ -111,6 +119,7 @@ impl fmt::Debug for NewDownload {
             .field("referrer", &OptionalAddress(referrer.as_deref()))
             .field("page_url", &OptionalAddress(page_url.as_deref()))
             .field("frame_url", &OptionalAddress(frame_url.as_deref()))
+            .field("browser_route", browser_route)
             .field("suggested_name", suggested_name)
             .field("mime", mime)
             .field("size_hint", size_hint)
@@ -123,6 +132,25 @@ impl fmt::Debug for NewDownload {
             .field("media", media)
             .finish()
     }
+}
+
+/// The browser's observed route to a file and the page that started it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct BrowserRoute {
+    /// A private page must never be reopened in the regular browser profile.
+    pub private_window: bool,
+    /// Full browser page when known, used to return there. Separate from the
+    /// page and referrer used for request credentials and network policy.
+    #[ts(as = "Option<String>")]
+    pub source_page: Option<Secret>,
+    /// Earlier addresses of the navigation that loaded the source page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(as = "Option<Vec<String>>", optional)]
+    pub page_redirect_urls: Option<Vec<Secret>>,
+    /// Addresses of this request as it redirected, in order. They may carry signed URLs.
+    #[ts(as = "Vec<String>")]
+    pub redirect_urls: Vec<Secret>,
 }
 
 /// The cookies the browser holds for a captured address, and the request they would go with.
@@ -1005,6 +1033,7 @@ mod tests {
             referrer: Some(with_password("page")),
             page_url: Some(with_password("page")),
             frame_url: Some(with_password("frame")),
+            browser_route: None,
             suggested_name: None,
             mime: None,
             size_hint: None,
@@ -1098,6 +1127,7 @@ mod tests {
             referrer: None,
             page_url: None,
             frame_url: None,
+            browser_route: None,
             suggested_name: None,
             mime: None,
             size_hint: None,

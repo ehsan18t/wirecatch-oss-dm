@@ -1780,3 +1780,11 @@ Decided on 2026-11-10 as part of the UX review.
 1. Copy link or Copy links copies the ticked downloads' links in list order, one per line. The same rows are in reach as for the other selection bar actions (D160).
 2. Show in folder reveals the file when one ticked download has a file to show, or opens the folder once when several have the same saved folder path. If those paths differ, the bar leaves the action out. Downloads without files do not count towards the action (D224.2).
 3. Both actions use icons with tooltips and accessible names. At narrow widths the other actions also use icons so every action fits.
+
+### D276. Get a new link can take a fresh browser capture
+
+Recorded on 2026-11-12 for issue #524. The existing continuation rules still apply (D153).
+
+1. Browser downloads keep their source page, the addresses observed while reaching that page and the file, and the filename the browser picked. This is separate from the referrer and credentials used to fetch the file. If the browser only reports the referrer's origin, use the full tab address when one recent request and its source tab can be identified. The optional capture field works with earlier versions (D32.5), and the origin record can be read without it.
+2. Get a new link for an unfinished browser download with a known regular source page opens that page in the default browser and waits for a matching capture. For a landing page with a query, a known same-origin entry address without a query takes the browser back through the redirects. A capture must match the source page or that entry address, the browser filename, and the initial or final file request including its query. Known file sizes must agree. The watch ends when the dialog is dismissed, another watch starts, or the row is removed or finished.
+3. A matching capture replaces the link and request credentials on the existing row, under the usual network rules for links from a browser. The new sign-in is kept for a week from the fresh capture. The run checks the server's answer against the browser capture before touching a partial file. Browser capture settings still apply. Paste a link is available at any time and is the default for older rows, private windows and downloads without enough source information.

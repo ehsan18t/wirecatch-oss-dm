@@ -25,6 +25,7 @@ export type { BrowserControls } from './generated/BrowserControls';
 export type { BrowserControlsPatch } from './generated/BrowserControlsPatch';
 export type { BrowserInfo } from './generated/BrowserInfo';
 export type { BrowserNotice } from './generated/BrowserNotice';
+export type { BrowserRoute } from './generated/BrowserRoute';
 export type { Call } from './generated/Call';
 export type { CaptureConfirmation } from './generated/CaptureConfirmation';
 export type { CaptureSource } from './generated/CaptureSource';

@@ -82,10 +82,10 @@ async fn a_stream_read_stops_with_the_manager() {
         .await
         .unwrap();
     let mut stream = capture(server.url("master.m3u8").as_str());
-    stream.media = Some(MediaHint {
+    stream.media = Some(Box::new(MediaHint {
         kind: MediaKind::Hls,
         title: None,
-    });
+    }));
     manager.add_capture(stream).await.unwrap();
     let token = match manager.lock().media.iter().next().map(|(_, m)| &m.stage) {
         Some(super::media::MediaStage::Analysing(token)) => token.clone(),

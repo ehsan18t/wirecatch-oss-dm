@@ -19,6 +19,7 @@ import {
   toolbarBadge,
 } from '@/lib/browser/adapters';
 import { registerCapture, type DownloadEvents } from '@/lib/capture/register';
+import { BrowserRoutes } from '@/lib/capture/browser-route';
 import { installDiagnostics } from '@/lib/diag/install';
 import { fallback } from '@/lib/diag/log';
 import { appSide } from '@/lib/hub/app';
@@ -36,6 +37,7 @@ import { browserTransport } from '@/lib/native/port';
 import { NoticeCenter } from '@/lib/notices/center';
 import { focusedWebTab } from '@/lib/notices/focus';
 import { NOTICE_MOUNT, NOTICE_UNMOUNT, NOTICES_PORT, isMountAnswer } from '@/lib/notices/messages';
+import { SITE_ORIGINS } from '@/lib/site-access';
 
 const MENU_ID = 'wirecatch-download';
 
@@ -87,6 +89,27 @@ function registerMedia(hub: Hub, media: MediaCenter, watcher: MediaWatcher): voi
       }),
     },
   );
+}
+
+/** Registers the download events and remembers the navigation that led to each download. */
+function registerDownloads(hub: Hub): void {
+  const routes = new BrowserRoutes((tabId) =>
+    browser.tabs.get(tabId).catch(fallback('capture', 'Could not read the source tab', null)),
+  );
+  const files = {
+    urls: SITE_ORIGINS,
+    types: ['main_frame', 'sub_frame', 'other'],
+  } satisfies Parameters<typeof browser.webRequest.onHeadersReceived.addListener>[1];
+  browser.webRequest.onHeadersReceived.addListener((details) => {
+    routes.response(details);
+    return undefined;
+  }, files);
+  browser.webRequest.onBeforeRedirect.addListener((details) => routes.redirect(details), files);
+  const downloadEvents: DownloadEvents = browser.downloads;
+  registerCapture(downloadEvents, {
+    onDownload: (item) => hub.onDownload(item, routes),
+    onDownloadMoved: (id) => hub.onDownloadMoved(id),
+  });
 }
 
 export default defineBackground(() => {
@@ -156,8 +179,7 @@ export default defineBackground(() => {
   const hub = new Hub({ ...hubDeps, media, notices }, side);
 
   // Every listener is registered synchronously so a sleeping background wakes up for it.
-  const downloadEvents: DownloadEvents = browser.downloads;
-  registerCapture(downloadEvents, hub);
+  registerDownloads(hub);
   registerContextMenu(hub);
   registerMedia(hub, media, watcher);
   browser.runtime.onConnect.addListener((port) => {

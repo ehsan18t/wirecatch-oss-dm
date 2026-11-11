@@ -267,6 +267,11 @@ export const MAX_VIDEO_SITES = 200;
 export const MAX_SITE_CHARS = 253;
 
 /**
+ * Most redirect addresses kept for a browser download.
+ */
+export const MAX_DOWNLOAD_REDIRECTS = 20;
+
+/**
  * Most characters in a proxy's host name.
  */
 export const MAX_PROXY_HOST_CHARS = 253;

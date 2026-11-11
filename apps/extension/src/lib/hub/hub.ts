@@ -6,6 +6,7 @@ import {
   type Outcome,
 } from '@wirecatch/protocol';
 import { candidateFromItem, type DownloadItemLike } from '../capture/candidate';
+import type { BrowserRoutes } from '../capture/browser-route';
 import { handOver, readBrowserCopy, type HandoverResult } from '../capture/handover';
 import { shouldCapture } from '../capture/should-capture';
 import { cookieStoreOf } from '../cookies';
@@ -128,7 +129,7 @@ export class Hub {
    * settings again after pausing. Resolves with null when the download was not
    * touched at all.
    */
-  async onDownload(item: DownloadItemLike): Promise<HandoverResult | null> {
+  async onDownload(item: DownloadItemLike, routes?: BrowserRoutes): Promise<HandoverResult | null> {
     if (this.#inFlight.has(item.id)) return null;
     this.#inFlight.set(item.id, null);
     let persisted = false;
@@ -150,7 +151,13 @@ export class Hub {
       await this.#persistInFlight();
       persisted = true;
       const result = await handOver(
-        { downloadId: item.id, handoverId, candidate, cookieStore: cookieStoreOf(item) },
+        {
+          downloadId: item.id,
+          handoverId,
+          candidate,
+          cookieStore: cookieStoreOf(item),
+          route: await routes?.forDownload(item),
+        },
         {
           downloads: this.#deps.downloads,
           liveSettings: () => this.#app.judgingSettings(),
