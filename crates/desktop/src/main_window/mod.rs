@@ -2,6 +2,7 @@
 //! status bar (D36, D91).
 
 mod applies;
+pub(crate) use applies::can_refresh_link;
 mod backup_dialog;
 mod command_bar;
 pub mod confirm;
@@ -25,7 +26,7 @@ mod queue_new;
 mod queue_proxy;
 mod queue_rules;
 mod rail;
-mod refresh_dialog;
+mod refresh_window;
 mod row_menu;
 mod selection;
 mod settings;

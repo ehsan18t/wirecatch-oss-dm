@@ -215,6 +215,15 @@ export class Hub {
       // What the browser itself would send (strict-origin-when-cross-origin), never more.
       referrer: refererFor(url, page),
       page_url: click.pageUrl ?? null,
+      ...(tab === undefined
+        ? {}
+        : {
+            browser_route: {
+              observed_page: click.pageUrl ?? page,
+              private_window: tab.incognito,
+              redirect_urls: [],
+            },
+          }),
       // The document the link is in chose it, a frame from another site included.
       ...(page === null ? {} : { frame_url: page }),
       suggested_name: null,

@@ -45,7 +45,7 @@ pub struct NewDownload {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub frame_url: Option<String>,
-    /// Browser download provenance for reopening the source and matching a fresh link.
+    /// Browser capture provenance for reopening the source and matching a fresh link.
     /// Older extensions did not say whether the source was a private window.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -134,16 +134,16 @@ impl fmt::Debug for NewDownload {
     }
 }
 
-/// The browser's observed route to a file and the page that started it.
+/// The browser's observed route to a download and the page that started it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct BrowserRoute {
     /// A private page must never be reopened in the regular browser profile.
     pub private_window: bool,
-    /// Full browser page when known, used to return there. Separate from the
-    /// page and referrer used for request credentials and network policy.
+    /// The full page observed in the browser, used to return there. The HTTP
+    /// referrer alone is insufficient to identify that page.
     #[ts(as = "Option<String>")]
-    pub source_page: Option<Secret>,
+    pub observed_page: Option<Secret>,
     /// Earlier addresses of the navigation that loaded the source page.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(as = "Option<Vec<String>>", optional)]

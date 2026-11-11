@@ -378,7 +378,7 @@ export function isBrowserRoute(value: unknown): value is BrowserRoute {
   return ((value1: unknown): boolean =>
     isRecord(value1) &&
     typeof value1['private_window'] === 'boolean' &&
-    (typeof value1['source_page'] === 'string' || value1['source_page'] === null) &&
+    (typeof value1['observed_page'] === 'string' || value1['observed_page'] === null) &&
     (value1['page_redirect_urls'] === undefined ||
       isArrayOf(value1['page_redirect_urls'], (value2: unknown) => typeof value2 === 'string')) &&
     isArrayOf(value1['redirect_urls'], (value2: unknown) => typeof value2 === 'string'))(value);

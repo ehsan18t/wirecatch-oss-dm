@@ -1,12 +1,12 @@
-//! Get a new link from a browser capture or by pasting it (D43.5).
+//! The pinned window that watches for a fresh browser capture.
 
-use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
-use gpui_kit::component::{Disableable as _, h_flex, v_flex};
+use gpui_kit::component::{Disableable as _, TitleBar, h_flex, v_flex};
 use gpui_kit::{
-    App, AppContext as _, Context, Entity, IntoElement, ParentElement as _, Render, Styled as _,
-    Subscription, Task, Window, div, px,
+    AnyWindowHandle, App, AppContext as _, Bounds, Context, Entity, Global, IntoElement,
+    ParentElement as _, Render, Styled as _, Subscription, Task, Window, WindowKind, WindowOptions,
+    div, px, size,
 };
 use wirecatch_core::LinkFrom;
 use wirecatch_protocol::DownloadId;
@@ -15,22 +15,23 @@ use wirecatch_shell::api;
 
 use crate::backend::{Backend, said};
 use crate::library::Library;
-use crate::ui::{Field, Role, Typed as _};
+use crate::ui::{Field, PathText, Role, Typed as _};
 use crate::{links, text};
 
-const WIDTH: f32 = 520.;
+const WIDTH: f32 = 470.;
+const HEIGHT: f32 = 310.;
+const TITLE: &str = "Get a new link";
 const LINK_SAVED: &str =
     "New link saved. The download continues where it stopped if the server allows it.";
 
 enum Mode {
     Opening,
-    Watching,
+    Watching { opened_page: bool },
     Paste,
     Saved,
 }
 
-/// The form inside the dialog.
-pub struct RefreshForm {
+struct RefreshWindow {
     library: Entity<Library>,
     id: DownloadId,
     link: Entity<InputState>,
@@ -42,69 +43,63 @@ pub struct RefreshForm {
     _edited: Subscription,
 }
 
-/// Opens Get a new link for download `id`.
-pub fn open(library: Entity<Library>, id: DownloadId, window: &mut Window, cx: &mut App) {
-    let form = cx.new(|cx| RefreshForm::new(library, id, window, cx));
-    form.update(cx, |form, cx| form.watch(window, cx));
-    crate::ui::dialog::open(
-        window,
-        cx,
-        |_| "Get a new link".into(),
-        move |dialog, _, cx| {
-            let form_state = form.read(cx);
-            let found = form_state.found(cx).is_some();
-            let busy = form_state.busy;
-            let paste = matches!(form_state.mode, Mode::Paste);
-            let complete = matches!(form_state.mode, Mode::Saved);
-            let (saved, entered) = (form.clone(), form.clone());
-            let manual = form.clone();
-            let (cancelled, closed) = (form.clone(), form.clone());
-            dialog
-                .w(px(WIDTH))
-                .child(form.clone())
-                .on_ok(move |_, window, cx| {
-                    entered.update(cx, |form, cx| form.save(window, cx));
-                    false
-                })
-                .on_close(move |_, _, cx| {
-                    closed.update(cx, |form, _| form.watching = None);
-                })
-                .footer(
-                    h_flex()
-                        .w_full()
-                        .gap_2()
-                        .justify_end()
-                        .child(
-                            Button::new("refresh-cancel")
-                                .label(if complete { "Close" } else { "Cancel" })
-                                .on_click(move |_, window, cx| {
-                                    cancelled.update(cx, |form, _| form.watching = None);
-                                    window.close_dialog(cx);
-                                }),
-                        )
-                        .children((!paste && !complete).then(|| {
-                            Button::new("refresh-paste").label("Paste a link").on_click(
-                                move |_, window, cx| {
-                                    manual.update(cx, |form, cx| form.paste(window, cx));
-                                },
-                            )
-                        }))
-                        .children(paste.then(|| {
-                            Button::new("refresh-save")
-                                .primary()
-                                .label("Use this link")
-                                .disabled(!found)
-                                .loading(busy)
-                                .on_click(move |_, window, cx| {
-                                    saved.update(cx, |form, cx| form.save(window, cx));
-                                })
-                        })),
-                )
-        },
-    );
+struct OpenWatch {
+    id: DownloadId,
+    window: AnyWindowHandle,
 }
 
-impl RefreshForm {
+impl Global for OpenWatch {}
+
+fn options(cx: &App) -> WindowOptions {
+    let bounds = Bounds::centered(None, size(px(WIDTH), px(HEIGHT)), cx);
+    let mut options = crate::popup_window_options(bounds);
+    options.kind = WindowKind::PopUp;
+    options.is_minimizable = false;
+    if let Some(titlebar) = &mut options.titlebar {
+        titlebar.title = Some(TITLE.into());
+    }
+    options
+}
+
+/// Opens the watch in its own pinned window, including from a progress window.
+pub fn open(library: Entity<Library>, id: DownloadId, window: &mut Window, cx: &mut App) {
+    let earlier = cx
+        .try_global::<OpenWatch>()
+        .map(|watch| (watch.id, watch.window));
+    if let Some((open_id, earlier)) = earlier.filter(|(_, handle)| cx.windows().contains(handle)) {
+        if open_id == id {
+            crate::closing::may_have_closed(
+                earlier.update(cx, |_, window, _| window.activate_window()),
+            );
+            return;
+        }
+        crate::closing::may_have_closed(earlier.update(cx, |_, window, _| window.remove_window()));
+    }
+    let options = options(cx);
+    let opened = gpui_kit::open_window(options, cx, |window, cx| {
+        crate::closing::on_close(window, cx, |_, _| true);
+        cx.new(|cx| {
+            let mut view = RefreshWindow::new(library, id, window, cx);
+            view.watch(window, cx);
+            view
+        })
+    });
+    match opened {
+        Ok((handle, _)) => {
+            cx.set_global(OpenWatch { id, window: handle });
+            crate::closing::may_have_closed(
+                handle.update(cx, |_, window, _| window.activate_window()),
+            );
+        }
+        Err(error) => {
+            use gpui_kit::component::WindowExt as _;
+            tracing::warn!("could not open the refresh window: {error}");
+            window.push_notification("The refresh window could not open.", cx);
+        }
+    }
+}
+
+impl RefreshWindow {
     fn new(
         library: Entity<Library>,
         id: DownloadId,
@@ -139,7 +134,7 @@ impl RefreshForm {
         });
         self.watching = Some(cx.spawn_in(window, async move |form, cx| {
             let page = match said(reading.await) {
-                Some(Ok(Some(page))) => page,
+                Some(Ok(page)) => page,
                 answer => {
                     crate::closing::may_have_closed(form.update_in(cx, |form, window, cx| {
                         if let Some(Err(problem)) = answer {
@@ -151,8 +146,12 @@ impl RefreshForm {
                 }
             };
             let opened = form.update_in(cx, |form, _, cx| {
-                form.mode = Mode::Watching;
-                cx.open_url(page.as_str());
+                form.mode = Mode::Watching {
+                    opened_page: page.is_some(),
+                };
+                if let Some(page) = page {
+                    cx.open_url(page.as_str());
+                }
                 cx.notify();
             });
             if opened.is_err() {
@@ -184,6 +183,37 @@ impl RefreshForm {
         cx.notify();
     }
 
+    fn close(&mut self, window: &mut Window) {
+        self.watching = None;
+        window.remove_window();
+    }
+
+    fn buttons(&self, cx: &mut Context<'_, Self>) -> impl IntoElement {
+        let watching = matches!(self.mode, Mode::Opening | Mode::Watching { .. });
+        h_flex()
+            .mt_auto()
+            .gap_2()
+            .justify_end()
+            .child(
+                Button::new("refresh-stop")
+                    .label(if watching { "Stop watching" } else { "Close" })
+                    .on_click(cx.listener(|form, _, window, _| form.close(window))),
+            )
+            .children(watching.then(|| {
+                Button::new("refresh-paste")
+                    .label("Paste a link")
+                    .on_click(cx.listener(|form, _, window, cx| form.paste(window, cx)))
+            }))
+            .children(matches!(self.mode, Mode::Paste).then(|| {
+                Button::new("refresh-save")
+                    .primary()
+                    .label("Use this link")
+                    .disabled(self.found(cx).is_none())
+                    .loading(self.busy)
+                    .on_click(cx.listener(|form, _, window, cx| form.save(window, cx)))
+            }))
+    }
+
     /// The link in the field, if it holds one.
     fn found(&self, cx: &App) -> Option<String> {
         let found = self.read_link.of(&self.link.read(cx).value());
@@ -207,12 +237,11 @@ impl RefreshForm {
             let Some(answer) = said(saved.await) else {
                 return;
             };
-            crate::closing::may_have_closed(form.update_in(cx, |form, window, cx| {
+            crate::closing::may_have_closed(form.update_in(cx, |form, _, cx| {
                 form.busy = false;
                 match answer {
                     Ok(()) => {
-                        window.close_dialog(cx);
-                        window.push_notification(LINK_SAVED, cx);
+                        form.mode = Mode::Saved;
                     }
                     Err(message) => form.problem = Some(message),
                 }
@@ -223,7 +252,7 @@ impl RefreshForm {
     }
 }
 
-impl Render for RefreshForm {
+impl Render for RefreshWindow {
     fn render(&mut self, _: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
         let typed = !self.link.read(cx).value().trim().is_empty();
         let wrong = typed && self.found(cx).is_none();
@@ -252,16 +281,18 @@ impl Render for RefreshForm {
                 "Links from some sites stop working after a while. Start the download again on its page, copy the new link and paste it here. {kept}"
             )
         };
-        v_flex()
+        let paste = matches!(self.mode, Mode::Paste);
+        let content = v_flex()
+            .flex_1()
             .gap_4()
-            .pb_1()
+            .p_4()
             .children(row.map(|row| {
                 v_flex()
                     .gap_0p5()
                     .child(
                         div()
                             .text_role(Role::Strong, cx)
-                            .child(row.file_name.clone()),
+                            .child(PathText::new(row.file_name).tooltip("refresh-file-name")),
                     )
                     .child(
                         div()
@@ -269,16 +300,65 @@ impl Render for RefreshForm {
                             .child(format!("from {}", text::host(&row.url))),
                     )
             }))
-            .children(matches!(self.mode, Mode::Paste).then(|| {
+            .children(paste.then(|| {
                 Field::new("New link", Input::new(&self.link))
                     .note(paste_note)
                     .wrong(wrong || self.problem.is_some())
             }))
             .children(match self.mode {
-                Mode::Opening => Some("Opening the download’s source page…"),
-                Mode::Watching => Some("Start the same download again on the page that opened. Keep browser capture enabled while waiting for the new link."),
+                Mode::Opening => Some("Starting the browser watch…"),
+                Mode::Watching { opened_page: true } => Some("Start the same download again on the page that opened. For media, use the extension’s download button."),
+                Mode::Watching { opened_page: false } => Some("Return to the original page in your browser and start the same download again. For media, use the extension’s download button."),
                 Mode::Saved => Some(LINK_SAVED),
                 Mode::Paste => None,
             }.map(|note| div().text_role(Role::Secondary, cx).child(note)))
+            .child(self.buttons(cx));
+        v_flex()
+            .size_full()
+            .child(
+                TitleBar::new()
+                    .on_close_window(|_, window, cx| crate::closing::close(window, cx))
+                    .child(div().pl_3().text_role(Role::Strong, cx).child(TITLE)),
+            )
+            .child(content)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use gpui_kit::TestAppContext;
+    use gpui_kit::component::WindowExt as _;
+
+    use super::*;
+
+    struct Parent;
+
+    impl Render for Parent {
+        fn render(&mut self, _: &mut Window, _: &mut Context<'_, Self>) -> impl IntoElement {
+            div()
+        }
+    }
+
+    #[gpui_kit::test]
+    fn get_a_new_link_opens_one_separate_pinned_window(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            gpui_kit::init(cx);
+            cx.set_global(Backend::unopened());
+            assert_eq!(options(cx).kind, WindowKind::PopUp);
+            let library = cx.new(|_| Library::empty());
+            let (parent, _) =
+                gpui_kit::open_window(crate::window_options(), cx, |_, cx| cx.new(|_| Parent))
+                    .unwrap();
+            let id = DownloadId(1);
+            parent
+                .update(cx, |_, window, cx| {
+                    open(library.clone(), id, window, cx);
+                    assert!(!window.has_active_dialog(cx));
+                    open(library, id, window, cx);
+                })
+                .unwrap();
+            assert_eq!(cx.windows().len(), 2);
+            assert_ne!(cx.global::<OpenWatch>().window, parent);
+        });
     }
 }

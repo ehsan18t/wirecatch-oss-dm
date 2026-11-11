@@ -38,6 +38,7 @@ import { NoticeCenter } from '@/lib/notices/center';
 import { focusedWebTab } from '@/lib/notices/focus';
 import { NOTICE_MOUNT, NOTICE_UNMOUNT, NOTICES_PORT, isMountAnswer } from '@/lib/notices/messages';
 import { SITE_ORIGINS } from '@/lib/site-access';
+import { parseWebUrl } from '@/lib/url';
 
 const MENU_ID = 'wirecatch-download';
 
@@ -91,15 +92,29 @@ function registerMedia(hub: Hub, media: MediaCenter, watcher: MediaWatcher): voi
   );
 }
 
+/** A newly opened tab may still be blank when its download begins. */
+async function downloadTab(tabId: number) {
+  const tab = await browser.tabs.get(tabId);
+  if (tab.openerTabId === undefined || parseWebUrl(tab.url ?? '') !== null) return tab;
+  const opener = await browser.tabs
+    .get(tab.openerTabId)
+    .catch(fallback('capture', 'Could not read the tab that opened the download', null));
+  return opener?.incognito === tab.incognito ? opener : tab;
+}
+
 /** Registers the download events and remembers the navigation that led to each download. */
 function registerDownloads(hub: Hub): void {
   const routes = new BrowserRoutes((tabId) =>
-    browser.tabs.get(tabId).catch(fallback('capture', 'Could not read the source tab', null)),
+    downloadTab(tabId).catch(fallback('capture', 'Could not read the source tab', null)),
   );
   const files = {
     urls: SITE_ORIGINS,
     types: ['main_frame', 'sub_frame', 'other'],
   } satisfies Parameters<typeof browser.webRequest.onHeadersReceived.addListener>[1];
+  browser.webRequest.onBeforeRequest.addListener((details) => {
+    routes.start(details);
+    return undefined;
+  }, files);
   browser.webRequest.onHeadersReceived.addListener((details) => {
     routes.response(details);
     return undefined;

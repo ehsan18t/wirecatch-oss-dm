@@ -1588,7 +1588,7 @@ async fn a_browser_capture_refreshes_the_watched_row_after_a_mirror_change() -> 
     old.suggested_name = Some("report.pdf".into());
     old.browser_route = Some(Box::new(BrowserRoute {
         private_window: false,
-        source_page: Some(page.into()),
+        observed_page: Some(page.into()),
         page_redirect_urls: Some(vec![entry.into()]),
         redirect_urls: vec![release.into()],
     }));
@@ -1597,7 +1597,7 @@ async fn a_browser_capture_refreshes_the_watched_row_after_a_mirror_change() -> 
     h.clock.advance(chrono::TimeDelta::days(8));
     h.restart().await?;
     let (saved, result) = oneshot::channel();
-    assert_eq!(h.manager.watch_link(id, saved)?.unwrap().as_str(), entry);
+    assert_eq!(h.manager.watch_link(id, saved)?.unwrap().as_str(), page);
     let (cancelled, closed) = oneshot::channel();
     drop(closed);
     assert!(h.manager.watch_link(id, cancelled)?.is_none());
@@ -1607,7 +1607,7 @@ async fn a_browser_capture_refreshes_the_watched_row_after_a_mirror_change() -> 
     unrelated.url = "https://other.example/report.pdf".into();
     unrelated.browser_route = Some(Box::new(BrowserRoute {
         private_window: false,
-        source_page: Some(page.into()),
+        observed_page: Some(page.into()),
         page_redirect_urls: None,
         redirect_urls: vec!["https://project.example/releases/v2/report.pdf".into()],
     }));
@@ -1619,7 +1619,7 @@ async fn a_browser_capture_refreshes_the_watched_row_after_a_mirror_change() -> 
     fresh.handover_id = "fresh".into();
     fresh.url = server.url("report.pdf").to_string();
     fresh.cookies = Some("session=fresh".into());
-    fresh.browser_route.as_mut().unwrap().source_page =
+    fresh.browser_route.as_mut().unwrap().observed_page =
         Some("https://project.example/releases/v1/wait?session=fresh".into());
     let reply = h.manager.add_capture(fresh.clone()).await?;
     assert_eq!(reply.id, Some(id));
@@ -1652,7 +1652,7 @@ async fn a_dismissed_watch_leaves_a_later_capture_to_its_own_row() -> TestResult
     let mut old = capture_from(page, "https://files.example/report.pdf?old".into());
     old.browser_route = Some(Box::new(BrowserRoute {
         private_window: false,
-        source_page: Some(page.into()),
+        observed_page: Some(page.into()),
         page_redirect_urls: None,
         redirect_urls: vec!["https://project.example/releases/v1/report.pdf".into()],
     }));
@@ -1684,7 +1684,7 @@ async fn unsafe_or_private_source_pages_do_not_open_a_watch() -> TestResult {
         );
         download.browser_route = Some(Box::new(BrowserRoute {
             private_window,
-            source_page: Some(page.into()),
+            observed_page: Some(page.into()),
             page_redirect_urls: None,
             redirect_urls: Vec::new(),
         }));

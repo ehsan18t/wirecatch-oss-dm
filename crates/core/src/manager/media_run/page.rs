@@ -163,7 +163,7 @@ async fn reading(
         .map_err(|e| describe::ytdlp(&e, ctx.tools))?;
     let info = Arc::new(info);
     job.readings
-        .put(&job.url, job.clock.unix_millis(), info.clone());
+        .put(&job.url, job.clock.unix_millis(), info.clone(), cancel);
     Ok(info)
 }
 

@@ -37,16 +37,14 @@ function fullPage(url: URL | null): URL | null {
   return url === null || url.href === `${url.origin}/` ? null : url;
 }
 
-/** Keep a full referrer. When only its origin is reported, use matching tab context. */
+/** Prefer the document open when the request began. The referrer can name a site's home page. */
 function sourcePage(referrer: URL | null, tab: SourceTab, route: ObservedRoute): string | null {
-  const fullReferrer = fullPage(referrer);
-  if (fullReferrer !== null) return fullReferrer.href;
   const from = parseWebUrl(route.from ?? '');
-  const origin = referrer?.origin ?? from?.origin;
-  const page = [fullPage(from), parseWebUrl(tab.url ?? '')].find(
-    (candidate) => candidate?.origin === origin,
-  );
-  return page?.href ?? null;
+  const tabPage = fullPage(parseWebUrl(tab.url ?? ''));
+  if (tabPage !== null && tabPage.href !== route.url && (from !== null || referrer !== null)) {
+    return tabPage.href;
+  }
+  return fullPage(from)?.href ?? null;
 }
 
 export interface SourceTab {
@@ -67,6 +65,10 @@ export class BrowserRoutes {
   constructor(tab: (id: number) => Promise<SourceTab | null>, now = Date.now) {
     this.#tab = tab;
     this.#now = now;
+  }
+
+  start(request: FileRequest): void {
+    if (request.method === 'GET' && request.tabId >= 0) this.#remember(request, request.url);
   }
 
   response(request: FileRequest): void {
@@ -141,7 +143,7 @@ export class BrowserRoutes {
     const referrer = parseWebUrl(item.referrer ?? '');
     const finalUrl = nonEmpty(item.finalUrl);
     const original = finalUrl !== null && finalUrl !== item.url ? [item.url] : [];
-    const fallback = { pageUrl: fullPage(referrer)?.href ?? null, redirectUrls: original };
+    const fallback = { pageUrl: null, redirectUrls: original };
     const route = this.#matchingRequest(item.url, finalUrl);
     if (route === undefined) return fallback;
     const tab = await route.tab;

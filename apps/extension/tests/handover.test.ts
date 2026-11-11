@@ -156,7 +156,7 @@ describe('handover', () => {
         page_url: 'https://example.com/downloads',
         browser_route: {
           private_window: false,
-          source_page: 'https://example.com/downloads',
+          observed_page: null,
           redirect_urls: [],
         },
         suggested_name: 'big.zip',

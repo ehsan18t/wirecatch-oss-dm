@@ -1,10 +1,10 @@
-//! A desktop dialog can watch for the next capture of one unfinished browser download.
+//! A desktop window can watch for the next capture of one unfinished download.
 
 use tokio::sync::oneshot;
 use wirecatch_engine::Url;
 use wirecatch_protocol::app::DownloadStatus;
 use wirecatch_protocol::extension::{
-    AddAction, AddedDownload, CaptureSource, MAX_DOWNLOAD_REDIRECTS, NewDownload,
+    AddAction, AddedDownload, CaptureSource, MAX_DOWNLOAD_REDIRECTS, MediaKind, NewDownload,
 };
 use wirecatch_protocol::{DownloadId, Secret};
 use wirecatch_records::origin::BrowserSource;
@@ -22,7 +22,7 @@ pub(super) struct WatchingLink {
 }
 
 impl Manager {
-    /// Watches for a fresh link to `id` and returns the page to reopen. The
+    /// Watches for a fresh link to `id` and returns the exact source page when known. The
     /// receiver of `saved` must stay open while waiting for the link. Starting
     /// a new watch ends the previous one.
     ///
@@ -49,17 +49,20 @@ impl Manager {
         {
             return Ok(None);
         }
-        let page = entry
-            .origin
-            .browser_source
-            .as_deref()
-            .filter(|source| !source.private_window && source.file_name.is_some())
-            .and_then(reopen_page);
-        let Some(page) = page.filter(|_| entry.row.media.is_none()) else {
+        let source = entry.origin.browser_source.as_deref();
+        if source.is_some_and(|source| source.private_window) {
             return Ok(None);
-        };
+        }
+        let page = source.and_then(source_page).or_else(|| {
+            let page_media = entry
+                .row
+                .media
+                .as_ref()
+                .is_some_and(|media| media.source == MediaKind::Page);
+            page_media.then(|| web_url(&entry.row.url)).flatten()
+        });
         state.link_refresh = Some(WatchingLink { id, saved });
-        Ok(Some(page))
+        Ok(page)
     }
 
     /// Applies a matching capture under the same lock that consumes the watch
@@ -71,7 +74,7 @@ impl Manager {
         url: &Url,
         chosen_by: ChosenBy,
     ) -> Result<Option<AddedDownload>> {
-        if capture.source != CaptureSource::BrowserDownload
+        if !has_browser_source(capture.source)
             || capture
                 .browser_route
                 .as_ref()
@@ -98,26 +101,29 @@ impl Manager {
         let Some(source) = origin.browser_source.as_ref() else {
             return Ok(None);
         };
-        let known_size = entry
-            .row
-            .total
-            .or_else(|| entry.expect.as_ref().and_then(|expected| expected.size));
+        let known_size = if entry.media_job.is_none() {
+            entry
+                .row
+                .total
+                .or_else(|| entry.expect.as_ref().and_then(|expected| expected.size))
+        } else {
+            None
+        };
         if entry.row.status == DownloadStatus::Completed
             || entry.refuse_if_stranded().is_err()
             || known_size
                 .zip(capture.size_hint)
                 .is_some_and(|(old, new)| old != new)
-            || !entry
-                .origin
-                .browser_source
-                .as_ref()
-                .is_some_and(|old| matches_source(old, &entry.row.url, source, url))
+            || !matches_capture(entry, capture, source, url)
         {
             return Ok(None);
         }
 
-        let mut expect = expectation_of(capture);
-        expect.size = expect.size.or(known_size);
+        let expect = entry.media_job.is_none().then(|| {
+            let mut expect = expectation_of(capture);
+            expect.size = expect.size.or(known_size);
+            expect
+        });
         self.replace_link(
             &mut state,
             id,
@@ -153,17 +159,17 @@ impl Manager {
 }
 
 pub(super) fn browser_source(capture: &NewDownload) -> Option<BrowserSource> {
-    if capture.source != CaptureSource::BrowserDownload || capture.media.is_some() {
+    if !has_browser_source(capture.source) {
         return None;
     }
     let route = capture.browser_route.as_ref()?;
     let page = route
-        .source_page
+        .observed_page
         .as_ref()
         .and_then(|page| web_url(page.expose()))
         .map(|url| url.to_string().into());
     Some(BrowserSource {
-        page,
+        observed_page: page,
         page_redirect_urls: safe_redirects(route.page_redirect_urls.as_deref().unwrap_or_default()),
         redirect_urls: safe_redirects(&route.redirect_urls),
         private_window: route.private_window,
@@ -173,6 +179,13 @@ pub(super) fn browser_source(capture: &NewDownload) -> Option<BrowserSource> {
             .filter(|name| !name.is_empty())
             .cloned(),
     })
+}
+
+fn has_browser_source(source: CaptureSource) -> bool {
+    matches!(
+        source,
+        CaptureSource::BrowserDownload | CaptureSource::MediaButton | CaptureSource::ContextMenu
+    )
 }
 
 fn safe_redirects(urls: &[Secret]) -> Vec<Secret> {
@@ -192,53 +205,98 @@ fn web_url(text: &str) -> Option<Url> {
 }
 
 fn source_page(source: &BrowserSource) -> Option<Url> {
-    source.page.as_ref().and_then(|page| web_url(page.expose()))
+    source
+        .observed_page
+        .as_ref()
+        .and_then(|page| web_url(page.expose()))
 }
 
-/// A landing page with a query can expire. Prefer its stable same-origin entry
-/// point when it has one, so the browser can reach the landing page again.
-fn reopen_page(source: &BrowserSource) -> Option<Url> {
+/// A stable entry can establish that two observed landing pages came from the
+/// same navigation. The browser is always sent to the saved document itself.
+fn stable_entry(source: &BrowserSource) -> Option<Url> {
     let page = source_page(source)?;
     let entry = source
         .page_redirect_urls
         .first()
         .and_then(|url| web_url(url.expose()));
-    let stable_entry = entry.filter(|entry| {
+    entry.filter(|entry| {
         page.query().is_some()
             && page.fragment().is_none()
             && entry.origin() == page.origin()
             && entry.query().is_none()
-    });
-    Some(stable_entry.unwrap_or(page))
+    })
 }
 
-/// Require the same page and browser filename, and identify the file by the
-/// initial or final request. Shared intermediate redirects are insufficient.
-fn matches_source(old: &BrowserSource, old_url: &str, new: &BrowserSource, new_url: &Url) -> bool {
-    let Some(page) = source_page(old) else {
-        return false;
-    };
-    let Some(name) = old.file_name.as_deref().filter(|name| !name.is_empty()) else {
-        return false;
-    };
-    let same_page =
-        source_page(new).as_ref() == Some(&page) || reopen_page(new) == reopen_page(old);
-    if !same_page || new.file_name.as_deref() != Some(name) {
+fn matches_capture(
+    entry: &super::Entry,
+    capture: &NewDownload,
+    source: &BrowserSource,
+    url: &Url,
+) -> bool {
+    let kind = entry.row.media.as_ref().map(|media| media.source);
+    if kind != capture.media.as_ref().map(|media| media.kind) {
         return false;
     }
-    let addresses = |source: &BrowserSource, final_url: &str| {
-        [
-            source
-                .redirect_urls
-                .first()
-                .and_then(|url| web_url(url.expose())),
-            web_url(final_url),
-        ]
+    let old = entry.origin.browser_source.as_deref();
+    if old.is_some_and(|source| source.private_window) {
+        return false;
+    }
+    if kind == Some(MediaKind::Page) {
+        // The download's URL is already the page. Its selected formats are
+        // resolved again using the refreshed browser context.
+        return web_url(&entry.row.url).as_ref() == Some(url);
+    }
+    let Some(old) = old else {
+        // Older rows have no saved browser context. An exact address still
+        // allows a fresh capture from the tab the person returns to.
+        return web_url(&entry.row.url).as_ref() == Some(url);
     };
-    addresses(old, old_url).into_iter().flatten().any(|old| {
-        addresses(new, new_url.as_str())
-            .into_iter()
-            .flatten()
-            .any(|new| old == new)
-    })
+    let page_matches = source_page(old)
+        .is_some_and(|page| source_page(source).as_ref() == Some(&page))
+        || stable_entry(old).is_some_and(|page| stable_entry(source).as_ref() == Some(&page));
+    if !page_matches && source_page(old).is_some() {
+        return false;
+    }
+    if kind.is_none()
+        && old
+            .file_name
+            .as_ref()
+            .is_some_and(|name| source.file_name.as_ref().is_some_and(|new| new != name))
+    {
+        return false;
+    }
+    let same_name = old.file_name.is_some() && old.file_name == source.file_name;
+    let new = addresses(source, url.as_str());
+    addresses(old, &entry.row.url)
+        .into_iter()
+        .flatten()
+        .any(|old| {
+            new.iter().flatten().any(|new| {
+                old == *new
+                    || (page_matches
+                        && (same_name || kind.is_some())
+                        && same_signed_resource(&old, new))
+            })
+        })
+}
+
+fn addresses(source: &BrowserSource, final_url: &str) -> [Option<Url>; 2] {
+    [
+        source
+            .redirect_urls
+            .first()
+            .and_then(|url| web_url(url.expose())),
+        web_url(final_url),
+    ]
+}
+
+fn same_signed_resource(old: &Url, new: &Url) -> bool {
+    old.origin() == new.origin()
+        && old.path() == new.path()
+        && old
+            .query_pairs()
+            .filter(|(name, _)| !wirecatch_streams::is_signing_parameter(name))
+            .eq(new
+                .query_pairs()
+                .filter(|(name, _)| !wirecatch_streams::is_signing_parameter(name)))
 }

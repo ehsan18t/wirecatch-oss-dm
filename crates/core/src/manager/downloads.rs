@@ -33,7 +33,7 @@ pub(super) enum Replacement {
     Captured {
         origin: Origin,
         chosen_by: ChosenBy,
-        expect: Expectation,
+        expect: Option<Expectation>,
     },
 }
 
@@ -499,7 +499,7 @@ impl Manager {
                 origin.sign_in_refreshed_at = Some(self.inner.clock.unix_millis());
                 entry.origin = origin;
                 entry.chosen_by = chosen_by;
-                entry.expect = Some(expect);
+                entry.expect = expect;
             }
         }
         entry.row.url = url.to_string();
@@ -507,6 +507,12 @@ impl Manager {
         // A running download restarts on the new link; the engine continues the part file.
         if !self.stop_run(entry, Stop::Requeue) {
             entry.row.status = DownloadStatus::Queued;
+        }
+        if matches!(
+            entry.media_job,
+            Some(wirecatch_media::MediaJob::Page { .. })
+        ) {
+            self.inner.page_readings.forget(url);
         }
         self.save(state, id);
         self.reconcile(state);

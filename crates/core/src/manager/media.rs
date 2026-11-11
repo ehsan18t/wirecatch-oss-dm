@@ -965,6 +965,7 @@ impl Manager {
             &source.fetch.url,
             self.inner.clock.unix_millis(),
             info.clone(),
+            token,
         );
         Ok(Found {
             title: info.title.clone(),

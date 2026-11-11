@@ -11,7 +11,7 @@ use wirecatch_protocol::app::{
     FileExistsChoice, FixAction, MediaChoice, MediaSelection, QualityFallback, Repeated, Schedule,
     TimeOfDay, UiEvent, VideoQuality, WaitReason, WhenFileExists,
 };
-use wirecatch_protocol::extension::{AddAction, MediaKind, NewDownload};
+use wirecatch_protocol::extension::{AddAction, BrowserRoute, MediaKind, NewDownload};
 
 use crate::common::{
     Harness, PATIENCE, QUIET, TestResult, extension, monday, test_data, tune, wait_until,
@@ -1216,6 +1216,81 @@ async fn start_page_video(
     let choice = choice_requested(&mut ui).await;
     h.manager.choose_media(choice.id, select("137+140")).await?;
     Ok(h.manager.list_downloads()[0].id)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_recaptured_video_page_refreshes_the_original_download() -> TestResult {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    install(&h).await?;
+    let (video, audio) = (mp4_data(300 * KIB_USIZE), mp4_data(20 * KIB_USIZE));
+    tell_tool(&h, "info.json", &page_info(&server, &video, &audio))?;
+    h.manager.set_queue_paused(DEFAULT_QUEUE_ID, true)?;
+
+    let id = start_page_video(&h, &server, 20).await?;
+    let url = server.url("watch/20");
+    let (saved, result) = tokio::sync::oneshot::channel();
+    assert_eq!(h.manager.watch_link(id, saved)?, Some(url.clone()));
+    let mut fresh = media_capture(&url, MediaKind::Page, None);
+    fresh.handover_id = "refresh-video-page".into();
+    fresh.browser_route = Some(Box::new(BrowserRoute {
+        private_window: false,
+        observed_page: Some(url.as_str().into()),
+        page_redirect_urls: None,
+        redirect_urls: Vec::new(),
+    }));
+    assert_eq!(h.manager.add_capture(fresh).await?.id, Some(id));
+    tokio::time::timeout(PATIENCE, result).await??;
+    assert_eq!(h.manager.list_downloads().len(), 1);
+    assert_eq!(h.manager.pending_media_choices(), [] as [MediaChoice; 0]);
+
+    h.manager.set_queue_paused(DEFAULT_QUEUE_ID, false)?;
+    h.wait_status(id, DownloadStatus::Completed).await;
+    assert_eq!(ytdlp_calls(&h)?.len(), 2, "the page was not read again");
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_recaptured_stream_can_change_its_signature_but_keeps_its_selection() -> TestResult {
+    let server = FileServer::start().await;
+    hls(&server, false, false);
+    let h = Harness::new().await?;
+    h.manager.set_queue_paused(DEFAULT_QUEUE_ID, true)?;
+    let mut ui = h.manager.subscribe();
+    let page = "https://videos.test/watch";
+    let manifest = |query| {
+        let mut url = server.url("hls/master.m3u8");
+        url.set_query(Some(query));
+        let mut capture = media_capture(url, MediaKind::Hls, None);
+        capture.browser_route = Some(Box::new(BrowserRoute {
+            private_window: false,
+            observed_page: Some(page.into()),
+            page_redirect_urls: None,
+            redirect_urls: Vec::new(),
+        }));
+        capture
+    };
+    h.manager.add_capture(manifest("video=1&token=old")).await?;
+    let choice = choice_requested(&mut ui).await;
+    let option = &choice.options[0];
+    h.manager
+        .choose_media(choice.id, select(&option.id))
+        .await?;
+    let row = h.manager.list_downloads().remove(0);
+    let (saved, result) = tokio::sync::oneshot::channel();
+    assert_eq!(h.manager.watch_link(row.id, saved)?.unwrap().as_str(), page);
+
+    let different = manifest("video=2&token=fresh");
+    assert_eq!(h.manager.add_capture(different).await?.id, None);
+    assert_eq!(h.row(row.id).url, row.url);
+    let fresh = manifest("video=1&token=fresh");
+    assert_eq!(h.manager.add_capture(fresh.clone()).await?.id, Some(row.id));
+    tokio::time::timeout(PATIENCE, result).await??;
+    let refreshed = h.row(row.id);
+    assert_eq!(refreshed.url, fresh.url);
+    assert_eq!(refreshed.media, row.media);
+    assert_eq!(h.manager.list_downloads().len(), 1);
+    Ok(())
 }
 
 const QUICK: [Duration; 3] = [

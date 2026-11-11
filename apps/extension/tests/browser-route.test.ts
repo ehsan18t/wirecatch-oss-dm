@@ -12,6 +12,25 @@ function request(requestId: string, url: string) {
 }
 
 describe('the source of a browser download', () => {
+  it('keeps the exact browser page when a site reports its home page as referrer', async () => {
+    const home = 'https://files.example/home';
+    let current = PAGE;
+    const routes = new BrowserRoutes(() => Promise.resolve({ url: current, incognito: false }));
+    routes.start(request('file', INITIAL));
+    current = home;
+    routes.redirect({ ...request('file', INITIAL), redirectUrl: FINAL });
+    routes.response(request('file', FINAL));
+
+    await expect(
+      routes.forDownload({
+        id: 1,
+        url: INITIAL,
+        finalUrl: FINAL,
+        referrer: home,
+      }),
+    ).resolves.toMatchObject({ pageUrl: PAGE });
+  });
+
   it('recovers the full page and redirect chain behind an origin-only referrer', async () => {
     const routes = new BrowserRoutes(() => Promise.resolve({ url: PAGE, incognito: false }));
     routes.redirect({ ...request('file', INITIAL), redirectUrl: MIRROR });

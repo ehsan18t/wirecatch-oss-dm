@@ -63,6 +63,11 @@ export class MediaSender {
       url: target.url,
       referrer: refererFor(target.url, request.referrer),
       page_url: request.pageUrl,
+      browser_route: {
+        observed_page: request.pageUrl ?? target.requestedBy,
+        private_window: request.cookieStore.private,
+        redirect_urls: [],
+      },
       // The document that requested the media chose its address; left out when unknown.
       ...(target.requestedBy === null ? {} : { frame_url: target.requestedBy }),
       suggested_name: null,

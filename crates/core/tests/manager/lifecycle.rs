@@ -85,7 +85,7 @@ async fn a_captured_refresh_checks_the_response_before_touching_a_partial_file()
     old.size_hint = Some(len);
     old.browser_route = Some(Box::new(BrowserRoute {
         private_window: false,
-        source_page: Some(page.into()),
+        observed_page: Some(page.into()),
         page_redirect_urls: None,
         redirect_urls: vec!["https://project.example/releases/file.bin".into()],
     }));

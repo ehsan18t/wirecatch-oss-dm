@@ -37,7 +37,7 @@ export type NewDownload = {
    */
   frame_url?: string;
   /**
-   * Browser download provenance for reopening the source and matching a fresh link.
+   * Browser capture provenance for reopening the source and matching a fresh link.
    * Older extensions did not say whether the source was a private window.
    */
   browser_route?: BrowserRoute;

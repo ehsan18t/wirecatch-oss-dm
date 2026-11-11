@@ -111,6 +111,9 @@ fn ask_to_cancel(id: DownloadId, window: &mut Window, cx: &mut App) {
 fn fixes_offered(row: &DownloadSummary) -> Vec<FixAction> {
     let fix = row.error.as_ref().and_then(|error| error.fix);
     match fix.filter(|_| row.status == DownloadStatus::Failed) {
+        Some(FixAction::Retry) if crate::main_window::can_refresh_link(row) => {
+            vec![FixAction::Retry, FixAction::RefreshLink]
+        }
         None | Some(FixAction::Retry) => vec![FixAction::Retry],
         Some(fix) if RETRY_FIXES.contains(&fix) => vec![fix, FixAction::Retry],
         Some(fix) => vec![fix],

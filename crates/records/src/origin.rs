@@ -15,7 +15,7 @@ pub struct Origin {
     /// When a fresh browser capture last replaced the credentials, if it did.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sign_in_refreshed_at: Option<UnixMillis>,
-    /// Where the browser download came from, kept separately from request headers.
+    /// Where the browser capture came from, kept separately from request headers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub browser_source: Option<Box<BrowserSource>>,
 }
@@ -23,7 +23,7 @@ pub struct Origin {
 /// What the browser saw when it handed the file over.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BrowserSource {
-    pub page: Option<Secret>,
+    pub observed_page: Option<Secret>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub page_redirect_urls: Vec<Secret>,
     pub redirect_urls: Vec<Secret>,

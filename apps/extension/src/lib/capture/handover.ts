@@ -223,7 +223,7 @@ export async function handOver(input: HandoverInput, deps: HandoverDeps): Promis
     page_url: candidate.referrer,
     browser_route: {
       private_window: candidate.incognito,
-      source_page: input.route === undefined ? candidate.referrer : input.route.pageUrl,
+      observed_page: input.route?.pageUrl ?? null,
       page_redirect_urls: input.route?.pageRedirectUrls,
       redirect_urls:
         input.route?.redirectUrls ??
