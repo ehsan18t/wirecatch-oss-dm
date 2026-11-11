@@ -98,12 +98,13 @@ impl Manager {
         let Some(source) = origin.browser_source.as_ref() else {
             return Ok(None);
         };
+        let known_size = entry
+            .row
+            .total
+            .or_else(|| entry.expect.as_ref().and_then(|expected| expected.size));
         if entry.row.status == DownloadStatus::Completed
             || entry.refuse_if_stranded().is_err()
-            || entry
-                .row
-                .total
-                .or_else(|| entry.expect.as_ref().and_then(|expected| expected.size))
+            || known_size
                 .zip(capture.size_hint)
                 .is_some_and(|(old, new)| old != new)
             || !entry
@@ -115,6 +116,8 @@ impl Manager {
             return Ok(None);
         }
 
+        let mut expect = expectation_of(capture);
+        expect.size = expect.size.or(known_size);
         self.replace_link(
             &mut state,
             id,
@@ -122,7 +125,7 @@ impl Manager {
             Replacement::Captured {
                 origin,
                 chosen_by,
-                expect: expectation_of(capture),
+                expect,
             },
         )?;
         let reply = AddedDownload {

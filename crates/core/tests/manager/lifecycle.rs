@@ -102,11 +102,20 @@ async fn a_captured_refresh_checks_the_response_before_touching_a_partial_file()
     let mut fresh = old;
     fresh.handover_id = "fresh-file".into();
     fresh.url = other.url("file.bin").to_string();
+    fresh.size_hint = None;
     assert_eq!(h.manager.add_capture(fresh).await?.id, Some(id));
     tokio::time::timeout(PATIENCE, result).await??;
 
-    let failed = h.wait_status(id, DownloadStatus::Failed).await;
-    assert!(failed.error.unwrap().message.contains("different file"));
+    let ended = h
+        .wait_for(id, "the refreshed run to finish", |row| {
+            matches!(
+                row.status,
+                DownloadStatus::Completed | DownloadStatus::Failed
+            )
+        })
+        .await;
+    assert_eq!(ended.status, DownloadStatus::Failed);
+    assert!(ended.error.unwrap().message.contains("different file"));
     assert_eq!(std::fs::read(part)?, original);
     Ok(())
 }
