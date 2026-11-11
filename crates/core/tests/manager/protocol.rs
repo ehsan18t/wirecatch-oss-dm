@@ -1597,10 +1597,20 @@ async fn a_browser_capture_refreshes_the_watched_row_after_a_mirror_change() -> 
     h.clock.advance(chrono::TimeDelta::days(8));
     h.restart().await?;
     let (saved, result) = oneshot::channel();
-    assert_eq!(h.manager.watch_link(id, saved)?.unwrap().as_str(), page);
+    assert_eq!(
+        h.manager
+            .watch_link(id, saved, wirecatch_engine::CancellationToken::new())?
+            .unwrap()
+            .as_str(),
+        page
+    );
     let (cancelled, closed) = oneshot::channel();
     drop(closed);
-    assert!(h.manager.watch_link(id, cancelled)?.is_none());
+    assert!(
+        h.manager
+            .watch_link(id, cancelled, wirecatch_engine::CancellationToken::new())?
+            .is_none()
+    );
 
     let mut unrelated = old.clone();
     unrelated.handover_id = "unrelated".into();
@@ -1657,9 +1667,10 @@ async fn a_dismissed_watch_leaves_a_later_capture_to_its_own_row() -> TestResult
         redirect_urls: vec!["https://project.example/releases/v1/report.pdf".into()],
     }));
     let id = h.manager.add_capture(old.clone()).await?.id.unwrap();
-    let (saved, result) = oneshot::channel();
-    assert!(h.manager.watch_link(id, saved)?.is_some());
-    drop(result);
+    let (saved, _result) = oneshot::channel();
+    let stop = wirecatch_engine::CancellationToken::new();
+    assert!(h.manager.watch_link(id, saved, stop.clone())?.is_some());
+    stop.cancel();
     let mut fresh = old.clone();
     fresh.handover_id = "later".into();
     fresh.url = "https://files.example/report.pdf?fresh".into();
@@ -1690,7 +1701,11 @@ async fn unsafe_or_private_source_pages_do_not_open_a_watch() -> TestResult {
         }));
         let id = h.manager.add_capture(download).await?.id.unwrap();
         let (saved, _result) = oneshot::channel();
-        assert!(h.manager.watch_link(id, saved)?.is_none());
+        assert!(
+            h.manager
+                .watch_link(id, saved, wirecatch_engine::CancellationToken::new())?
+                .is_none()
+        );
     }
     Ok(())
 }

@@ -1,7 +1,7 @@
 //! A desktop window can watch for the next capture of one unfinished download.
 
 use tokio::sync::oneshot;
-use wirecatch_engine::Url;
+use wirecatch_engine::{CancellationToken, Url};
 use wirecatch_protocol::app::DownloadStatus;
 use wirecatch_protocol::extension::{
     AddAction, AddedDownload, CaptureSource, MAX_DOWNLOAD_REDIRECTS, MediaKind, NewDownload,
@@ -19,20 +19,26 @@ use crate::error::{CoreError, Result};
 pub(super) struct WatchingLink {
     pub id: DownloadId,
     saved: oneshot::Sender<()>,
+    stop: CancellationToken,
 }
 
 impl Manager {
     /// Watches for a fresh link to `id` and returns the exact source page when known. The
-    /// receiver of `saved` must stay open while waiting for the link. Starting
-    /// a new watch ends the previous one.
+    /// receiver of `saved` must stay open and `stop` must stay live while waiting
+    /// for the link. Starting a new watch ends the previous one.
     ///
     /// # Errors
     ///
     /// The manager is closed, the download is missing or finished, or its files
     /// are stranded after a failed move.
-    pub fn watch_link(&self, id: DownloadId, saved: oneshot::Sender<()>) -> Result<Option<Url>> {
+    pub fn watch_link(
+        &self,
+        id: DownloadId,
+        saved: oneshot::Sender<()>,
+        stop: CancellationToken,
+    ) -> Result<Option<Url>> {
         let mut state = self.lock_open()?;
-        if saved.is_closed() {
+        if saved.is_closed() || stop.is_cancelled() {
             return Ok(None);
         }
         let entry = state.entry(id)?;
@@ -59,9 +65,11 @@ impl Manager {
                 .media
                 .as_ref()
                 .is_some_and(|media| media.source == MediaKind::Page);
-            page_media.then(|| web_url(&entry.row.url)).flatten()
+            (page_media && (source.is_some() || entry.chosen_by == ChosenBy::Person))
+                .then(|| web_url(&entry.row.url))
+                .flatten()
         });
-        state.link_refresh = Some(WatchingLink { id, saved });
+        state.link_refresh = Some(WatchingLink { id, saved, stop });
         Ok(page)
     }
 
@@ -89,7 +97,7 @@ impl Manager {
         let Some(watch) = state
             .link_refresh
             .as_ref()
-            .filter(|watch| !watch.saved.is_closed())
+            .filter(|watch| !watch.saved.is_closed() && !watch.stop.is_cancelled())
         else {
             return Ok(None);
         };
@@ -265,17 +273,14 @@ fn matches_capture(
     {
         return false;
     }
-    let same_name = old.file_name.is_some() && old.file_name == source.file_name;
+    let stream = matches!(kind, Some(MediaKind::Hls | MediaKind::Dash));
     let new = addresses(source, url.as_str());
     addresses(old, &entry.row.url)
         .into_iter()
         .flatten()
         .any(|old| {
             new.iter().flatten().any(|new| {
-                old == *new
-                    || (page_matches
-                        && (same_name || kind.is_some())
-                        && same_signed_resource(&old, new))
+                old == *new || (page_matches && stream && same_signed_resource(&old, new))
             })
         })
 }

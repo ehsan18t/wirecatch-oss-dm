@@ -1,14 +1,15 @@
-//! The pinned window that watches for a fresh browser capture.
+//! The standalone window that watches for a fresh browser capture.
 
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::{Disableable as _, TitleBar, h_flex, v_flex};
 use gpui_kit::{
     AnyWindowHandle, App, AppContext as _, Bounds, Context, Entity, Global, IntoElement,
-    ParentElement as _, Render, Styled as _, Subscription, Task, Window, WindowKind, WindowOptions,
-    div, px, size,
+    ParentElement as _, Render, Styled as _, Subscription, Task, WeakEntity, Window, WindowKind,
+    WindowOptions, div, px, size,
 };
 use wirecatch_core::LinkFrom;
+use wirecatch_engine::CancellationToken;
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::extension::MediaKind;
 use wirecatch_shell::api;
@@ -40,20 +41,30 @@ struct RefreshWindow {
     problem: Option<String>,
     mode: Mode,
     watching: Option<Task<()>>,
+    stop: CancellationToken,
     _edited: Subscription,
 }
 
 struct OpenWatch {
     id: DownloadId,
     window: AnyWindowHandle,
+    view: WeakEntity<RefreshWindow>,
 }
 
 impl Global for OpenWatch {}
 
+impl Drop for RefreshWindow {
+    fn drop(&mut self) {
+        self.stop.cancel();
+    }
+}
+
 fn options(cx: &App) -> WindowOptions {
     let bounds = Bounds::centered(None, size(px(WIDTH), px(HEIGHT)), cx);
     let mut options = crate::popup_window_options(bounds);
-    options.kind = WindowKind::PopUp;
+    if cfg!(windows) {
+        options.kind = WindowKind::PopUp;
+    }
     options.is_minimizable = false;
     if let Some(titlebar) = &mut options.titlebar {
         titlebar.title = Some(TITLE.into());
@@ -61,32 +72,54 @@ fn options(cx: &App) -> WindowOptions {
     options
 }
 
-/// Opens the watch in its own pinned window, including from a progress window.
+/// Opens the watch in its own window, including from a progress window.
 pub fn open(library: Entity<Library>, id: DownloadId, window: &mut Window, cx: &mut App) {
     let earlier = cx
         .try_global::<OpenWatch>()
-        .map(|watch| (watch.id, watch.window));
-    if let Some((open_id, earlier)) = earlier.filter(|(_, handle)| cx.windows().contains(handle)) {
-        if open_id == id {
+        .map(|watch| (watch.id, watch.window, watch.view.clone()));
+    if let Some((open_id, earlier, view)) =
+        earlier.filter(|(_, handle, _)| cx.windows().contains(handle))
+    {
+        if open_id == id
+            && view
+                .upgrade()
+                .is_some_and(|view| view.read(cx).is_watching())
+        {
             crate::closing::may_have_closed(
                 earlier.update(cx, |_, window, _| window.activate_window()),
             );
             return;
         }
-        crate::closing::may_have_closed(earlier.update(cx, |_, window, _| window.remove_window()));
+        crate::closing::may_have_closed(earlier.update(cx, |_, window, cx| {
+            if let Some(view) = view.upgrade() {
+                view.update(cx, |view, _| view.stop_watching());
+            }
+            window.remove_window();
+        }));
     }
     let options = options(cx);
     let opened = gpui_kit::open_window(options, cx, |window, cx| {
-        crate::closing::on_close(window, cx, |_, _| true);
-        cx.new(|cx| {
+        let view = cx.new(|cx| {
             let mut view = RefreshWindow::new(library, id, window, cx);
             view.watch(window, cx);
             view
-        })
+        });
+        let closing = view.downgrade();
+        crate::closing::on_close(window, cx, move |_, cx| {
+            if let Some(view) = closing.upgrade() {
+                view.update(cx, |view, _| view.stop_watching());
+            }
+            true
+        });
+        view
     });
     match opened {
-        Ok((handle, _)) => {
-            cx.set_global(OpenWatch { id, window: handle });
+        Ok((handle, view)) => {
+            cx.set_global(OpenWatch {
+                id,
+                window: handle,
+                view: view.downgrade(),
+            });
             crate::closing::may_have_closed(
                 handle.update(cx, |_, window, _| window.activate_window()),
             );
@@ -122,6 +155,7 @@ impl RefreshWindow {
             problem: None,
             mode: Mode::Opening,
             watching: None,
+            stop: CancellationToken::new(),
             _edited: edited,
         }
     }
@@ -129,8 +163,9 @@ impl RefreshWindow {
     fn watch(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
         let id = self.id;
         let (saved, result) = tokio::sync::oneshot::channel();
+        let stop = self.stop.clone();
         let reading = Backend::run(cx, move |manager| async move {
-            api::watch_link(&manager, id, saved)
+            api::watch_link(&manager, id, saved, stop)
         });
         self.watching = Some(cx.spawn_in(window, async move |form, cx| {
             let page = match said(reading.await) {
@@ -173,7 +208,7 @@ impl RefreshWindow {
     }
 
     fn paste(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
-        self.watching = None;
+        self.stop_watching();
         self.show_paste(window, cx);
     }
 
@@ -184,12 +219,21 @@ impl RefreshWindow {
     }
 
     fn close(&mut self, window: &mut Window) {
-        self.watching = None;
+        self.stop_watching();
         window.remove_window();
     }
 
+    fn stop_watching(&mut self) {
+        self.stop.cancel();
+        self.watching = None;
+    }
+
+    fn is_watching(&self) -> bool {
+        matches!(self.mode, Mode::Opening | Mode::Watching { .. })
+    }
+
     fn buttons(&self, cx: &mut Context<'_, Self>) -> impl IntoElement {
-        let watching = matches!(self.mode, Mode::Opening | Mode::Watching { .. });
+        let watching = self.is_watching();
         h_flex()
             .mt_auto()
             .gap_2()
@@ -340,11 +384,13 @@ mod tests {
     }
 
     #[gpui_kit::test]
-    fn get_a_new_link_opens_one_separate_pinned_window(cx: &mut TestAppContext) {
+    fn get_a_new_link_opens_one_separate_window_and_can_start_again(cx: &mut TestAppContext) {
         cx.update(|cx| {
             gpui_kit::init(cx);
             cx.set_global(Backend::unopened());
-            assert_eq!(options(cx).kind, WindowKind::PopUp);
+            if cfg!(windows) {
+                assert_eq!(options(cx).kind, WindowKind::PopUp);
+            }
             let library = cx.new(|_| Library::empty());
             let (parent, _) =
                 gpui_kit::open_window(crate::window_options(), cx, |_, cx| cx.new(|_| Parent))
@@ -354,11 +400,20 @@ mod tests {
                 .update(cx, |_, window, cx| {
                     open(library.clone(), id, window, cx);
                     assert!(!window.has_active_dialog(cx));
-                    open(library, id, window, cx);
+                    open(library.clone(), id, window, cx);
                 })
                 .unwrap();
             assert_eq!(cx.windows().len(), 2);
             assert_ne!(cx.global::<OpenWatch>().window, parent);
+            let previous = cx.global::<OpenWatch>().window;
+            let view = cx.global::<OpenWatch>().view.upgrade().unwrap();
+            view.update(cx, |view, _| view.mode = Mode::Saved);
+            parent
+                .update(cx, |_, window, cx| open(library, id, window, cx))
+                .unwrap();
+            assert_ne!(cx.global::<OpenWatch>().window, previous);
         });
+        cx.run_until_parked();
+        assert_eq!(cx.windows().len(), 2);
     }
 }

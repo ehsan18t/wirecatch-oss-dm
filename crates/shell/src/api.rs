@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use crate::host::CHANNEL;
 use tokio::sync::oneshot;
 use wirecatch_core::{LinkFrom, Manager, RemoveFiles};
-use wirecatch_engine::Url;
+use wirecatch_engine::{CancellationToken, Url};
 use wirecatch_protocol::ProxyServerId;
 use wirecatch_protocol::app::{
     AddRequest, AddonId, AddonInfo, AppSettings, AppSettingsPatch, CaptureConfirmation,
@@ -158,8 +158,9 @@ pub fn watch_link(
     m: &Manager,
     id: DownloadId,
     saved: oneshot::Sender<()>,
+    stop: CancellationToken,
 ) -> CommandResult<Option<Url>> {
-    plain(m.watch_link(id, saved))
+    plain(m.watch_link(id, saved, stop))
 }
 
 /// Saves a download whose conversion failed as it was downloaded instead (D24).

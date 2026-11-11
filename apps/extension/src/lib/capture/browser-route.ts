@@ -12,6 +12,7 @@ interface FileRequest {
   url: string;
   method: string;
   type: string;
+  frameId: number;
   initiator?: string;
   originUrl?: string;
   documentUrl?: string;
@@ -30,6 +31,7 @@ interface ObservedRoute {
   from: string | undefined;
   tabId: number;
   navigation: boolean;
+  inFrame: boolean;
   at: number;
 }
 
@@ -40,8 +42,9 @@ function fullPage(url: URL | null): URL | null {
 /** Prefer the document open when the request began. The referrer can name a site's home page. */
 function sourcePage(referrer: URL | null, tab: SourceTab, route: ObservedRoute): string | null {
   const from = parseWebUrl(route.from ?? '');
-  const tabPage = fullPage(parseWebUrl(tab.url ?? ''));
-  if (tabPage !== null && tabPage.href !== route.url && (from !== null || referrer !== null)) {
+  const tabPage = parseWebUrl(tab.url ?? '');
+  const sameOrigin = [from, referrer].some((page) => page?.origin === tabPage?.origin);
+  if (tabPage !== null && tabPage.href !== route.url && (route.inFrame || sameOrigin)) {
     return tabPage.href;
   }
   return fullPage(from)?.href ?? null;
@@ -54,8 +57,8 @@ export interface SourceTab {
 
 /**
  * The download API has no tab or request id. Correlate its exact request
- * addresses with recent browser events, and fall back to its referrer when the
- * correlation is ambiguous. Only a download handed to the app leaves this cache.
+ * addresses with recent browser events. Leave the source unknown when the
+ * correlation is ambiguous. Only a capture sent to the app leaves this cache.
  */
 export class BrowserRoutes {
   readonly #requests = new Map<string, ObservedRoute>();
@@ -92,6 +95,7 @@ export class BrowserRoutes {
       tab: known?.tab ?? this.#tab(request.tabId),
       tabId: request.tabId,
       navigation: request.type === 'main_frame',
+      inFrame: request.frameId > 0,
       at,
     };
     this.#requests.delete(request.requestId);

@@ -1230,7 +1230,12 @@ async fn a_recaptured_video_page_refreshes_the_original_download() -> TestResult
     let id = start_page_video(&h, &server, 20).await?;
     let url = server.url("watch/20");
     let (saved, result) = tokio::sync::oneshot::channel();
-    assert_eq!(h.manager.watch_link(id, saved)?, Some(url.clone()));
+    // This older capture did not record whether its page was private.
+    assert_eq!(
+        h.manager
+            .watch_link(id, saved, wirecatch_engine::CancellationToken::new())?,
+        None
+    );
     let mut fresh = media_capture(&url, MediaKind::Page, None);
     fresh.handover_id = "refresh-video-page".into();
     fresh.browser_route = Some(Box::new(BrowserRoute {
@@ -1278,7 +1283,13 @@ async fn a_recaptured_stream_can_change_its_signature_but_keeps_its_selection() 
         .await?;
     let row = h.manager.list_downloads().remove(0);
     let (saved, result) = tokio::sync::oneshot::channel();
-    assert_eq!(h.manager.watch_link(row.id, saved)?.unwrap().as_str(), page);
+    assert_eq!(
+        h.manager
+            .watch_link(row.id, saved, wirecatch_engine::CancellationToken::new())?
+            .unwrap()
+            .as_str(),
+        page
+    );
 
     let different = manifest("video=2&token=fresh");
     assert_eq!(h.manager.add_capture(different).await?.id, None);

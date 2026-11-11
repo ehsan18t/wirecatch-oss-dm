@@ -98,7 +98,11 @@ async fn a_captured_refresh_checks_the_response_before_touching_a_partial_file()
     let original = std::fs::read(&part)?;
 
     let (saved, result) = oneshot::channel();
-    assert!(h.manager.watch_link(id, saved)?.is_some());
+    assert!(
+        h.manager
+            .watch_link(id, saved, wirecatch_engine::CancellationToken::new())?
+            .is_some()
+    );
     let mut fresh = old;
     fresh.handover_id = "fresh-file".into();
     fresh.url = other.url("file.bin").to_string();

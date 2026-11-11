@@ -8,7 +8,15 @@ const FINAL = 'https://files.example/report.pdf?fresh';
 const PROJECT_ORIGIN = 'https://project.example';
 
 function request(requestId: string, url: string) {
-  return { requestId, tabId: 1, url, method: 'GET', type: 'main_frame', initiator: PROJECT_ORIGIN };
+  return {
+    requestId,
+    tabId: 1,
+    frameId: 0,
+    url,
+    method: 'GET',
+    type: 'main_frame',
+    initiator: PROJECT_ORIGIN,
+  };
 }
 
 describe('the source of a browser download', () => {
@@ -47,6 +55,16 @@ describe('the source of a browser download', () => {
     await expect(routes.forDownload({ id: 1, url: INITIAL, referrer: PAGE })).resolves.toEqual({
       pageUrl: PAGE,
       redirectUrls: [INITIAL, MIRROR, FINAL],
+    });
+  });
+
+  it('can return to the site root when it was the actual browser page', async () => {
+    const home = `${PROJECT_ORIGIN}/`;
+    const routes = new BrowserRoutes(() => Promise.resolve({ url: home, incognito: false }));
+    routes.start(request('file', INITIAL));
+    routes.response(request('file', INITIAL));
+    await expect(routes.forDownload({ id: 1, url: INITIAL })).resolves.toMatchObject({
+      pageUrl: home,
     });
   });
 
