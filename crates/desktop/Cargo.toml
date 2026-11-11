@@ -14,7 +14,7 @@ name = "wirecatch-app"
 path = "src/main.rs"
 
 [dependencies]
-gpui-kit = "0.8.1"
+gpui-kit = "=0.9.1"
 wirecatch-core.workspace = true
 wirecatch-engine.workspace = true
 wirecatch-media.workspace = true
@@ -43,8 +43,8 @@ embed-resource = "3.0.12"
 wirecatch-product.workspace = true
 
 [dev-dependencies]
-# GPUI's own feature, not gpui-kit's `test-support`: that one locks in gpui-fast, whose exact taffy pin conflicts with GPUI's.
-gpui-pre = { version = "0.3.10", features = ["test-support"] }
+# The same gpui-pre snapshot as gpui-kit, kept as a dev-dependency so test support stays out of release builds.
+gpui-pre = { version = "=0.3.12", features = ["test-support"] }
 serde_json.workspace = true
 wirecatch-test-support = { path = "../test-support", features = ["downloads"] }
 
