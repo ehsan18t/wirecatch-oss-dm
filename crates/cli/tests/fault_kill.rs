@@ -16,11 +16,17 @@ const NAME: &str = "f.bin";
 const BOUND: Duration = PATIENCE.saturating_mul(2);
 
 fn part(scratch: &Scratch) -> PathBuf {
-    scratch.downloads.join("f.bin.wcpart")
+    wirecatch_engine::naming::partial_path(
+        &scratch.downloads.join("f.bin"),
+        wirecatch_engine::PART_EXT,
+    )
 }
 
 fn state(scratch: &Scratch) -> PathBuf {
-    scratch.downloads.join("f.bin.wcstate")
+    wirecatch_engine::naming::partial_path(
+        &scratch.downloads.join("f.bin"),
+        wirecatch_engine::STATE_EXT,
+    )
 }
 
 fn start(scratch: &Scratch, server: &FaultServer) -> Running {
@@ -182,7 +188,10 @@ fn a_temporary_resume_file_left_by_a_kill_is_cleaned_up() {
     let server = FaultServer::start(move |req| file.ranged(req));
     killed_at_half(&scratch, &server, 9);
     std::fs::write(
-        scratch.downloads.join("f.bin.wcstate.tmp"),
+        wirecatch_engine::naming::resume_temp_path(&wirecatch_engine::naming::partial_path(
+            &scratch.downloads.join("f.bin"),
+            wirecatch_engine::STATE_EXT,
+        )),
         b"{\"version\":1,\"ur",
     )
     .unwrap();

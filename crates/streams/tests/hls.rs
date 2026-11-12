@@ -175,7 +175,11 @@ async fn master_playlists_are_inspected_and_the_chosen_variant_downloaded() {
     assert_eq!(std::fs::read(&path).unwrap(), high.concat());
     assert_eq!(bytes, high.concat().len() as u64);
     assert!(
-        !dir.join("auto.mp4.wcstream").exists(),
+        !wirecatch_engine::naming::partial_path(
+            &dir.join("auto.mp4"),
+            wirecatch_streams::DIR_SUFFIX
+        )
+        .exists(),
         "temporary files are removed"
     );
 
@@ -396,7 +400,8 @@ async fn resuming_after_a_cancel_fetches_only_the_missing_segments() {
     };
     assert_eq!(left, 20, "the hung segments are left");
     assert!(
-        dir.join("v.mp4.wcstream").is_dir(),
+        wirecatch_engine::naming::partial_path(&dir.join("v.mp4"), wirecatch_streams::DIR_SUFFIX)
+            .is_dir(),
         "finished segments are kept"
     );
     let before = server.seen().len();
@@ -620,7 +625,9 @@ async fn resuming_checks_segment_sizes() {
     server.hang("s/seg3.ts", false);
 
     // Damage one finished segment: it must be fetched again.
-    let work = dir.join("v.ts.wcstream").join("t0");
+    let work =
+        wirecatch_engine::naming::partial_path(&dir.join("v.ts"), wirecatch_streams::DIR_SUFFIX)
+            .join("t0");
     std::fs::write(work.join("000001.seg"), b"truncated").unwrap();
     let before = server.seen().len();
     let (path, _) = completed(run(req).await.unwrap());

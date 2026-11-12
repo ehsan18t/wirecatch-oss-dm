@@ -36,7 +36,8 @@ async fn a_file_that_finished_before_the_restart_is_not_downloaded_again() -> Te
 
     // The engine renamed the first one's part file just before the app stopped.
     let partials = |path: &str| {
-        [wirecatch_engine::PART_EXT, wirecatch_engine::STATE_EXT].map(|ext| format!("{path}{ext}"))
+        let (part, state) = wirecatch_engine::naming::part_paths(std::path::Path::new(path));
+        [part, state]
     };
     for partial in partials(&finished.path) {
         std::fs::remove_file(partial).unwrap();

@@ -79,7 +79,10 @@ async fn ffmpeg_gets_each_path_as_one_untouched_argument() {
     let received = std::fs::read_to_string(&path).unwrap();
     assert_eq!(bytes, received.len() as u64);
     let args: Vec<&str> = received.lines().collect();
-    let work = dir.join("-i evil name.mp4.wcstream");
+    let work = wirecatch_engine::naming::partial_path(
+        &dir.join("-i evil name.mp4"),
+        wirecatch_streams::DIR_SUFFIX,
+    );
     let file = |p: PathBuf| format!("file:{}", p.display());
     assert_eq!(
         args,
@@ -163,7 +166,10 @@ async fn ffmpeg_failures_are_reported_and_the_parts_kept() {
         ),
         "{message}"
     );
-    let work = dir.join("fail-please.mp4.wcstream");
+    let work = wirecatch_engine::naming::partial_path(
+        &dir.join("fail-please.mp4"),
+        wirecatch_streams::DIR_SUFFIX,
+    );
     assert!(work.join("track0").is_file() && work.join("track1").is_file());
 
     // Trying again joins from the kept tracks without downloading anything.
@@ -368,7 +374,14 @@ async fn a_track_in_an_unknown_format_is_never_given_to_ffmpeg() {
     // The fake ffmpeg would have written the output had it been started.
     assert!(!output.exists());
     // Kept, the same bad track would fail every try, whatever the link.
-    assert!(!dir.join("clip.mp4.wcstream").join("track0").exists());
+    assert!(
+        !wirecatch_engine::naming::partial_path(
+            &dir.join("clip.mp4"),
+            wirecatch_streams::DIR_SUFFIX
+        )
+        .join("track0")
+        .exists()
+    );
     let mut again = common::request(server.url("index.m3u8"), &output);
     again.ffmpeg = Some(fake_ffmpeg().unwrap());
     one_segment(&server, ts_segment(1, 1500));

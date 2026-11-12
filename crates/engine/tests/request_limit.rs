@@ -193,7 +193,14 @@ async fn a_paused_download_resumes_with_limited_requests() {
     cancel.cancel();
     let paused = task.await.unwrap().expect("pausing should not fail");
     assert!(matches!(paused, Outcome::Paused { .. }), "got {paused:?}");
-    let kept = kept_ranges(&dir.join("video.mp4.wcstate"), len as u64).unwrap();
+    let kept = kept_ranges(
+        &wirecatch_engine::naming::partial_path(
+            &dir.join("video.mp4"),
+            wirecatch_engine::STATE_EXT,
+        ),
+        len as u64,
+    )
+    .unwrap();
     let seen_before = server.stats.seen().len();
     server.release_bodies();
 

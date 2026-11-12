@@ -29,10 +29,16 @@ fn one_at_a_time() -> MutexGuard<'static, ()> {
 
 /// A part file of `LEN` bytes, sparse where the system allows, with a resume file that says only the bytes from `FETCH_FROM` are missing.
 fn earlier_run(scratch: &Scratch, server: &FaultServer, file: &Generated) -> TestResult {
-    let part = scratch.downloads.join("large.bin.wcpart");
+    let part = wirecatch_engine::naming::partial_path(
+        &scratch.downloads.join("large.bin"),
+        wirecatch_engine::PART_EXT,
+    );
     create_sparse(&part, LEN)?;
     write_resume_file(
-        &scratch.downloads.join("large.bin.wcstate"),
+        &wirecatch_engine::naming::partial_path(
+            &scratch.downloads.join("large.bin"),
+            wirecatch_engine::STATE_EXT,
+        ),
         &file.saved_run(&server.url(NAME), &[(FETCH_FROM, LEN)]),
     )?;
     Ok(())
@@ -98,8 +104,14 @@ fn a_run_dropped_and_killed_above_4_gib_continues_to_the_end() -> TestResult {
     });
     earlier_run(&scratch, &server, &file)?;
     server.hold_at(TAIL / 2);
-    let state = scratch.downloads.join("large.bin.wcstate");
-    let part = scratch.downloads.join("large.bin.wcpart");
+    let state = wirecatch_engine::naming::partial_path(
+        &scratch.downloads.join("large.bin"),
+        wirecatch_engine::STATE_EXT,
+    );
+    let part = wirecatch_engine::naming::partial_path(
+        &scratch.downloads.join("large.bin"),
+        wirecatch_engine::PART_EXT,
+    );
     let mut run = cli(EXE, &scratch, &server.url(NAME));
     let above = |kept: Vec<(u64, u64)>| -> Vec<(u64, u64)> {
         kept.into_iter()

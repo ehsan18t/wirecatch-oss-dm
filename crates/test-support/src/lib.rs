@@ -298,6 +298,23 @@ pub fn files_in(dir: &Path) -> Vec<String> {
     names
 }
 
+/// The file names of `paths`, sorted as [`files_in`] lists them.
+#[must_use]
+pub fn names_of<P: AsRef<Path>>(paths: impl IntoIterator<Item = P>) -> Vec<String> {
+    let mut names: Vec<String> = paths
+        .into_iter()
+        .map(|path| {
+            path.as_ref()
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    names.sort();
+    names
+}
+
 /// Whether a file manager hides `path` by default: the hidden attribute on Windows, a leading dot elsewhere.
 #[must_use]
 pub fn is_hidden(path: &Path) -> bool {

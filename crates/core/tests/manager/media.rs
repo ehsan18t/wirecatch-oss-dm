@@ -253,7 +253,10 @@ async fn replace_with_another_extension_places_the_waiting_file() -> TestResult 
     assert_eq!(server.seen_at("hls/720/seg0.ts").len(), fetched);
     assert_eq!(Path::new(&done.path), taken);
     assert_ne!(std::fs::read(&taken)?, b"older");
-    assert!(!folder.join("clip.wcmedia").exists());
+    assert!(
+        !wirecatch_engine::naming::partial_path(&folder.join("clip"), wirecatch_media::WORK_SUFFIX)
+            .exists()
+    );
     Ok(())
 }
 
@@ -1100,7 +1103,7 @@ async fn a_page_is_read_with_yt_dlp_and_video_and_audio_are_joined() -> TestResu
         done.file_name
     );
     check_joined_by_copying(&done.path)?;
-    assert!(!Path::new(&format!("{}.wcmedia", done.path)).exists());
+    assert!(!wirecatch_media::work_dir(Path::new(&done.path)).exists());
     // The format's own headers were sent with the format, never the page's cookies.
     for seen in server.seen_at("fmt/video.mp4") {
         assert_eq!(seen.headers.get("x-format").unwrap(), "yes");

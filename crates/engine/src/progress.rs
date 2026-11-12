@@ -104,7 +104,7 @@ impl Progress {
     ///
     /// Set once the server has answered with the file; until then the link has
     /// not been proven to work. It is the path the file has once complete (the
-    /// data meanwhile goes to this path plus [`PART_EXT`](crate::PART_EXT)),
+    /// data meanwhile goes to its part file, [`naming::part_paths`](crate::naming::part_paths)),
     /// with the name the server suggested and any ` (1)` suffix already applied,
     /// so it can be saved and passed as
     /// [`DownloadRequest::exact_path`](crate::DownloadRequest::exact_path) on a

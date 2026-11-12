@@ -256,7 +256,7 @@ async fn a_video_saved_as_mp4_is_converted_with_subtitles_and_chapters() -> Test
         0,
         "a video gets no cover picture"
     );
-    assert!(!Path::new(&format!("{}.wcmedia", done.path)).exists());
+    assert!(!wirecatch_media::work_dir(Path::new(&done.path)).exists());
 
     // The next video window starts from these choices.
     let video = h.manager.get_settings().media.video;

@@ -377,7 +377,10 @@ async fn a_finished_stream_is_marked_before_it_is_put_in_place() {
 #[tokio::test]
 async fn a_finished_video_is_marked_before_it_is_put_in_place() {
     let dir = tempfile::tempdir().unwrap();
-    let work = dir.path().join("out.mp4.wcmedia");
+    let work = wirecatch_engine::naming::partial_path(
+        &dir.path().join("out.mp4"),
+        wirecatch_media::WORK_SUFFIX,
+    );
     std::fs::create_dir_all(&work).unwrap();
     let part = work.join("video.mp4");
     std::fs::write(&part, b"video").unwrap();
@@ -667,7 +670,10 @@ async fn a_new_link_does_not_take_a_list_another_link_left() {
 #[tokio::test]
 async fn a_work_folder_keeps_its_parts_only_for_its_own_link() {
     let dir = tempfile::tempdir().unwrap();
-    let work = dir.path().join("Clip.mp4.wcmedia");
+    let work = wirecatch_engine::naming::partial_path(
+        &dir.path().join("Clip.mp4"),
+        wirecatch_media::WORK_SUFFIX,
+    );
     let part = work.join(workdir::marker("video"));
     let link = |u: &str| Url::parse(u).unwrap();
     workdir::claim_for_link(&work, &link("https://example.com/first"))
@@ -690,7 +696,10 @@ async fn a_work_folder_keeps_its_parts_only_for_its_own_link() {
 #[tokio::test]
 async fn a_work_folder_is_hidden() {
     let dir = tempfile::tempdir().unwrap();
-    let work = dir.path().join("Clip.mp4.wcmedia");
+    let work = wirecatch_engine::naming::partial_path(
+        &dir.path().join("Clip.mp4"),
+        wirecatch_media::WORK_SUFFIX,
+    );
     let link = Url::parse("https://example.com/v").unwrap();
     workdir::claim_for_link(&work, &link).await.unwrap();
     assert!(wirecatch_test_support::is_hidden(&work));
@@ -703,7 +712,10 @@ async fn a_work_folder_is_hidden() {
 #[tokio::test]
 async fn a_work_folder_that_names_no_link_is_cleared() {
     let dir = tempfile::tempdir().unwrap();
-    let work = dir.path().join("Clip.mp4.wcmedia");
+    let work = wirecatch_engine::naming::partial_path(
+        &dir.path().join("Clip.mp4"),
+        wirecatch_media::WORK_SUFFIX,
+    );
     std::fs::create_dir(&work).unwrap();
     let part = work.join(workdir::marker("video"));
     std::fs::write(&part, "video.mp4").unwrap();
@@ -753,7 +765,10 @@ fn a_stream_request_names_the_jobs_owner() {
 #[tokio::test]
 async fn parts_are_kept_only_for_the_formats_that_wrote_them() {
     let dir = tempfile::tempdir().unwrap();
-    let work = dir.path().join("Clip.mp4.wcmedia");
+    let work = wirecatch_engine::naming::partial_path(
+        &dir.path().join("Clip.mp4"),
+        wirecatch_media::WORK_SUFFIX,
+    );
     let part = work.join(workdir::marker("video"));
     let link = Url::parse("https://example.com/v").unwrap();
     workdir::claim_for_link(&work, &link).await.unwrap();
@@ -793,7 +808,10 @@ fn format_at(id: &str, url: &Url) -> Format {
 /// Fetches `found` under a job that gives up on the first stall, and gives what the person is told.
 async fn failure_of_parts(found: &[Format]) -> String {
     let dir = tempfile::tempdir().unwrap();
-    let work = dir.path().join("Clip.mp4.wcmedia");
+    let work = wirecatch_engine::naming::partial_path(
+        &dir.path().join("Clip.mp4"),
+        wirecatch_media::WORK_SUFFIX,
+    );
     std::fs::create_dir(&work).unwrap();
     let mut job = job_at(dir.path(), &dir.path().join("Clip.mp4"), LINK, Taken::Ask);
     job.options.stall_timeout = Duration::from_millis(100);
