@@ -34,7 +34,8 @@ pub fn run(id: DownloadId, fix: FixAction, window: &mut Window, cx: &mut App) {
             bring_up(&Asked::Reveal(Reveal::proxy_settings()), cx);
         }
         FixAction::RefreshLink => {
-            super::refresh_window::open(super::library(cx), id, window, cx);
+            let library = super::library(cx);
+            super::refresh_window::open(&library, id, window, cx);
         }
         FixAction::ChangeQueue => {
             super::details::open(super::library(cx), id, window, cx);

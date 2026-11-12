@@ -103,7 +103,10 @@ async function downloadTab(tabId: number) {
 }
 
 /** Remembers the requests that can become downloads, and the navigation that led to each. */
-function registerRoutes(routes: BrowserRoutes): void {
+function watchedRoutes(): BrowserRoutes {
+  const routes = new BrowserRoutes((tabId) =>
+    downloadTab(tabId).catch(fallback('capture', 'Could not read the source tab', null)),
+  );
   const files = {
     urls: SITE_ORIGINS,
     types: ['main_frame', 'sub_frame', 'other'],
@@ -115,6 +118,12 @@ function registerRoutes(routes: BrowserRoutes): void {
   browser.webRequest.onBeforeRequest.addListener(seen, files);
   browser.webRequest.onHeadersReceived.addListener(seen, files);
   browser.webRequest.onBeforeRedirect.addListener((details) => routes.redirect(details), files);
+  return routes;
+}
+
+function registerDownloads(hub: Hub): void {
+  const downloadEvents: DownloadEvents = browser.downloads;
+  registerCapture(downloadEvents, hub);
 }
 
 export default defineBackground(() => {
@@ -181,15 +190,9 @@ export default defineBackground(() => {
     now: () => Date.now(),
   });
 
-  const routes = new BrowserRoutes((tabId) =>
-    downloadTab(tabId).catch(fallback('capture', 'Could not read the source tab', null)),
-  );
-  const hub = new Hub({ ...hubDeps, media, notices, routes }, side);
-
   // Every listener is registered synchronously so a sleeping background wakes up for it.
-  const downloadEvents: DownloadEvents = browser.downloads;
-  registerCapture(downloadEvents, hub);
-  registerRoutes(routes);
+  const hub = new Hub({ ...hubDeps, media, notices, routes: watchedRoutes() }, side);
+  registerDownloads(hub);
   registerContextMenu(hub);
   registerMedia(hub, media, watcher);
   browser.runtime.onConnect.addListener((port) => {

@@ -459,7 +459,7 @@ fn places(
                             .outline()
                             .label("Get a new link")
                             .on_click(move |_, window, cx| {
-                                refresh_window::open(library.clone(), id, window, cx);
+                                refresh_window::open(&library, id, window, cx);
                             }),
                     ),
             )

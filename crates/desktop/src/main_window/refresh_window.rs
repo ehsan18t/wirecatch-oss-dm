@@ -73,7 +73,7 @@ fn options(cx: &App) -> WindowOptions {
 }
 
 /// Opens the watch in its own window, including from a progress window.
-pub fn open(library: Entity<Library>, id: DownloadId, window: &mut Window, cx: &mut App) {
+pub fn open(library: &Entity<Library>, id: DownloadId, window: &mut Window, cx: &mut App) {
     let earlier = cx
         .try_global::<OpenWatch>()
         .map(|watch| (watch.id, watch.window, watch.view.clone()));
@@ -100,7 +100,7 @@ pub fn open(library: Entity<Library>, id: DownloadId, window: &mut Window, cx: &
     let options = options(cx);
     let opened = gpui_kit::open_window(options, cx, |window, cx| {
         let view = cx.new(|cx| {
-            let mut view = RefreshWindow::new(&library, id, window, cx);
+            let mut view = RefreshWindow::new(library, id, window, cx);
             view.watch(window, cx);
             view
         });
@@ -140,8 +140,10 @@ impl RefreshWindow {
         cx: &mut Context<'_, Self>,
     ) -> Self {
         let row = library.read(cx).downloads.iter().find(|row| row.id == id);
-        let file_name = row.map(|row| row.file_name.clone()).unwrap_or_default();
-        let media = row.is_some_and(|row| row.media.is_some());
+        let (file_name, media) = match row {
+            Some(row) => (row.file_name.clone(), row.media.is_some()),
+            None => (String::new(), false),
+        };
         let link = cx.new(|cx| InputState::new(window, cx).placeholder("https://"));
         let edited = cx.subscribe_in(
             &link,
@@ -428,9 +430,9 @@ mod tests {
             let id = DownloadId(1);
             parent
                 .update(cx, |_, window, cx| {
-                    open(library.clone(), id, window, cx);
+                    open(&library, id, window, cx);
                     assert!(!window.has_active_dialog(cx));
-                    open(library.clone(), id, window, cx);
+                    open(&library, id, window, cx);
                 })
                 .unwrap();
             assert_eq!(cx.windows().len(), 2);
@@ -439,7 +441,7 @@ mod tests {
             let view = cx.global::<OpenWatch>().view.upgrade().unwrap();
             view.update(cx, |view, _| view.watch = Watch::Over);
             parent
-                .update(cx, |_, window, cx| open(library, id, window, cx))
+                .update(cx, |_, window, cx| open(&library, id, window, cx))
                 .unwrap();
             assert_ne!(cx.global::<OpenWatch>().window, previous);
         });
