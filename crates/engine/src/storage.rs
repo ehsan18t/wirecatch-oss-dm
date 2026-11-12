@@ -25,14 +25,41 @@ pub(crate) async fn blocking<T: Send + 'static>(
         .map_err(|e| crate::Error::task(&e))?
 }
 
-/// Creates (or truncates) the part file and reserves `total` bytes if known.
+/// Creates (or truncates) the part file, hidden, and reserves `total` bytes if known.
 pub fn create_part(path: &Path, total: Option<u64>) -> io::Result<()> {
-    let file = OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(path)?;
+    let file =
+        created_hidden(OpenOptions::new().create(true).write(true).truncate(true)).open(path)?;
     size_part(path, &file, total)
+}
+
+/// A file this opens is created hidden, so it is never on show for a moment. Windows also refuses a truncating open of a hidden file that does not ask for the attribute.
+pub fn created_hidden(options: &mut OpenOptions) -> &mut OpenOptions {
+    #[cfg(windows)]
+    std::os::windows::fs::OpenOptionsExt::attributes(
+        options,
+        windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_HIDDEN,
+    );
+    options
+}
+
+/// Hides the file or folder at `path` from a file manager, or shows it again: the hidden attribute on Windows. Elsewhere nothing. A failure is logged: it costs only the look of the folder, and a network share may refuse the attribute.
+pub fn set_hidden(path: &Path, hidden: bool) {
+    if let Err(e) = try_set_hidden(path, hidden) {
+        let error = crate::error::Chain(&e);
+        tracing::debug!(path = %path.display(), hidden, %error, "could not change whether a download's file is hidden");
+    }
+}
+
+fn try_set_hidden(path: &Path, hidden: bool) -> io::Result<()> {
+    #[cfg(windows)]
+    {
+        windows::set_hidden(path, hidden)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (path, hidden);
+        Ok(())
+    }
 }
 
 /// Reserves `total` bytes for a new, empty part file at `path` if the size is known, or fails with [`io::ErrorKind::StorageFull`] when the disk does not have them: a sparse file reserves nothing, so the download would only find out when the disk is full.
@@ -201,6 +228,17 @@ pub(crate) fn finalize(
     #[cfg(test)]
     abandoned.slow_step_done();
     abandoned.check()?;
+    // Before the rename, which keeps the attribute: a kill between leaves a part file on show, never a hidden finished file.
+    set_hidden(part, false);
+    let placed = place(part, final_path, finish);
+    if placed.is_err() {
+        set_hidden(part, true);
+    }
+    placed
+}
+
+/// Renames the part file to `final_path`, or as `finish` says when a file is there.
+fn place(part: &Path, final_path: &Path, finish: &Finish) -> crate::Result<PathBuf> {
     match finish {
         Finish::Replace => std::fs::rename(part, final_path)
             .context(IoAction::Finish, final_path)
@@ -328,8 +366,9 @@ mod windows {
 
     use windows_sys::Win32::Foundation::{ERROR_IO_PENDING, ERROR_LOCK_VIOLATION};
     use windows_sys::Win32::Storage::FileSystem::{
-        GetDiskFreeSpaceExW, LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY, LockFileEx,
-        MOVEFILE_WRITE_THROUGH, MoveFileExW,
+        FILE_ATTRIBUTE_HIDDEN, GetDiskFreeSpaceExW, GetFileAttributesW, INVALID_FILE_ATTRIBUTES,
+        LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY, LockFileEx, MOVEFILE_WRITE_THROUGH,
+        MoveFileExW, SetFileAttributesW,
     };
 
     use windows_sys::Win32::System::IO::{DeviceIoControl, OVERLAPPED};
@@ -426,6 +465,31 @@ mod windows {
             (r"\\?\", path)
         };
         prefix.encode_utf16().chain(rest.iter().copied()).collect()
+    }
+
+    /// Sets or clears only the hidden attribute, keeping the others.
+    pub fn set_hidden(path: &Path, hidden: bool) -> io::Result<()> {
+        let wide = verbatim(path)?;
+        // SAFETY: `wide` is a NUL-terminated wide string that lives until the call returns.
+        let now = unsafe { GetFileAttributesW(wide.as_ptr()) };
+        if now == INVALID_FILE_ATTRIBUTES {
+            return Err(io::Error::last_os_error());
+        }
+        let wanted = if hidden {
+            now | FILE_ATTRIBUTE_HIDDEN
+        } else {
+            now & !FILE_ATTRIBUTE_HIDDEN
+        };
+        if wanted == now {
+            return Ok(());
+        }
+        // SAFETY: as above. Attributes the call cannot set, such as sparse, are ignored by it.
+        let ok = unsafe { SetFileAttributesW(wide.as_ptr(), wanted) };
+        if ok == 0 {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(())
+        }
     }
 
     pub fn set_sparse(file: &File, sparse: bool) -> io::Result<()> {
@@ -683,6 +747,36 @@ mod tests {
         );
         assert_eq!(std::fs::read(&done).unwrap(), b"theirs");
         assert_eq!(std::fs::metadata(&part).unwrap().len(), 10);
+        dir.remove().unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_part_file_is_hidden_until_it_is_the_finished_file() {
+        use wirecatch_test_support::is_hidden;
+        let dir = wirecatch_test_support::private_dir("finalize-hidden").unwrap();
+        let live = Abandonment::new();
+        let (part, done) = (dir.join("f.bin.wcpart"), dir.join("f.bin"));
+        create_part(&part, Some(10)).unwrap();
+        assert!(is_hidden(&part));
+        create_part(&part, Some(10)).unwrap();
+        assert!(is_hidden(&part), "emptied again, still hidden");
+        finalize(&part, &done, &Finish::Replace, 10, &live.flag()).unwrap();
+        assert!(!is_hidden(&done));
+        dir.remove().unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_part_file_a_taken_name_keeps_stays_hidden() {
+        let dir = wirecatch_test_support::private_dir("finalize-taken-hidden").unwrap();
+        let live = Abandonment::new();
+        let (part, done) = (dir.join("f.bin.wcpart"), dir.join("f.bin"));
+        create_part(&part, Some(10)).unwrap();
+        std::fs::write(&done, b"theirs").unwrap();
+        finalize(&part, &done, &Finish::Refuse, 10, &live.flag()).unwrap_err();
+        assert!(wirecatch_test_support::is_hidden(&part));
+        assert!(!wirecatch_test_support::is_hidden(&done));
         dir.remove().unwrap();
     }
 

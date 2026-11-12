@@ -69,6 +69,15 @@ pub(crate) struct Target {
 }
 
 impl Target {
+    /// Hides the part and resume files, which an older build left on show.
+    fn hide(&self) {
+        for path in [&self.part, &self.state] {
+            if path.exists() {
+                storage::set_hidden(path, true);
+            }
+        }
+    }
+
     /// The finished file's name, for showing.
     pub fn name(&self) -> String {
         self.file
@@ -154,6 +163,7 @@ impl Destination {
                     .unwrap_or(0)
                     .saturating_sub(table.remaining_bytes());
                 info!(kept, "resuming");
+                target.hide();
                 return Ok(Prepared {
                     target,
                     table,
@@ -186,6 +196,7 @@ impl Destination {
                 target
             }
         };
+        target.hide();
         let table = SegmentTable::new(file.total, min_split);
         Ok(Prepared {
             target,
@@ -494,6 +505,52 @@ mod tests {
             .unwrap();
         assert!(again.resumed);
         assert_eq!(again.target.file, path);
+        dir.remove().unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn partial_files_are_hidden_and_an_older_builds_are_hidden_on_resume() {
+        use wirecatch_test_support::is_hidden;
+        let dir = wirecatch_test_support::private_dir("prepare-hidden").unwrap();
+        let abandonment = Abandonment::new();
+        let (file, url) = (ten_bytes(), "https://a/f.bin");
+        let first = in_folder(&dir)
+            .prepare(url, &file, 1, &abandonment.flag())
+            .unwrap();
+        save_state(&first, url, &file, &abandonment);
+        let target = &first.target;
+        assert!(is_hidden(&target.part) && is_hidden(&target.state));
+        for path in [&target.part, &target.state] {
+            crate::naming::set_hidden(path, false);
+        }
+        let (part, state) = (target.part.clone(), target.state.clone());
+        drop(first);
+        let again = in_folder(&dir)
+            .prepare(url, &file, 1, &abandonment.flag())
+            .unwrap();
+        assert!(again.resumed);
+        assert!(is_hidden(&part) && is_hidden(&state));
+        drop(again);
+        dir.remove().unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_download_starts_over_on_a_hidden_part_file() {
+        let dir = wirecatch_test_support::private_dir("prepare-hidden-over").unwrap();
+        let abandonment = Abandonment::new();
+        let path = dir.join("f.bin");
+        let (part, _) = crate::naming::part_paths(&path);
+        crate::storage::create_part(&part, Some(4)).unwrap();
+        assert!(wirecatch_test_support::is_hidden(&part));
+        let prepared = Destination::Exact(path, ExistingFile::Replace)
+            .prepare("https://a/f.bin", &ten_bytes(), 1, &abandonment.flag())
+            .unwrap();
+        assert!(!prepared.resumed);
+        assert_eq!(std::fs::metadata(&part).unwrap().len(), 10);
+        assert!(wirecatch_test_support::is_hidden(&part));
+        drop(prepared);
         dir.remove().unwrap();
     }
 

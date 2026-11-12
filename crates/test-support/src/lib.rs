@@ -298,6 +298,22 @@ pub fn files_in(dir: &Path) -> Vec<String> {
     names
 }
 
+/// Whether a file manager hides `path` by default: the hidden attribute on Windows, a leading dot elsewhere.
+#[must_use]
+pub fn is_hidden(path: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
+        let meta = std::fs::symlink_metadata(path).unwrap();
+        std::os::windows::fs::MetadataExt::file_attributes(&meta) & FILE_ATTRIBUTE_HIDDEN != 0
+    }
+    #[cfg(not(windows))]
+    {
+        path.file_name()
+            .is_some_and(|name| name.as_encoded_bytes().starts_with(b"."))
+    }
+}
+
 /// Multiplies a seed into the xorshift64 generator's first state (2^64
 /// divided by the golden ratio), so seeds next to each other start far apart.
 const GOLDEN_RATIO_64: u64 = 0x9E37_79B9_7F4A_7C15;

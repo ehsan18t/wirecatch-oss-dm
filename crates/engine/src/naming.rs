@@ -9,6 +9,8 @@ use url::Url;
 
 use crate::storage::{self, PART_EXT, STATE_EXT};
 
+pub use crate::storage::{created_hidden, set_hidden};
+
 /// Most bytes in one file name on Linux (`NAME_MAX`). Windows counts 255
 /// UTF-16 units instead, which a name of at most 255 bytes never exceeds.
 const SYSTEM_NAME_BYTES: usize = 255;
@@ -274,6 +276,24 @@ pub fn part_paths(final_path: &Path) -> (PathBuf, PathBuf) {
     (PathBuf::from(part), PathBuf::from(state))
 }
 
+/// The finished file whose partial file `path` is ([`part_paths`], [`resume_temp_path`]), or `path` itself when it is none.
+#[must_use]
+pub fn finished_path_of(path: &Path) -> PathBuf {
+    let (Some(whole), Some(name)) = (path.to_str(), path.file_name().and_then(|n| n.to_str()))
+    else {
+        return path.to_path_buf();
+    };
+    let state_temp = format!("{STATE_EXT}.tmp");
+    // Cut from the whole path, which keeps its separators as they were written.
+    [PART_EXT, STATE_EXT, state_temp.as_str()]
+        .iter()
+        .find(|ext| name.len() > ext.len() && name.ends_with(*ext))
+        .map_or_else(
+            || path.to_path_buf(),
+            |ext| PathBuf::from(&whole[..whole.len() - ext.len()]),
+        )
+}
+
 /// The temporary file a save of the resume file at `state` writes first. A kill during a save leaves it; a later save replaces it.
 #[must_use]
 pub fn resume_temp_path(state: &Path) -> PathBuf {
@@ -354,7 +374,7 @@ pub(crate) fn create_free_part(
         if fs::symlink_metadata(&candidate).is_ok() || fs::symlink_metadata(&state).is_ok() {
             continue;
         }
-        match OpenOptions::new().write(true).create_new(true).open(&part) {
+        match storage::created_hidden(OpenOptions::new().write(true).create_new(true)).open(&part) {
             Ok(file) => {
                 // Held by another run already only if it took this new, empty file for one left behind.
                 if let Some(lock) = storage::PartLock::hold(file.try_clone()?) {
@@ -775,5 +795,19 @@ mod tests {
             proptest::prop_assert!((1..=SANITIZED_NAME_BYTES).contains(&safe.len()));
             proptest::prop_assert!(is_safe_name(&safe), "{:?}", safe);
         }
+    }
+
+    #[test]
+    fn a_partial_files_path_leads_to_its_finished_file() {
+        let done = Path::new("/d/movie.mkv");
+        let (part, state) = part_paths(done);
+        for partial in [&part, &state, &resume_temp_path(&state)] {
+            assert_eq!(finished_path_of(partial), done);
+        }
+        assert_eq!(finished_path_of(done), done);
+        assert_eq!(
+            finished_path_of(Path::new("/d/.wcpart")),
+            Path::new("/d/.wcpart")
+        );
     }
 }

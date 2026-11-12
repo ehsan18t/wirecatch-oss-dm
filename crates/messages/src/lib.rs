@@ -193,7 +193,9 @@ fn io_failure(action: IoAction, path: &Path, source: &io::Error, folder: &Path) 
                 | IoAction::Finish
         ))
     .then_some(path);
-    let what = format!("{action} ({})", path.display());
+    // A partial file is hidden, so the person is shown the file it becomes.
+    let shown = wirecatch_engine::naming::finished_path_of(path);
+    let what = format!("{action} ({})", shown.display());
     disk_failure(source, folder, &what, existing)
 }
 
@@ -916,7 +918,7 @@ mod tests {
         let message = describe(&error, Path::new("/downloads"), Worked::Before).message;
         assert_eq!(
             message,
-            "Could not flush the file to the disk (/downloads/f.bin.wcpart): other error. Check the drive, then try again."
+            "Could not flush the file to the disk (/downloads/f.bin): other error. Check the drive, then try again."
         );
         let resize = EngineError::Io {
             action: wirecatch_engine::IoAction::Resize,
@@ -925,7 +927,7 @@ mod tests {
         };
         let message = describe(&resize, Path::new("/downloads"), Worked::Before).message;
         assert!(
-            message.starts_with("Could not set the size of the file (/downloads/f.bin.wcpart)"),
+            message.starts_with("Could not set the size of the file (/downloads/f.bin)"),
             "{message}"
         );
     }
