@@ -1600,6 +1600,7 @@ async fn a_browser_capture_refreshes_the_watched_row_after_a_mirror_change() -> 
     assert_eq!(
         h.manager
             .watch_link(id, saved, wirecatch_engine::CancellationToken::new())?
+            .page()
             .unwrap()
             .as_str(),
         page
@@ -1609,6 +1610,7 @@ async fn a_browser_capture_refreshes_the_watched_row_after_a_mirror_change() -> 
     assert!(
         h.manager
             .watch_link(id, cancelled, wirecatch_engine::CancellationToken::new())?
+            .page()
             .is_none()
     );
 
@@ -1669,7 +1671,12 @@ async fn a_dismissed_watch_leaves_a_later_capture_to_its_own_row() -> TestResult
     let id = h.manager.add_capture(old.clone()).await?.id.unwrap();
     let (saved, _result) = oneshot::channel();
     let stop = wirecatch_engine::CancellationToken::new();
-    assert!(h.manager.watch_link(id, saved, stop.clone())?.is_some());
+    assert!(
+        h.manager
+            .watch_link(id, saved, stop.clone())?
+            .page()
+            .is_some()
+    );
     stop.cancel();
     let mut fresh = old.clone();
     fresh.handover_id = "later".into();
@@ -1704,6 +1711,7 @@ async fn unsafe_or_private_source_pages_do_not_open_a_watch() -> TestResult {
         assert!(
             h.manager
                 .watch_link(id, saved, wirecatch_engine::CancellationToken::new())?
+                .page()
                 .is_none()
         );
     }

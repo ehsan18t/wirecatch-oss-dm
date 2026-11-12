@@ -10,7 +10,7 @@ use gpui_kit::{
     ParentElement as _, Render, SharedString, Styled as _, Subscription, Task, WeakEntity, Window,
     WindowKind, WindowOptions, div, px, size,
 };
-use wirecatch_core::LinkFrom;
+use wirecatch_core::{LinkFrom, LinkWatch};
 use wirecatch_engine::CancellationToken;
 use wirecatch_protocol::DownloadId;
 use wirecatch_shell::api;
@@ -182,7 +182,7 @@ impl RefreshWindow {
         });
         self.watching = Some(cx.spawn_in(window, async move |form, cx| {
             let page = match said(reading.await) {
-                Some(Ok(page)) => page,
+                Some(Ok(LinkWatch::Started(page))) => page,
                 answer => {
                     crate::closing::may_have_closed(form.update_in(cx, |form, window, cx| {
                         form.watch_ended(answer.and_then(Result::err), window, cx);

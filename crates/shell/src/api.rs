@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 
 use crate::host::CHANNEL;
 use tokio::sync::oneshot;
-use wirecatch_core::{LinkFrom, Manager, RemoveFiles};
-use wirecatch_engine::{CancellationToken, Url};
+use wirecatch_core::{LinkFrom, LinkWatch, Manager, RemoveFiles};
+use wirecatch_engine::CancellationToken;
 use wirecatch_protocol::ProxyServerId;
 use wirecatch_protocol::app::{
     AddRequest, AddonId, AddonInfo, AppSettings, AppSettingsPatch, CaptureConfirmation,
@@ -149,7 +149,7 @@ pub fn refresh_link(m: &Manager, id: DownloadId, url: &str, from: LinkFrom) -> C
     plain(m.refresh_link(id, url, from))
 }
 
-/// Watches for a fresh browser link and returns the page to reopen.
+/// Watches for a fresh browser link, and says whether the watch began and which page to reopen.
 ///
 /// # Errors
 ///
@@ -159,7 +159,7 @@ pub fn watch_link(
     id: DownloadId,
     saved: oneshot::Sender<()>,
     stop: CancellationToken,
-) -> CommandResult<Option<Url>> {
+) -> CommandResult<LinkWatch> {
     plain(m.watch_link(id, saved, stop))
 }
 

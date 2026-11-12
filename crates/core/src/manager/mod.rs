@@ -62,6 +62,7 @@ use crate::clock::{Clock, SystemClock};
 use crate::error::{CoreError, Result, blocking};
 use crate::naming;
 pub use downloads::{LinkFrom, RemoveFiles, can_move_to_queue};
+pub use refresh::LinkWatch;
 use state::{Entry, State, Stop};
 pub use suffix_list::PUBLIC_SUFFIX_LIST_URL;
 pub use ticker::PROGRESS_TICK;

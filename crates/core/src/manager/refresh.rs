@@ -16,6 +16,26 @@ use super::downloads::Replacement;
 use super::handovers::{Handover, Target};
 use crate::error::{CoreError, Result};
 
+/// What a window that asked to watch for a fresh link is told.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LinkWatch {
+    /// The next matching capture is taken. Holds the source page, when it is known and may be reopened.
+    Started(Option<Url>),
+    /// No capture can refresh this download, so only a pasted link will.
+    Unavailable,
+}
+
+impl LinkWatch {
+    /// The page to reopen in the browser.
+    #[must_use]
+    pub fn page(&self) -> Option<&Url> {
+        match self {
+            Self::Started(page) => page.as_ref(),
+            Self::Unavailable => None,
+        }
+    }
+}
+
 pub(super) struct WatchingLink {
     pub id: DownloadId,
     saved: oneshot::Sender<()>,
@@ -23,9 +43,9 @@ pub(super) struct WatchingLink {
 }
 
 impl Manager {
-    /// Watches for a fresh link to `id` and returns the exact source page when known. The
-    /// receiver of `saved` must stay open and `stop` must stay live while waiting
-    /// for the link. Starting a new watch ends the previous one.
+    /// Watches for a fresh link to `id`, unless the window has gone, the download came from a
+    /// private window or its capture is still undecided. The receiver of `saved` must stay
+    /// open and `stop` must stay live while waiting. Starting a new watch ends the previous one.
     ///
     /// # Errors
     ///
@@ -36,10 +56,10 @@ impl Manager {
         id: DownloadId,
         saved: oneshot::Sender<()>,
         stop: CancellationToken,
-    ) -> Result<Option<Url>> {
+    ) -> Result<LinkWatch> {
         let mut state = self.lock_open()?;
         if saved.is_closed() || stop.is_cancelled() {
-            return Ok(None);
+            return Ok(LinkWatch::Unavailable);
         }
         let entry = state.entry(id)?;
         if entry.row.status == DownloadStatus::Completed {
@@ -53,11 +73,11 @@ impl Manager {
             .undecided_downloads()
             .any(|pending| pending == id)
         {
-            return Ok(None);
+            return Ok(LinkWatch::Unavailable);
         }
         let source = entry.origin.browser_source.as_deref();
         if source.is_some_and(|source| source.private_window) {
-            return Ok(None);
+            return Ok(LinkWatch::Unavailable);
         }
         let page = source.and_then(source_page).or_else(|| {
             let page_media = entry
@@ -70,7 +90,7 @@ impl Manager {
                 .flatten()
         });
         state.link_refresh = Some(WatchingLink { id, saved, stop });
-        Ok(page)
+        Ok(LinkWatch::Started(page))
     }
 
     /// Applies a matching capture under the same lock that consumes the watch

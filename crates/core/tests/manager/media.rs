@@ -1234,7 +1234,7 @@ async fn a_recaptured_video_page_refreshes_the_original_download() -> TestResult
     assert_eq!(
         h.manager
             .watch_link(id, saved, wirecatch_engine::CancellationToken::new())?,
-        None
+        wirecatch_core::LinkWatch::Started(None)
     );
     let mut fresh = media_capture(&url, MediaKind::Page, None);
     fresh.handover_id = "refresh-video-page".into();
@@ -1286,6 +1286,7 @@ async fn a_recaptured_stream_can_change_its_signature_but_keeps_its_selection() 
     assert_eq!(
         h.manager
             .watch_link(row.id, saved, wirecatch_engine::CancellationToken::new())?
+            .page()
             .unwrap()
             .as_str(),
         page

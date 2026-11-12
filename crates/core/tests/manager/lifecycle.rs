@@ -101,6 +101,7 @@ async fn a_captured_refresh_checks_the_response_before_touching_a_partial_file()
     assert!(
         h.manager
             .watch_link(id, saved, wirecatch_engine::CancellationToken::new())?
+            .page()
             .is_some()
     );
     let mut fresh = old;
