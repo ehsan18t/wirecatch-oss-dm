@@ -150,9 +150,7 @@ mod tests {
         }
         assert_eq!(list_recovered(&[]), None);
         let message = |downloads| {
-            list_recovered(&[Recovery::ValuesReset { downloads }])
-                .map(|n| n.message)
-                .unwrap_or_default()
+            list_recovered(&[Recovery::ValuesReset { downloads }]).map_or_default(|n| n.message)
         };
         assert!(message(1).starts_with("1 download in"), "{}", message(1));
         assert!(message(3).starts_with("3 downloads in"), "{}", message(3));

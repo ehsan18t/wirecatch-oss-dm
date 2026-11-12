@@ -32,7 +32,7 @@ fn hash(parts: &[&str]) -> String {
 }
 
 fn text<T: ToString>(value: Option<T>) -> String {
-    value.map(|v| v.to_string()).unwrap_or_default()
+    value.map_or_default(|v| v.to_string())
 }
 
 /// A link's path and query, without the host (which CDNs change) or the values of signing parameters (which a refreshed link changes).

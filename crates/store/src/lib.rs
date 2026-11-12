@@ -1594,8 +1594,7 @@ fn stored_without_sign_in(origin: &str) -> (String, bool) {
     let headers = value
         .get("headers")
         .and_then(|h| serde_json::from_value::<Vec<Header>>(h.clone()).ok())
-        .map(|h| without_sign_in(&h).unwrap_or(h))
-        .unwrap_or_default();
+        .map_or_default(|h| without_sign_in(&h).unwrap_or(h));
     value["headers"] = serde_json::to_value(headers).unwrap_or_default();
     value["forgot_sign_in"] = serde_json::Value::Bool(true);
     (value.to_string(), first_seen)
@@ -1783,8 +1782,7 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<StoredRow> {
         .map(|json| stored_media(&json, &mut status, &mut error));
     let file_name = PathBuf::from(&path)
         .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default();
+        .map_or_default(|n| n.to_string_lossy().into_owned());
     let (total, done, counts_damaged) = read_counts(row, status, &path)?;
     Ok(StoredRow::Readable {
         origin_damaged,

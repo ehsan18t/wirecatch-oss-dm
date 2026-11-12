@@ -269,9 +269,7 @@ pub fn addon_not_installed() -> UserError {
 /// The format addresses kept being refused (`status`, when the server answered with one), with fresh ones from the page each time.
 #[must_use]
 pub fn refused_after_refreshing(status: Option<u16>) -> UserError {
-    let answered = status
-        .map(|s| format!(" (it answered {s})"))
-        .unwrap_or_default();
+    let answered = status.map_or_default(|s| format!(" (it answered {s})"));
     retry(format!(
         "The video's server kept refusing to send the video{answered}, even though {PRODUCT_NAME} tried again automatically several times with fresh addresses from the page. Sites sometimes refuse one video for a while. Try again later; what was already downloaded is kept."
     ))

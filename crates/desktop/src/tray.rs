@@ -213,12 +213,11 @@ fn follow(library: &Entity<Library>, cx: &mut App) {
         library
             .settings
             .as_ref()
-            .map(|settings| Choices {
+            .map_or_default(|settings| Choices {
                 queues: tray_queues::items(&library.queues),
                 speeds: tray_speed::items(settings.global_speed_limit),
                 proxies: tray_proxy::items(&settings.proxy, &library.proxies),
             })
-            .unwrap_or_default()
     });
     let new_tooltip = tray.tooltip != tooltip;
     let new_choices = choices.filter(|choices| tray.choices != *choices);

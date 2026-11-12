@@ -386,14 +386,13 @@ impl MediaForm {
             .read(cx)
             .settings
             .as_ref()
-            .map(|settings| {
+            .map_or_default(|settings| {
                 if audio_only {
                     settings.media.audio.clone()
                 } else {
                     settings.media.video.clone()
                 }
             })
-            .unwrap_or_default()
     }
 
     fn pick_subtitles(&mut self, pick: SubtitleChoice, cx: &mut Context<'_, Self>) {

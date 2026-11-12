@@ -337,7 +337,7 @@ mod tests {
                 .iter()
                 .map(|c| Track {
                     role: Role::Video,
-                    codecs: c.map(Codec::list).unwrap_or_default(),
+                    codecs: c.map_or_default(Codec::list),
                     pieces: Vec::new(),
                 })
                 .collect(),

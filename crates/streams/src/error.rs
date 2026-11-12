@@ -286,10 +286,8 @@ fn sites_only(text: &str) -> String {
 
 /// Where a broken playlist is, in words: ` at <host> (line <n>)`.
 fn place(host: Option<&str>, line: Option<usize>) -> String {
-    let at = host.map(|host| format!(" at {host}")).unwrap_or_default();
-    let line = line
-        .map(|line| format!(" (line {line})"))
-        .unwrap_or_default();
+    let at = host.map_or_default(|host| format!(" at {host}"));
+    let line = line.map_or_default(|line| format!(" (line {line})"));
     format!("{at}{line}")
 }
 

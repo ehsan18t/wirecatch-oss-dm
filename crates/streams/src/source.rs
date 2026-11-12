@@ -419,7 +419,7 @@ fn hls_track(role: Role, codecs: Option<&str>, media: Media) -> Result<Track> {
     }
     Ok(Track {
         role,
-        codecs: codecs.map(Codec::list).unwrap_or_default(),
+        codecs: codecs.map_or_default(Codec::list),
         pieces: media.pieces,
     })
 }
@@ -458,7 +458,7 @@ async fn plan_dash(fetcher: &Fetcher, url: &Url, mpd: Mpd, selected: Selected) -
         }
         tracks.push(Track {
             role,
-            codecs: rep.codecs.as_deref().map(Codec::list).unwrap_or_default(),
+            codecs: rep.codecs.as_deref().map_or_default(Codec::list),
             pieces,
         });
     }

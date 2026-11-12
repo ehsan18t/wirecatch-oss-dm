@@ -80,8 +80,7 @@ async fn install_downloads_checks_and_unpacks_only_the_expected_files() -> TestR
     }
     // The downloads and staging folders are cleaned up.
     let work: Vec<_> = std::fs::read_dir(dir.join(wirecatch_addons::WORK_FOLDER))
-        .map(|d| d.filter_map(Result::ok).map(|e| e.file_name()).collect())
-        .unwrap_or_default();
+        .map_or_default(|d| d.filter_map(Result::ok).map(|e| e.file_name()).collect());
     assert!(work.is_empty(), "left in .work: {work:?}");
 
     // Installing again does nothing: no request, no change.
@@ -909,14 +908,12 @@ async fn an_update_is_capped_at_its_announced_size() -> TestResult {
     assert_eq!(info.state, AddonState::UpdateAvailable);
     assert_ne!(installed_ytdlp(&h)?, new_ytdlp);
     let work = addon_dir(&h).join(wirecatch_addons::WORK_FOLDER);
-    let big: Vec<_> = std::fs::read_dir(&work)
-        .map(|d| {
-            d.filter_map(Result::ok)
-                .filter(|e| e.metadata().is_ok_and(|m| m.len() > 1000 + 4096))
-                .map(|e| e.file_name())
-                .collect()
-        })
-        .unwrap_or_default();
+    let big: Vec<_> = std::fs::read_dir(&work).map_or_default(|d| {
+        d.filter_map(Result::ok)
+            .filter(|e| e.metadata().is_ok_and(|m| m.len() > 1000 + 4096))
+            .map(|e| e.file_name())
+            .collect()
+    });
     assert!(big.is_empty(), "{big:?}");
     Ok(())
 }

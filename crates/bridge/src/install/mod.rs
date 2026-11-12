@@ -598,8 +598,7 @@ mod tests {
             plan.keys
                 .iter()
                 .find(|k| k.key.starts_with(key))
-                .map(|k| k.browsers.clone())
-                .unwrap_or_default()
+                .map_or_default(|k| k.browsers.clone())
         };
         assert_eq!(
             readers(r"Software\Google\Chrome\"),

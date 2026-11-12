@@ -349,9 +349,7 @@ pub enum Content {
 /// `m4a` for audio and `mkv` when unknown.
 #[must_use]
 pub fn safe_ext(ext: Option<&str>, content: Content) -> String {
-    let lower = ext
-        .map(|e| e.trim().to_ascii_lowercase())
-        .unwrap_or_default();
+    let lower = ext.map_or_default(|e| e.trim().to_ascii_lowercase());
     if is_media_ext(&lower) {
         return lower;
     }

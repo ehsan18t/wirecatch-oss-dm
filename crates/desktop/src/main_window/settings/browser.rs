@@ -222,8 +222,7 @@ fn default_queue(library: &Entity<Library>, cx: &App) -> SettingField<SharedStri
         options,
         move |cx| {
             current(&reading, cx, |s| Some(s.extension.default_queue), None)
-                .map(|id| id.0.to_string().into())
-                .unwrap_or_default()
+                .map_or_default(|id| id.0.to_string().into())
         },
         move |key, cx| {
             let picked = picking

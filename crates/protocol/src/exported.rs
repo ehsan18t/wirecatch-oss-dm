@@ -256,11 +256,7 @@ impl Constant {
             }
         }
         out.push_str(" */\n");
-        let annotation = self
-            .written
-            .annotation
-            .map(|a| format!(": {a}"))
-            .unwrap_or_default();
+        let annotation = self.written.annotation.map_or_default(|a| format!(": {a}"));
         writeln!(
             out,
             "export const {}{annotation} = {};",

@@ -321,8 +321,7 @@ impl MainWindow {
             .read(cx)
             .settings
             .as_ref()
-            .map(|settings| settings.list_lines)
-            .unwrap_or_default()
+            .map_or_default(|settings| settings.list_lines)
     }
 
     /// The list's lines, laid out again only when something they depend on changed.
