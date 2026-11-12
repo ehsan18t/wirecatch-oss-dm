@@ -618,14 +618,16 @@ fn move_by_copy(from: &Path, to: &Path, copy_bytes: &CopyBytes<'_>) -> io::Resul
 /// A new temporary file in the folder of `to`. Short, so a name near the system's limit still moves, and its own, so two moves to one folder never share it.
 fn create_staged(to: &Path) -> io::Result<(PathBuf, std::fs::File)> {
     let dir = to.parent().unwrap_or(Path::new(""));
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    // A copy is a new file: a partial file's is hidden as the original is (D277).
+    if wirecatch_engine::naming::finished_path_of(to) != to {
+        wirecatch_engine::naming::created_hidden(&mut options);
+    }
     let mut n = 0u64;
     loop {
         let staged = dir.join(format!("{STAGED_PREFIX}{n}"));
-        match std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&staged)
-        {
+        match options.open(&staged) {
             Ok(file) => return Ok((staged, file)),
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => n += 1,
             Err(e) => return Err(e),
@@ -778,6 +780,26 @@ mod tests {
             0,
             "probe left behind"
         );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_partial_files_copy_is_hidden_and_a_finished_ones_is_not() {
+        use wirecatch_test_support::is_hidden;
+        let dir = tempfile::tempdir().unwrap();
+        let [part, _] = naming::partial_files(&dir.path().join("a.bin"));
+        let [copied_part, _] = naming::partial_files(&dir.path().join("b.bin"));
+        std::fs::write(&part, b"data").unwrap();
+        wirecatch_engine::naming::set_hidden(&part, true);
+        let copy = |source: &mut std::fs::File, copy: &mut std::fs::File| {
+            io::copy(source, copy).map(|_| ())
+        };
+        move_by_copy(&part, &copied_part, &copy).unwrap();
+        assert!(is_hidden(&copied_part));
+        let (done, copied) = (dir.path().join("c.zip"), dir.path().join("d.zip"));
+        std::fs::write(&done, b"done").unwrap();
+        move_by_copy(&done, &copied, &copy).unwrap();
+        assert!(!is_hidden(&copied));
     }
 
     #[test]

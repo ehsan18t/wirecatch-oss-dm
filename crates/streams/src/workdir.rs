@@ -122,6 +122,8 @@ impl WorkDir {
         for track in 0..pieces.len() {
             fs::create_dir_all(track_dir(&dir, track))?;
         }
+        // Also one an older build left on show (D277).
+        wirecatch_engine::naming::set_hidden(&dir, true);
         if !reuse {
             fs::write(dir.join(HEADER), header)?;
         }
@@ -320,6 +322,19 @@ mod tests {
         fs::write(&segment, b"data").unwrap();
         assert!(WorkDir::open(&out, 1, &[1]).is_err());
         assert_eq!(fs::read(&segment).unwrap(), b"data");
+        dir.remove().unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn the_folder_is_hidden_also_when_an_older_build_left_it_on_show() {
+        let dir = wirecatch_test_support::private_dir("workdir-hidden").unwrap();
+        let out = dir.path().join("video.mp4");
+        drop(WorkDir::open(&out, 1, &[1]).unwrap());
+        assert!(wirecatch_test_support::is_hidden(&path_for(&out)));
+        wirecatch_engine::naming::set_hidden(&path_for(&out), false);
+        drop(WorkDir::open(&out, 1, &[1]).unwrap());
+        assert!(wirecatch_test_support::is_hidden(&path_for(&out)));
         dir.remove().unwrap();
     }
 

@@ -225,6 +225,7 @@ async fn run_stream(
     tokio::fs::create_dir_all(&work)
         .await
         .map_err(|e| disk(&e, &job.output))?;
+    workdir::hide(&work).await;
     let staged = work.join(job.output.file_name().unwrap_or_else(|| "stream".as_ref()));
     let request = stream_request(job, &staged, video, audio);
     let stream = Arc::new(StreamProgress::default());
