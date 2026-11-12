@@ -137,12 +137,11 @@ impl Manager {
         } else {
             None
         };
+        let sizes = known_size.zip(capture.size_hint);
         if entry.row.status == DownloadStatus::Completed
             || entry.refuse_if_stranded().is_err()
-            || known_size
-                .zip(capture.size_hint)
-                .is_some_and(|(old, new)| old != new)
-            || !matches_capture(entry, capture, source, url)
+            || sizes.is_some_and(|(old, new)| old != new)
+            || !matches_capture(entry, capture, source, url, sizes.is_some())
         {
             return Ok(None);
         }
@@ -258,6 +257,7 @@ fn matches_capture(
     capture: &NewDownload,
     source: &BrowserSource,
     url: &Url,
+    same_size: bool,
 ) -> bool {
     let kind = entry.row.media.as_ref().map(|media| media.source);
     if kind != capture.media.as_ref().map(|media| media.kind) {
@@ -282,21 +282,20 @@ fn matches_capture(
         }
         (Some(_), _) => return false,
     };
-    if kind.is_none()
-        && old
-            .file_name
-            .as_ref()
-            .zip(source.file_name.as_ref())
-            .is_some_and(|(was, now)| was != now)
-    {
+    let names = old.file_name.as_ref().zip(source.file_name.as_ref());
+    if kind.is_none() && names.is_some_and(|(was, now)| was != now) {
         return false;
     }
+    // A file's address can carry a token that changes with every click: the same page, name and size stand in for the rest of it.
+    let same_file = same_page && same_size && kind.is_none() && names.is_some();
     let signed_stream = same_page && matches!(kind, Some(MediaKind::Hls | MediaKind::Dash));
     let new = addresses(source, url.as_str());
     addresses(old, &entry.row.url).iter().flatten().any(|old| {
-        new.iter()
-            .flatten()
-            .any(|new| old == new || (signed_stream && same_signed_resource(old, new)))
+        new.iter().flatten().any(|new| {
+            old == new
+                || (same_file && same_place(old, new))
+                || (signed_stream && same_signed_resource(old, new))
+        })
     })
 }
 
@@ -310,9 +309,12 @@ fn addresses(source: &BrowserSource, final_url: &str) -> [Option<Url>; 2] {
     ]
 }
 
+fn same_place(old: &Url, new: &Url) -> bool {
+    old.origin() == new.origin() && old.path() == new.path()
+}
+
 fn same_signed_resource(old: &Url, new: &Url) -> bool {
-    old.origin() == new.origin()
-        && old.path() == new.path()
+    same_place(old, new)
         && old
             .query_pairs()
             .filter(|(name, _)| !wirecatch_streams::is_signing_parameter(name))

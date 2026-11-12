@@ -1656,6 +1656,47 @@ async fn a_browser_capture_refreshes_the_watched_row_after_a_mirror_change() -> 
 }
 
 #[tokio::test]
+async fn a_file_whose_address_changes_with_every_click_is_refreshed() -> TestResult {
+    let h = Harness::new().await?;
+    h.manager
+        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)?;
+    let page = "https://drive.example/folders/1";
+    let mut old = capture_from(page, "https://files.example/download?id=1&token=old".into());
+    old.suggested_name = Some("report.pdf".into());
+    old.size_hint = Some(1024);
+    old.browser_route = Some(Box::new(BrowserRoute {
+        private_window: false,
+        observed_page: Some(page.into()),
+        page_redirect_urls: None,
+        redirect_urls: Vec::new(),
+    }));
+    let id = h.manager.add_capture(old.clone()).await?.id.unwrap();
+    let (saved, result) = oneshot::channel();
+    h.manager
+        .watch_link(id, saved, wirecatch_engine::CancellationToken::new())?;
+
+    let mut another_size = old.clone();
+    another_size.handover_id = "another-size".into();
+    another_size.url = "https://files.example/download?id=2&token=new".into();
+    another_size.size_hint = Some(2048);
+    assert_ne!(h.manager.add_capture(another_size).await?.id, Some(id));
+    let mut unsized_file = old.clone();
+    unsized_file.handover_id = "no-size".into();
+    unsized_file.url = "https://files.example/download?id=3&token=new".into();
+    unsized_file.size_hint = None;
+    assert_ne!(h.manager.add_capture(unsized_file).await?.id, Some(id));
+    assert_eq!(h.row(id).url, old.url);
+
+    let mut fresh = old;
+    fresh.handover_id = "fresh".into();
+    fresh.url = "https://files.example/download?id=1&token=fresh".into();
+    assert_eq!(h.manager.add_capture(fresh.clone()).await?.id, Some(id));
+    tokio::time::timeout(PATIENCE, result).await??;
+    assert_eq!(h.row(id).url, fresh.url);
+    Ok(())
+}
+
+#[tokio::test]
 async fn a_dismissed_watch_leaves_a_later_capture_to_its_own_row() -> TestResult {
     let h = Harness::new().await?;
     h.manager
