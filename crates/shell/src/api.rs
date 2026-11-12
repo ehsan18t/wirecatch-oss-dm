@@ -347,10 +347,7 @@ fn file_type(name: &str) -> Option<String> {
 /// whatever its name.
 #[must_use]
 fn is_program(path: &Path) -> bool {
-    let name = path
-        .file_name()
-        .map(|n| n.to_string_lossy())
-        .unwrap_or_default();
+    let name = path.file_name().map_or_default(|n| n.to_string_lossy());
     let safe = file_type(&name).is_some_and(|ext| SAFE_EXTENSIONS.contains(&ext.as_str()));
     !safe || is_marked_executable(path)
 }
@@ -408,10 +405,7 @@ impl ProgramWarning {
     /// The warning for the program at `path`, downloaded from `url`. It names the file and type
     /// on disk, which decided that it is a program.
     fn new(path: &Path, url: &str) -> Self {
-        let name = path
-            .file_name()
-            .map(|n| n.to_string_lossy())
-            .unwrap_or_default();
+        let name = path.file_name().map_or_default(|n| n.to_string_lossy());
         let what = match file_type(&name) {
             Some(ext) if SAFE_EXTENSIONS.contains(&ext.as_str()) => {
                 format!("{name} is marked as a program, so it may run code.")

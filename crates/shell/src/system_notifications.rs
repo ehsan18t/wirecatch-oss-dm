@@ -175,8 +175,7 @@ mod platform {
                         .as_ref()
                         .and_then(|a| a.cast::<ToastActivatedEventArgs>().ok())
                         .and_then(|a| a.Arguments().ok())
-                        .map(|a| a.to_string_lossy())
-                        .unwrap_or_default();
+                        .map_or_default(|a| a.to_string_lossy());
                     if let Some(act) = chosen(&notification, clicked_button(&argument)) {
                         on_act(act);
                     }

@@ -12,29 +12,14 @@ use wirecatch_streams::process::{
     self, MAX_REASON_CHARS, Output, RunError, RunOptions, STDERR_TAIL_BYTES,
 };
 use wirecatch_test_support::logs::Logs;
-use wirecatch_test_support::{PATIENCE, TestResult};
+use wirecatch_test_support::{PATIENCE, TestResult, built_example};
 
 /// A time limit short enough for a test. The tests that expect a run to go on past it move a paused clock themselves ([`Stepped`]); a run expected to stop at it may take longer on a loaded machine and still pass.
 const SHORT: Duration = Duration::from_millis(300);
 
 /// The stand-in program `cargo test` builds from `examples/fake_program.rs`. Missing only when the tests are built alone, which skips the examples; that fails loudly.
 fn fake_program() -> TestResult<PathBuf> {
-    let exe = std::env::current_exe()?;
-    let debug = exe
-        .parent()
-        .and_then(Path::parent)
-        .ok_or("the test binary is not in a build folder")?;
-    let path = debug
-        .join("examples")
-        .join(format!("fake_program{}", std::env::consts::EXE_SUFFIX));
-    if !path.is_file() {
-        return Err(format!(
-            "{} is missing: run `cargo test -p wirecatch-streams`, which builds the examples",
-            path.display()
-        )
-        .into());
-    }
-    Ok(path)
+    built_example("fake_program")
 }
 
 /// The stand-in for the app built beside [`fake_program`].
@@ -338,7 +323,7 @@ async fn a_silent_program_rewriting_its_output_in_place_is_not_stalled() -> Test
 async fn a_silent_program_writing_into_a_watched_folder_is_not_stalled() -> TestResult {
     for command in ["write-quietly", "rewrite-quietly"] {
         a_silent_program_is_watched_through(command, |output| {
-            output.parent().map(Path::to_path_buf).unwrap_or_default()
+            output.parent().map_or_default(Path::to_path_buf)
         })
         .await
         .map_err(|e| format!("{command}: {e}"))?;

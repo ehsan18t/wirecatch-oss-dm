@@ -1039,8 +1039,7 @@ pub(super) fn queue_badge_picker(
     let name_of = |id: QueueId| {
         library
             .queue(id)
-            .map(|queue| queue.settings.name.clone())
-            .unwrap_or_default()
+            .map_or_default(|queue| queue.settings.name.clone())
     };
     let proposed = name_of(proposed);
     let (lead, value) = automatic_reason(&proposed, reason);

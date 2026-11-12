@@ -226,8 +226,7 @@ where
         let message = fields
             .iter()
             .position(|(name, _)| name == "message")
-            .map(|at| fields.remove(at).1)
-            .unwrap_or_default();
+            .map_or_default(|at| fields.remove(at).1);
         let logged = Logged {
             level: *metadata.level(),
             target: metadata.target().to_owned(),

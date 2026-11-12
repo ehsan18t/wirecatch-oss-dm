@@ -293,8 +293,7 @@ impl ComputerProxy {
             Self::Read => ManualProxies::system_exceptions(),
             Self::Given(given) => given
                 .as_ref()
-                .map(|given| given.exceptions.clone())
-                .unwrap_or_default(),
+                .map_or_default(|given| given.exceptions.clone()),
         }
     }
 

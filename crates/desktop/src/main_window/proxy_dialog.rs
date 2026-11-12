@@ -156,19 +156,19 @@ impl ProxyForm {
         let opened = original.as_ref().map(|proxy| proxy.settings.clone());
         let kind = opened.as_ref().map_or(ProxyKind::Http, |s| s.kind);
         let name = crate::ui::dialog::text_field(
-            opened.as_ref().map(|s| s.name.clone()).unwrap_or_default(),
+            opened.as_ref().map_or_default(|s| s.name.clone()),
             "For example: Office",
             window,
             cx,
         );
         let host = crate::ui::dialog::text_field(
-            opened.as_ref().map(|s| s.host.clone()).unwrap_or_default(),
+            opened.as_ref().map_or_default(|s| s.host.clone()),
             "proxy.example.com",
             window,
             cx,
         );
         let user = crate::ui::dialog::text_field(
-            opened.as_ref().map(|s| s.user.clone()).unwrap_or_default(),
+            opened.as_ref().map_or_default(|s| s.user.clone()),
             "Leave empty if it needs no sign-in",
             window,
             cx,

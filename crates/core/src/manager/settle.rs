@@ -95,8 +95,7 @@ impl Manager {
             .lock()
             .downloads
             .get(&id)
-            .map(|entry| entry.row.url.clone())
-            .unwrap_or_default();
+            .map_or_default(|entry| entry.row.url.clone());
         // A path holding only this download's own part and resume files is free
         // for it: the app stopped there before the path was saved, and the engine
         // continues those files.

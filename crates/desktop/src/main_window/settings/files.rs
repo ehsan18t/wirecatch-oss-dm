@@ -189,7 +189,7 @@ fn folders_by_type(library: &Entity<Library>, window: &mut Window, cx: &mut App)
         .enumerate()
         .map(|(index, &category)| {
             let rule = rules.iter().find(|rule| rule.category == category);
-            let extensions = rule.map(|rule| rule.extensions.clone()).unwrap_or_default();
+            let extensions = rule.map_or_default(|rule| rule.extensions.clone());
             let (typing, picking) = (library.clone(), library.clone());
             h_flex()
                 .px_3()

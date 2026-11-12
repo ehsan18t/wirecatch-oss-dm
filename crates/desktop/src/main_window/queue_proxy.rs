@@ -76,8 +76,7 @@ impl ProxyForm {
         });
         let own_hosts = exceptions
             .own_ref()
-            .map(|own| own.hosts.join("\n"))
-            .unwrap_or_default();
+            .map_or_default(|own| own.hosts.join("\n"));
         let hosts = cx.new(|cx| {
             TextareaState::new(window, cx)
                 .auto_grow(2, 6)
@@ -144,8 +143,7 @@ impl ProxyForm {
             .read(cx)
             .settings
             .as_ref()
-            .map(|settings| settings.proxy.clone())
-            .unwrap_or_default()
+            .map_or_default(|settings| settings.proxy.clone())
     }
 
     fn new_proxy(&self, window: &mut Window, cx: &mut Context<'_, Self>) {

@@ -590,7 +590,7 @@ fn engine_request(
         return Err(wirecatch_messages::private_network(entry.chosen_by));
     }
     let path = PathBuf::from(&entry.row.path);
-    let dir = path.parent().map(Path::to_path_buf).unwrap_or_default();
+    let dir = path.parent().map_or_default(Path::to_path_buf);
     let mut request = DownloadRequest::new(url, dir);
     match target {
         Target::Exact => request.exact_path = Some(path),

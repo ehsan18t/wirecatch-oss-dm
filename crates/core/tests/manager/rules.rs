@@ -156,7 +156,7 @@ async fn trying_a_link_checks_the_drafted_rules_as_saving_does() -> TestResult {
         file_name_syntax: NameSyntax::Regex,
         ..QueueRules::default()
     }));
-    let message = bad.err().map(|e| e.to_string()).unwrap_or_default();
+    let message = bad.err().map_or_default(|e| e.to_string());
     assert!(message.contains("not a regular expression"), "{message}");
 
     let found = h.manager.try_link(&trial(QueueRules {

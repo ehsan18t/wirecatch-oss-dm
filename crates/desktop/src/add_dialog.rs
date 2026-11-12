@@ -361,8 +361,7 @@ impl AddForm {
             .read(cx)
             .settings
             .as_ref()
-            .map(|settings| settings.extension.video_sites.clone())
-            .unwrap_or_default();
+            .map_or_default(|settings| settings.extension.video_sites.clone());
         let requests: Vec<AddRequest> = urls
             .iter()
             .map(|url| AddRequest {

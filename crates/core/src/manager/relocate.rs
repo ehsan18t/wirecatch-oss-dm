@@ -520,8 +520,7 @@ fn sidecar_target(
 ) -> PathBuf {
     let stem = |path: &Path| {
         path.file_stem()
-            .map(|stem| stem.to_string_lossy().into_owned())
-            .unwrap_or_default()
+            .map_or_default(|stem| stem.to_string_lossy().into_owned())
     };
     let name = naming::file_name_of(sidecar);
     let name = name

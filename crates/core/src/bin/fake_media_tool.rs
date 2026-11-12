@@ -46,12 +46,10 @@ async fn main() -> ExitCode {
         .ancestors()
         .find(|a| a.file_name().is_some_and(|n| n == "addons"))
         .and_then(Path::parent)
-        .map(|data| data.join("fake-tools"))
-        .unwrap_or_default();
+        .map_or_default(|data| data.join("fake-tools"));
     let name = exe
         .file_stem()
-        .map(|s| s.to_string_lossy().to_lowercase())
-        .unwrap_or_default();
+        .map_or_default(|s| s.to_string_lossy().to_lowercase());
     let ran = if name.starts_with("yt-dlp") && args.iter().any(|a| a == "--version") {
         version(&exe, &args)
     } else if name.starts_with("yt-dlp") {

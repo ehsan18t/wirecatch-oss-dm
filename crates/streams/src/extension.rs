@@ -72,7 +72,7 @@ pub fn with_extension(path: &Path, ext: &str) -> PathBuf {
     } else {
         path.file_name()
     };
-    let mut name = stem.map(OsString::from).unwrap_or_default();
+    let mut name = stem.map_or_default(OsString::from);
     name.push(".");
     name.push(ext);
     path.with_file_name(name)

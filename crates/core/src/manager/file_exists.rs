@@ -181,8 +181,7 @@ impl Manager {
             folder: found
                 .path
                 .parent()
-                .map(|dir| dir.to_string_lossy().into_owned())
-                .unwrap_or_default(),
+                .map_or_default(|dir| dir.to_string_lossy().into_owned()),
             size: found.size,
             saved_at: found.saved_at,
             same_file: found.same,
@@ -234,7 +233,7 @@ impl Manager {
             else {
                 return;
             };
-            let dir = old.parent().map(Path::to_path_buf).unwrap_or_default();
+            let dir = old.parent().map_or_default(Path::to_path_buf);
             let moved = manager.move_files(id, &old, dir.clone()).await;
             if let Err(error) = manager.finish_move(id, &dir, &old, moved) {
                 warn!(id = id.0, %error, "could not move a finished download off a name taken meanwhile");
