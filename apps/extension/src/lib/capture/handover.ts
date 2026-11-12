@@ -159,7 +159,8 @@ export interface HandoverInput {
   /** The id the download is offered to the app under, recorded before pausing so a restarted background can withdraw it. */
   handoverId: string;
   candidate: CaptureCandidate;
-  route?: DownloadRoute;
+  /** Null or absent when the browser's requests do not explain the download. */
+  route?: DownloadRoute | null;
   cookieStore: CookieStore;
 }
 

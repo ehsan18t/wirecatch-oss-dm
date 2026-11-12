@@ -19,7 +19,7 @@ import {
   toolbarBadge,
 } from '@/lib/browser/adapters';
 import { registerCapture, type DownloadEvents } from '@/lib/capture/register';
-import { BrowserRoutes } from '@/lib/capture/browser-route';
+import { BrowserRoutes, type FileRequest } from '@/lib/capture/browser-route';
 import { installDiagnostics } from '@/lib/diag/install';
 import { fallback } from '@/lib/diag/log';
 import { appSide } from '@/lib/hub/app';
@@ -102,29 +102,19 @@ async function downloadTab(tabId: number) {
   return opener?.incognito === tab.incognito ? opener : tab;
 }
 
-/** Registers the download events and remembers the navigation that led to each download. */
-function registerDownloads(hub: Hub): void {
-  const routes = new BrowserRoutes((tabId) =>
-    downloadTab(tabId).catch(fallback('capture', 'Could not read the source tab', null)),
-  );
+/** Remembers the requests that can become downloads, and the navigation that led to each. */
+function registerRoutes(routes: BrowserRoutes): void {
   const files = {
     urls: SITE_ORIGINS,
     types: ['main_frame', 'sub_frame', 'other'],
   } satisfies Parameters<typeof browser.webRequest.onHeadersReceived.addListener>[1];
-  browser.webRequest.onBeforeRequest.addListener((details) => {
-    routes.start(details);
+  const seen = (details: FileRequest) => {
+    routes.seen(details);
     return undefined;
-  }, files);
-  browser.webRequest.onHeadersReceived.addListener((details) => {
-    routes.response(details);
-    return undefined;
-  }, files);
+  };
+  browser.webRequest.onBeforeRequest.addListener(seen, files);
+  browser.webRequest.onHeadersReceived.addListener(seen, files);
   browser.webRequest.onBeforeRedirect.addListener((details) => routes.redirect(details), files);
-  const downloadEvents: DownloadEvents = browser.downloads;
-  registerCapture(downloadEvents, {
-    onDownload: (item) => hub.onDownload(item, routes),
-    onDownloadMoved: (id) => hub.onDownloadMoved(id),
-  });
 }
 
 export default defineBackground(() => {
@@ -191,10 +181,15 @@ export default defineBackground(() => {
     now: () => Date.now(),
   });
 
-  const hub = new Hub({ ...hubDeps, media, notices }, side);
+  const routes = new BrowserRoutes((tabId) =>
+    downloadTab(tabId).catch(fallback('capture', 'Could not read the source tab', null)),
+  );
+  const hub = new Hub({ ...hubDeps, media, notices, routes }, side);
 
   // Every listener is registered synchronously so a sleeping background wakes up for it.
-  registerDownloads(hub);
+  const downloadEvents: DownloadEvents = browser.downloads;
+  registerCapture(downloadEvents, hub);
+  registerRoutes(routes);
   registerContextMenu(hub);
   registerMedia(hub, media, watcher);
   browser.runtime.onConnect.addListener((port) => {

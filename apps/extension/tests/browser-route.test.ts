@@ -24,10 +24,10 @@ describe('the source of a browser download', () => {
     const home = 'https://files.example/home';
     let current = PAGE;
     const routes = new BrowserRoutes(() => Promise.resolve({ url: current, incognito: false }));
-    routes.start(request('file', INITIAL));
+    routes.seen(request('file', INITIAL));
     current = home;
     routes.redirect({ ...request('file', INITIAL), redirectUrl: FINAL });
-    routes.response(request('file', FINAL));
+    routes.seen(request('file', FINAL));
 
     await expect(
       routes.forDownload({
@@ -43,7 +43,7 @@ describe('the source of a browser download', () => {
     const routes = new BrowserRoutes(() => Promise.resolve({ url: PAGE, incognito: false }));
     routes.redirect({ ...request('file', INITIAL), redirectUrl: MIRROR });
     routes.redirect({ ...request('file', MIRROR), redirectUrl: FINAL });
-    routes.response(request('file', FINAL));
+    routes.seen(request('file', FINAL));
 
     await expect(
       routes.forDownload({ id: 1, url: INITIAL, finalUrl: FINAL, referrer: PROJECT_ORIGIN }),
@@ -61,21 +61,21 @@ describe('the source of a browser download', () => {
   it('can return to the site root when it was the actual browser page', async () => {
     const home = `${PROJECT_ORIGIN}/`;
     const routes = new BrowserRoutes(() => Promise.resolve({ url: home, incognito: false }));
-    routes.start(request('file', INITIAL));
-    routes.response(request('file', INITIAL));
+    routes.seen(request('file', INITIAL));
+    routes.seen(request('file', INITIAL));
     await expect(routes.forDownload({ id: 1, url: INITIAL })).resolves.toMatchObject({
       pageUrl: home,
     });
   });
 
-  it('uses the download metadata when more than one request could have started it', async () => {
+  it('leaves the source unknown when more than one request could have started it', async () => {
     const routes = new BrowserRoutes(() => Promise.resolve({ url: PAGE, incognito: false }));
     routes.redirect({ ...request('one', INITIAL), redirectUrl: FINAL });
     routes.redirect({ ...request('two', INITIAL), redirectUrl: FINAL });
 
     await expect(
       routes.forDownload({ id: 1, url: INITIAL, finalUrl: FINAL, referrer: PROJECT_ORIGIN }),
-    ).resolves.toEqual({ pageUrl: null, redirectUrls: [INITIAL] });
+    ).resolves.toBeNull();
   });
 
   it('keeps the navigation that led to a countdown page separately from the file request', async () => {
@@ -83,9 +83,9 @@ describe('the source of a browser download', () => {
     const countdown = 'https://project.example/wait/report.pdf?session=old';
     const routes = new BrowserRoutes(() => Promise.resolve({ url: countdown, incognito: false }));
     routes.redirect({ ...request('page', entry), redirectUrl: countdown });
-    routes.response(request('page', countdown));
+    routes.seen(request('page', countdown));
     routes.redirect({ ...request('file', INITIAL), redirectUrl: FINAL });
-    routes.response(request('file', FINAL));
+    routes.seen(request('file', FINAL));
 
     await expect(
       routes.forDownload({ id: 1, url: INITIAL, finalUrl: FINAL, referrer: countdown }),

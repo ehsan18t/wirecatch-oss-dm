@@ -6,7 +6,7 @@ import { parseWebUrl } from '../url';
 const MAX_RECENT_REQUESTS = 128;
 const REQUEST_LIFETIME_MS = 60_000;
 
-interface FileRequest {
+export interface FileRequest {
   requestId: string;
   tabId: number;
   url: string;
@@ -33,6 +33,10 @@ interface ObservedRoute {
   navigation: boolean;
   inFrame: boolean;
   at: number;
+}
+
+function inTab(request: FileRequest): boolean {
+  return request.method === 'GET' && request.tabId >= 0;
 }
 
 function fullPage(url: URL | null): URL | null {
@@ -70,17 +74,13 @@ export class BrowserRoutes {
     this.#now = now;
   }
 
-  start(request: FileRequest): void {
-    if (request.method === 'GET' && request.tabId >= 0) this.#remember(request, request.url);
-  }
-
-  response(request: FileRequest): void {
-    if (request.method !== 'GET' || request.tabId < 0) return;
-    this.#remember(request, request.url);
+  /** A request began or was answered. */
+  seen(request: FileRequest): void {
+    if (inTab(request)) this.#remember(request, request.url);
   }
 
   redirect(request: FileRequest & { redirectUrl: string }): void {
-    if (request.method !== 'GET' || request.tabId < 0) return;
+    if (!inTab(request)) return;
     const route = this.#remember(request, request.redirectUrl);
     if (route.earlier.length < MAX_DOWNLOAD_REDIRECTS) route.earlier.push(request.url);
   }
@@ -143,16 +143,14 @@ export class BrowserRoutes {
     return redirects;
   }
 
-  async forDownload(item: DownloadItemLike): Promise<DownloadRoute> {
-    const referrer = parseWebUrl(item.referrer ?? '');
+  /** The route of `item`, or null when no single request in a matching window explains it. */
+  async forDownload(item: DownloadItemLike): Promise<DownloadRoute | null> {
     const finalUrl = nonEmpty(item.finalUrl);
-    const original = finalUrl !== null && finalUrl !== item.url ? [item.url] : [];
-    const fallback = { pageUrl: null, redirectUrls: original };
     const route = this.#matchingRequest(item.url, finalUrl);
-    if (route === undefined) return fallback;
+    if (route === undefined) return null;
     const tab = await route.tab;
-    if (tab?.incognito !== (item.incognito === true)) return fallback;
-    const pageUrl = sourcePage(referrer, tab, route);
+    if (tab?.incognito !== (item.incognito === true)) return null;
+    const pageUrl = sourcePage(parseWebUrl(item.referrer ?? ''), tab, route);
     return {
       pageUrl,
       pageRedirectUrls: this.#pageRedirects(pageUrl, route),
