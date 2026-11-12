@@ -137,11 +137,12 @@ impl Manager {
         } else {
             None
         };
-        let sizes = known_size.zip(capture.size_hint);
         if entry.row.status == DownloadStatus::Completed
             || entry.refuse_if_stranded().is_err()
-            || sizes.is_some_and(|(old, new)| old != new)
-            || !matches_capture(entry, capture, source, url, sizes.is_some())
+            || known_size
+                .zip(capture.size_hint)
+                .is_some_and(|(old, new)| old != new)
+            || !matches_capture(entry, capture, source, url)
         {
             return Ok(None);
         }
@@ -257,7 +258,6 @@ fn matches_capture(
     capture: &NewDownload,
     source: &BrowserSource,
     url: &Url,
-    same_size: bool,
 ) -> bool {
     let kind = entry.row.media.as_ref().map(|media| media.source);
     if kind != capture.media.as_ref().map(|media| media.kind) {
@@ -268,13 +268,8 @@ fn matches_capture(
         return false;
     }
     if matches!(kind, None | Some(MediaKind::Direct)) {
-        // The person asked for this download's link, so its site and page may differ (another mirror).
-        // An unsized capture needs the same name, or any download begun meanwhile would take the row.
-        let named_alike = old
-            .and_then(|old| old.file_name.as_ref())
-            .zip(source.file_name.as_ref())
-            .is_some_and(|(was, now)| was == now);
-        return same_size || named_alike || web_url(&entry.row.url).as_ref() == Some(url);
+        // The person asked for this download's link and may take it from any site; only a different size, refused by the caller, says it is another file.
+        return true;
     }
     let Some(old) = old.filter(|_| kind != Some(MediaKind::Page)) else {
         // A video page is its own address; a row saved without its browser source has nothing else to compare.

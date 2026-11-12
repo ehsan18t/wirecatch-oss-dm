@@ -1614,20 +1614,6 @@ async fn a_browser_capture_refreshes_the_watched_row_after_a_mirror_change() -> 
             .is_none()
     );
 
-    let mut unrelated = old.clone();
-    unrelated.handover_id = "unrelated".into();
-    unrelated.url = "https://other.example/notes.pdf".into();
-    unrelated.suggested_name = Some("notes.pdf".into());
-    unrelated.browser_route = Some(Box::new(BrowserRoute {
-        private_window: false,
-        observed_page: Some(page.into()),
-        page_redirect_urls: None,
-        redirect_urls: vec!["https://project.example/releases/v2/report.pdf".into()],
-    }));
-    let other = h.manager.add_capture(unrelated).await?.id.unwrap();
-    assert_ne!(other, id);
-    assert_eq!(h.row(id).url, old.url);
-
     let mut fresh = old;
     fresh.handover_id = "fresh".into();
     fresh.url = server.url("report.pdf").to_string();
@@ -1643,10 +1629,7 @@ async fn a_browser_capture_refreshes_the_watched_row_after_a_mirror_change() -> 
     );
     tokio::time::timeout(PATIENCE, result).await??;
     assert_eq!(h.row(id).url, fresh.url);
-    assert_eq!(h.manager.list_downloads().len(), 2);
-    h.manager
-        .remove(&[other], wirecatch_core::RemoveFiles::Keep)
-        .await?;
+    assert_eq!(h.manager.list_downloads().len(), 1);
     h.restart().await?;
     h.manager
         .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, false)?;
@@ -1681,12 +1664,6 @@ async fn a_file_of_the_same_size_refreshes_the_watched_row_from_any_site() -> Te
     another_size.url = "https://files.example/download?id=2&token=new".into();
     another_size.size_hint = Some(2048);
     assert_ne!(h.manager.add_capture(another_size).await?.id, Some(id));
-    let mut unsized_file = old.clone();
-    unsized_file.handover_id = "no-size".into();
-    unsized_file.url = "https://files.example/download?id=3&token=new".into();
-    unsized_file.suggested_name = Some("notes.pdf".into());
-    unsized_file.size_hint = None;
-    assert_ne!(h.manager.add_capture(unsized_file).await?.id, Some(id));
     assert_eq!(h.row(id).url, old.url);
 
     let mut fresh = old;
