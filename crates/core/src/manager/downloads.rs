@@ -452,13 +452,7 @@ impl Manager {
         let url = parse_url(url)?;
         let mut state = self.lock_open()?;
         self.replace_link(&mut state, id, &url, Replacement::Pasted(from))?;
-        if state
-            .link_refresh
-            .as_ref()
-            .is_some_and(|watch| watch.id == id)
-        {
-            state.link_refresh = None;
-        }
+        state.stop_watching_link(id);
         Ok(())
     }
 

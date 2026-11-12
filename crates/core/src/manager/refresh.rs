@@ -159,7 +159,7 @@ impl Manager {
         {
             tracing::debug!(
                 id = id.0,
-                "link refresh dialog closed after its capture was matched"
+                "the link watch's window closed after its capture was matched"
             );
         }
         Ok(Some(reply))
@@ -171,13 +171,12 @@ pub(super) fn browser_source(capture: &NewDownload) -> Option<BrowserSource> {
         return None;
     }
     let route = capture.browser_route.as_ref()?;
-    let page = route
-        .observed_page
-        .as_ref()
-        .and_then(|page| web_url(page.expose()))
-        .map(|url| url.to_string().into());
     Some(BrowserSource {
-        observed_page: page,
+        observed_page: route
+            .observed_page
+            .as_ref()
+            .filter(|page| web_url(page.expose()).is_some())
+            .cloned(),
         page_redirect_urls: safe_redirects(route.page_redirect_urls.as_deref().unwrap_or_default()),
         redirect_urls: safe_redirects(&route.redirect_urls),
         private_window: route.private_window,
@@ -219,10 +218,9 @@ fn source_page(source: &BrowserSource) -> Option<Url> {
         .and_then(|page| web_url(page.expose()))
 }
 
-/// A stable entry can establish that two observed landing pages came from the
-/// same navigation. The browser is always sent to the saved document itself.
-fn stable_entry(source: &BrowserSource) -> Option<Url> {
-    let page = source_page(source)?;
+/// The address a navigation began at, when it led to `page` by adding a query:
+/// two landing pages reached from one such entry are the same page with a rotated query.
+fn stable_entry(source: &BrowserSource, page: &Url) -> Option<Url> {
     let entry = source
         .page_redirect_urls
         .first()
@@ -249,40 +247,37 @@ fn matches_capture(
     if old.is_some_and(|source| source.private_window) {
         return false;
     }
-    if kind == Some(MediaKind::Page) {
-        // The download's URL is already the page. Its selected formats are
-        // resolved again using the refreshed browser context.
-        return web_url(&entry.row.url).as_ref() == Some(url);
-    }
-    let Some(old) = old else {
-        // Older rows have no saved browser context. An exact address still
-        // allows a fresh capture from the tab the person returns to.
+    let Some(old) = old.filter(|_| kind != Some(MediaKind::Page)) else {
+        // A video page is its own address; a row saved without its browser source has nothing else to compare.
         return web_url(&entry.row.url).as_ref() == Some(url);
     };
-    let page_matches = source_page(old)
-        .is_some_and(|page| source_page(source).as_ref() == Some(&page))
-        || stable_entry(old).is_some_and(|page| stable_entry(source).as_ref() == Some(&page));
-    if !page_matches && source_page(old).is_some() {
-        return false;
-    }
+    let same_page = match (source_page(old), source_page(source)) {
+        (None, _) => false,
+        (Some(was), Some(now))
+            if was == now
+                || stable_entry(old, &was)
+                    .is_some_and(|began| stable_entry(source, &now) == Some(began)) =>
+        {
+            true
+        }
+        (Some(_), _) => return false,
+    };
     if kind.is_none()
         && old
             .file_name
             .as_ref()
-            .is_some_and(|name| source.file_name.as_ref().is_some_and(|new| new != name))
+            .zip(source.file_name.as_ref())
+            .is_some_and(|(was, now)| was != now)
     {
         return false;
     }
-    let stream = matches!(kind, Some(MediaKind::Hls | MediaKind::Dash));
+    let signed_stream = same_page && matches!(kind, Some(MediaKind::Hls | MediaKind::Dash));
     let new = addresses(source, url.as_str());
-    addresses(old, &entry.row.url)
-        .into_iter()
-        .flatten()
-        .any(|old| {
-            new.iter().flatten().any(|new| {
-                old == *new || (page_matches && stream && same_signed_resource(&old, new))
-            })
-        })
+    addresses(old, &entry.row.url).iter().flatten().any(|old| {
+        new.iter()
+            .flatten()
+            .any(|new| old == new || (signed_stream && same_signed_resource(old, new)))
+    })
 }
 
 fn addresses(source: &BrowserSource, final_url: &str) -> [Option<Url>; 2] {

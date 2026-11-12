@@ -738,13 +738,8 @@ impl Manager {
         {
             entry.note_changes(now);
             self.inner.store.save_downloads(vec![entry.stored()]);
-            if entry.row.status == wirecatch_protocol::app::DownloadStatus::Completed
-                && state
-                    .link_refresh
-                    .as_ref()
-                    .is_some_and(|watch| watch.id == id)
-            {
-                state.link_refresh = None;
+            if entry.row.status == wirecatch_protocol::app::DownloadStatus::Completed {
+                state.stop_watching_link(id);
             }
             state.touch(id);
             self.inner.rows_changed.notify_one();

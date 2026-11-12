@@ -760,6 +760,17 @@ impl State {
     }
 
     /// Records that `id` changed, for the next batched event.
+    /// Ends the watch for a fresh link if `id` is the download it waits for.
+    pub fn stop_watching_link(&mut self, id: DownloadId) {
+        if self
+            .link_refresh
+            .as_ref()
+            .is_some_and(|watch| watch.id == id)
+        {
+            self.link_refresh = None;
+        }
+    }
+
     pub fn touch(&mut self, id: DownloadId) {
         self.dirty.insert(id);
     }
