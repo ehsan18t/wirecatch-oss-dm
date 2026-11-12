@@ -1616,7 +1616,8 @@ async fn a_browser_capture_refreshes_the_watched_row_after_a_mirror_change() -> 
 
     let mut unrelated = old.clone();
     unrelated.handover_id = "unrelated".into();
-    unrelated.url = "https://other.example/report.pdf".into();
+    unrelated.url = "https://other.example/notes.pdf".into();
+    unrelated.suggested_name = Some("notes.pdf".into());
     unrelated.browser_route = Some(Box::new(BrowserRoute {
         private_window: false,
         observed_page: Some(page.into()),
@@ -1656,7 +1657,7 @@ async fn a_browser_capture_refreshes_the_watched_row_after_a_mirror_change() -> 
 }
 
 #[tokio::test]
-async fn a_file_whose_address_changes_with_every_click_is_refreshed() -> TestResult {
+async fn a_file_of_the_same_size_refreshes_the_watched_row_from_any_site() -> TestResult {
     let h = Harness::new().await?;
     h.manager
         .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)?;
@@ -1683,13 +1684,17 @@ async fn a_file_whose_address_changes_with_every_click_is_refreshed() -> TestRes
     let mut unsized_file = old.clone();
     unsized_file.handover_id = "no-size".into();
     unsized_file.url = "https://files.example/download?id=3&token=new".into();
+    unsized_file.suggested_name = Some("notes.pdf".into());
     unsized_file.size_hint = None;
     assert_ne!(h.manager.add_capture(unsized_file).await?.id, Some(id));
     assert_eq!(h.row(id).url, old.url);
 
     let mut fresh = old;
     fresh.handover_id = "fresh".into();
-    fresh.url = "https://files.example/download?id=1&token=fresh".into();
+    fresh.url = "https://mirror.example/files/copy.pdf".into();
+    fresh.suggested_name = Some("copy.pdf".into());
+    fresh.browser_route.as_mut().unwrap().observed_page =
+        Some("https://mirror.example/files".into());
     assert_eq!(h.manager.add_capture(fresh.clone()).await?.id, Some(id));
     tokio::time::timeout(PATIENCE, result).await??;
     assert_eq!(h.row(id).url, fresh.url);

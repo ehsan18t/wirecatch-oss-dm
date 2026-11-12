@@ -267,6 +267,15 @@ fn matches_capture(
     if old.is_some_and(|source| source.private_window) {
         return false;
     }
+    if matches!(kind, None | Some(MediaKind::Direct)) {
+        // The person asked for this download's link, so its site and page may differ (another mirror).
+        // An unsized capture needs the same name, or any download begun meanwhile would take the row.
+        let named_alike = old
+            .and_then(|old| old.file_name.as_ref())
+            .zip(source.file_name.as_ref())
+            .is_some_and(|(was, now)| was == now);
+        return same_size || named_alike || web_url(&entry.row.url).as_ref() == Some(url);
+    }
     let Some(old) = old.filter(|_| kind != Some(MediaKind::Page)) else {
         // A video page is its own address; a row saved without its browser source has nothing else to compare.
         return web_url(&entry.row.url).as_ref() == Some(url);
@@ -282,20 +291,12 @@ fn matches_capture(
         }
         (Some(_), _) => return false,
     };
-    let names = old.file_name.as_ref().zip(source.file_name.as_ref());
-    if kind.is_none() && names.is_some_and(|(was, now)| was != now) {
-        return false;
-    }
-    // A file's address can carry a token that changes with every click: the same page, name and size stand in for the rest of it.
-    let same_file = same_page && same_size && kind.is_none() && names.is_some();
     let signed_stream = same_page && matches!(kind, Some(MediaKind::Hls | MediaKind::Dash));
     let new = addresses(source, url.as_str());
     addresses(old, &entry.row.url).iter().flatten().any(|old| {
-        new.iter().flatten().any(|new| {
-            old == new
-                || (same_file && same_place(old, new))
-                || (signed_stream && same_signed_resource(old, new))
-        })
+        new.iter()
+            .flatten()
+            .any(|new| old == new || (signed_stream && same_signed_resource(old, new)))
     })
 }
 
@@ -309,12 +310,9 @@ fn addresses(source: &BrowserSource, final_url: &str) -> [Option<Url>; 2] {
     ]
 }
 
-fn same_place(old: &Url, new: &Url) -> bool {
-    old.origin() == new.origin() && old.path() == new.path()
-}
-
 fn same_signed_resource(old: &Url, new: &Url) -> bool {
-    same_place(old, new)
+    old.origin() == new.origin()
+        && old.path() == new.path()
         && old
             .query_pairs()
             .filter(|(name, _)| !wirecatch_streams::is_signing_parameter(name))
