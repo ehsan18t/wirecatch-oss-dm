@@ -435,6 +435,11 @@ describe('media button messages', () => {
       // Another origin: only the frame's origin, as the browser sends it.
       referrer: 'https://player.example.net/',
       page_url: 'https://example.com/watch',
+      browser_route: {
+        observed_page: 'https://example.com/watch',
+        private_window: false,
+        redirect_urls: [],
+      },
       suggested_name: null,
       mime: null,
       size_hint: null,

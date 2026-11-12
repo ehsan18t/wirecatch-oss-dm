@@ -1,6 +1,8 @@
 /** What the hub is given: the connection, browser APIs and stores, and the shapes it hands back. */
 import type { CookieRequest } from '@wirecatch/protocol';
 import type { SettingsCache } from '../cache';
+import type { DownloadRoute } from '../capture/browser-route';
+import type { DownloadItemLike } from '../capture/candidate';
 import type { DownloadControl } from '../capture/handover';
 import type { CookieStore, DownloadCookies } from '../cookies';
 import type { MediaSendResult, MediaView } from '../media/center';
@@ -66,6 +68,8 @@ export interface HubDeps {
   media?: MediaCommands;
   /** Shows the app's notices in the tab the person is looking at (`NoticeCenter`, D65); without it, the app shows them in system notifications. */
   notices?: { follow: (event: NoticeEvent) => Promise<void> };
+  /** How a download reached its file (`BrowserRoutes`); without it a capture names no source page. */
+  routes?: { forDownload: (item: DownloadItemLike) => Promise<DownloadRoute | null> };
 }
 
 /** What the popup's media commands need from the background's media side. */

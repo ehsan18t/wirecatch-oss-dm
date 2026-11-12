@@ -12,6 +12,7 @@ import { fallback, log } from '../diag/log';
 import { messageOf } from '../errors';
 import { nonEmpty } from '../text';
 import { shouldCapture, type CaptureCandidate, type SkipReason } from './should-capture';
+import type { DownloadRoute } from './browser-route';
 
 /** What the browser reports about one download (`downloads.search({ id })`). */
 export interface DownloadState {
@@ -158,6 +159,8 @@ export interface HandoverInput {
   /** The id the download is offered to the app under, recorded before pausing so a restarted background can withdraw it. */
   handoverId: string;
   candidate: CaptureCandidate;
+  /** Null or absent when the browser's requests do not explain the download. */
+  route?: DownloadRoute | null;
   cookieStore: CookieStore;
 }
 
@@ -219,6 +222,14 @@ export async function handOver(input: HandoverInput, deps: HandoverDeps): Promis
     url: candidate.url,
     referrer: candidate.referrer,
     page_url: candidate.referrer,
+    browser_route: {
+      private_window: candidate.incognito,
+      observed_page: input.route?.pageUrl ?? null,
+      page_redirect_urls: input.route?.pageRedirectUrls,
+      redirect_urls:
+        input.route?.redirectUrls ??
+        (candidate.originalUrl === null ? [] : [candidate.originalUrl]),
+    },
     suggested_name: candidate.fileName,
     mime: candidate.mime,
     size_hint: candidate.size,

@@ -25,7 +25,7 @@ use wirecatch_shell::api;
 
 use super::applies::RowAction;
 use super::list::status_tone;
-use super::{Group, applies, confirm, fixes, refresh_dialog};
+use super::{Group, applies, confirm, fixes, refresh_window};
 use crate::backend::{Backend, act};
 use crate::download_windows::run_record::RunRecord;
 use crate::download_windows::{run_facts, run_panel};
@@ -459,7 +459,7 @@ fn places(
                             .outline()
                             .label("Get a new link")
                             .on_click(move |_, window, cx| {
-                                refresh_dialog::open(library.clone(), id, window, cx);
+                                refresh_window::open(&library, id, window, cx);
                             }),
                     ),
             )

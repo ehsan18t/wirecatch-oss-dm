@@ -16,8 +16,9 @@ use wirecatch_protocol::app::{
     CaptureConfirmation, DownloadStatus, MediaDefaultsPatch, QueueSettings, UiEvent, Update,
 };
 use wirecatch_protocol::extension::{
-    AddAction, BrowserControlsPatch, CookieJar, CookieRequest, ExtensionSettingsPatch, Header,
-    JarCookie, NewDownload, SameSite, WithdrawOutcome, WithdrawRequest,
+    AddAction, BrowserControlsPatch, BrowserRoute, CookieJar, CookieRequest,
+    ExtensionSettingsPatch, Header, JarCookie, NewDownload, SameSite, WithdrawOutcome,
+    WithdrawRequest,
 };
 use wirecatch_protocol::frame::{self, MAX_FRAME_LEN};
 use wirecatch_protocol::wire::{
@@ -1571,6 +1572,172 @@ async fn a_link_refreshed_to_another_site_leaves_the_credentials_behind() -> Tes
             .load(std::sync::atomic::Ordering::SeqCst)
             > 0
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_browser_capture_refreshes_the_watched_row_after_a_mirror_change() -> TestResult {
+    let server = fast_server(1024).await?;
+    let mut h = Harness::new().await?;
+    h.manager
+        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)?;
+    let entry = "https://project.example/releases/v1";
+    let page = "https://project.example/releases/v1/wait?session=old";
+    let release = "https://project.example/releases/v1/report.pdf";
+    let mut old = capture_from(page, "https://first.example/report.pdf?expired".into());
+    old.suggested_name = Some("report.pdf".into());
+    old.browser_route = Some(Box::new(BrowserRoute {
+        private_window: false,
+        observed_page: Some(page.into()),
+        page_redirect_urls: Some(vec![entry.into()]),
+        redirect_urls: vec![release.into()],
+    }));
+    let id = h.manager.add_capture(old.clone()).await?.id.unwrap();
+    let added_at = h.row(id).added_at;
+    h.clock.advance(chrono::TimeDelta::days(8));
+    h.restart().await?;
+    let (saved, result) = oneshot::channel();
+    assert_eq!(
+        h.manager
+            .watch_link(id, saved, wirecatch_engine::CancellationToken::new())?
+            .page()
+            .unwrap()
+            .as_str(),
+        page
+    );
+    let (cancelled, closed) = oneshot::channel();
+    drop(closed);
+    assert!(
+        h.manager
+            .watch_link(id, cancelled, wirecatch_engine::CancellationToken::new())?
+            .page()
+            .is_none()
+    );
+
+    let mut fresh = old;
+    fresh.handover_id = "fresh".into();
+    fresh.url = server.url("report.pdf").to_string();
+    fresh.cookies = Some("session=fresh".into());
+    fresh.browser_route.as_mut().unwrap().observed_page =
+        Some("https://project.example/releases/v1/wait?session=fresh".into());
+    let reply = h.manager.add_capture(fresh.clone()).await?;
+    assert_eq!(reply.id, Some(id));
+    assert_eq!(h.manager.add_capture(fresh.clone()).await?, reply);
+    assert_eq!(
+        h.manager.withdraw_capture(&fresh.handover_id)?,
+        WithdrawOutcome::AlreadyStarted
+    );
+    tokio::time::timeout(PATIENCE, result).await??;
+    assert_eq!(h.row(id).url, fresh.url);
+    assert_eq!(h.manager.list_downloads().len(), 1);
+    h.restart().await?;
+    h.manager
+        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, false)?;
+    let completed = h.wait_status(id, DownloadStatus::Completed).await;
+    assert_eq!(completed.added_at, added_at);
+    assert_eq!(server.stats.header_values("cookie"), vec!["session=fresh"]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_file_of_the_same_size_refreshes_the_watched_row_from_any_site() -> TestResult {
+    let h = Harness::new().await?;
+    h.manager
+        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)?;
+    let page = "https://drive.example/folders/1";
+    let mut old = capture_from(page, "https://files.example/download?id=1&token=old".into());
+    old.suggested_name = Some("report.pdf".into());
+    old.size_hint = Some(1024);
+    old.browser_route = Some(Box::new(BrowserRoute {
+        private_window: false,
+        observed_page: Some(page.into()),
+        page_redirect_urls: None,
+        redirect_urls: Vec::new(),
+    }));
+    let id = h.manager.add_capture(old.clone()).await?.id.unwrap();
+    let (saved, result) = oneshot::channel();
+    h.manager
+        .watch_link(id, saved, wirecatch_engine::CancellationToken::new())?;
+
+    let mut another_size = old.clone();
+    another_size.handover_id = "another-size".into();
+    another_size.url = "https://files.example/download?id=2&token=new".into();
+    another_size.size_hint = Some(2048);
+    assert_ne!(h.manager.add_capture(another_size).await?.id, Some(id));
+    assert_eq!(h.row(id).url, old.url);
+
+    let mut fresh = old;
+    fresh.handover_id = "fresh".into();
+    fresh.url = "https://mirror.example/files/copy.pdf".into();
+    fresh.suggested_name = Some("copy.pdf".into());
+    fresh.browser_route.as_mut().unwrap().observed_page =
+        Some("https://mirror.example/files".into());
+    assert_eq!(h.manager.add_capture(fresh.clone()).await?.id, Some(id));
+    tokio::time::timeout(PATIENCE, result).await??;
+    assert_eq!(h.row(id).url, fresh.url);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_dismissed_watch_leaves_a_later_capture_to_its_own_row() -> TestResult {
+    let h = Harness::new().await?;
+    h.manager
+        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)?;
+    let page = "https://project.example/releases/v1";
+    let mut old = capture_from(page, "https://files.example/report.pdf?old".into());
+    old.browser_route = Some(Box::new(BrowserRoute {
+        private_window: false,
+        observed_page: Some(page.into()),
+        page_redirect_urls: None,
+        redirect_urls: vec!["https://project.example/releases/v1/report.pdf".into()],
+    }));
+    let id = h.manager.add_capture(old.clone()).await?.id.unwrap();
+    let (saved, _result) = oneshot::channel();
+    let stop = wirecatch_engine::CancellationToken::new();
+    assert!(
+        h.manager
+            .watch_link(id, saved, stop.clone())?
+            .page()
+            .is_some()
+    );
+    stop.cancel();
+    let mut fresh = old.clone();
+    fresh.handover_id = "later".into();
+    fresh.url = "https://files.example/report.pdf?fresh".into();
+    assert_ne!(h.manager.add_capture(fresh).await?.id, Some(id));
+    assert_eq!(h.row(id).url, old.url);
+    Ok(())
+}
+
+#[tokio::test]
+async fn unsafe_or_private_source_pages_do_not_open_a_watch() -> TestResult {
+    let h = Harness::new().await?;
+    h.manager
+        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)?;
+    for (page, private_window) in [
+        ("file:///source.html", false),
+        ("https://user:password@project.example/source", false),
+        ("https://project.example/private", true),
+    ] {
+        let mut download = capture_from(
+            "https://project.example",
+            format!("https://project.example/report.pdf?{page}"),
+        );
+        download.browser_route = Some(Box::new(BrowserRoute {
+            private_window,
+            observed_page: Some(page.into()),
+            page_redirect_urls: None,
+            redirect_urls: Vec::new(),
+        }));
+        let id = h.manager.add_capture(download).await?.id.unwrap();
+        let (saved, _result) = oneshot::channel();
+        assert!(
+            h.manager
+                .watch_link(id, saved, wirecatch_engine::CancellationToken::new())?
+                .page()
+                .is_none()
+        );
+    }
     Ok(())
 }
 

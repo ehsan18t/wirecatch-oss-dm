@@ -101,6 +101,7 @@ pub mod process;
 mod select;
 mod source;
 mod track_id;
+pub use plan::is_signing_parameter;
 mod workdir;
 
 pub use download::download;

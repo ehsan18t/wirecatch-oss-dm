@@ -136,6 +136,7 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
         suffixes: around.suffixes.clone(),
         suffix_check: SuffixCheck::default(),
         handovers: Handovers::default(),
+        link_refresh: None,
         dirty: BTreeSet::default(),
         removals: Vec::new(),
         pending_deletions: BTreeMap::new(),

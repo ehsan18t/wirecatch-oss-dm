@@ -35,7 +35,7 @@ pub(super) fn forgot_sign_in() -> String {
 
 impl Manager {
     /// Deletes the cookies and credentials of every download that is waiting,
-    /// paused, failed or cancelled and was added at least a week ago.
+    /// paused, failed or cancelled and whose sign-in is at least a week old.
     pub(super) fn forget_old_sign_ins(&self, state: &mut State) {
         let now = self.inner.clock.unix_millis();
         let forgot: Vec<DownloadId> = state
@@ -47,7 +47,7 @@ impl Manager {
         if !forgot.is_empty() {
             info!(
                 downloads = forgot.len(),
-                "forgot the sign-in of downloads older than a week"
+                "forgot browser sign-ins older than a week"
             );
         }
         for id in forgot {
@@ -57,7 +57,7 @@ impl Manager {
 }
 
 /// Deletes the cookies and credentials of `entry` if it has not finished and
-/// was added at least a week before `now`; returns whether anything was
+/// its sign-in is at least a week old; returns whether anything was
 /// deleted. Also used right before a download starts, so a stale sign-in is
 /// never sent.
 pub(super) fn forget_if_old(entry: &mut Entry, now: UnixMillis) -> bool {
@@ -68,7 +68,11 @@ pub(super) fn forget_if_old(entry: &mut Entry, now: UnixMillis) -> bool {
             | DownloadStatus::Failed
             | DownloadStatus::Cancelled
     );
-    if !unfinished || now.since(entry.row.added_at) < FORGET_AFTER {
+    let signed_in = entry
+        .origin
+        .sign_in_refreshed_at
+        .unwrap_or(entry.row.added_at);
+    if !unfinished || now.since(signed_in) < FORGET_AFTER {
         return false;
     }
     let Some(kept) = headers::without_sign_in(&entry.origin.headers) else {

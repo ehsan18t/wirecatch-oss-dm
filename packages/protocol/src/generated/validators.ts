@@ -16,6 +16,7 @@ import type { BrowserControls } from './BrowserControls';
 import type { BrowserControlsPatch } from './BrowserControlsPatch';
 import type { BrowserInfo } from './BrowserInfo';
 import type { BrowserNotice } from './BrowserNotice';
+import type { BrowserRoute } from './BrowserRoute';
 import type { Call } from './Call';
 import type { CaptureConfirmation } from './CaptureConfirmation';
 import type { CaptureSource } from './CaptureSource';
@@ -370,6 +371,17 @@ export function isBrowserNotice(value: unknown): value is BrowserNotice {
     typeof value1['body'] === 'string' &&
     isArrayOf(value1['buttons'], (value2: unknown) => typeof value2 === 'string') &&
     (typeof value1['stays_ms'] === 'number' || value1['stays_ms'] === null))(value);
+}
+
+/** Whether `value` has the shape of a {@link BrowserRoute}; fields it does not name are not checked. */
+export function isBrowserRoute(value: unknown): value is BrowserRoute {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    typeof value1['private_window'] === 'boolean' &&
+    (typeof value1['observed_page'] === 'string' || value1['observed_page'] === null) &&
+    (value1['page_redirect_urls'] === undefined ||
+      isArrayOf(value1['page_redirect_urls'], (value2: unknown) => typeof value2 === 'string')) &&
+    isArrayOf(value1['redirect_urls'], (value2: unknown) => typeof value2 === 'string'))(value);
 }
 
 /** Whether `value` has the shape of a {@link Call}; fields it does not name are not checked. */
@@ -982,6 +994,7 @@ export function isNewDownload(value: unknown): value is NewDownload {
     (typeof value1['referrer'] === 'string' || value1['referrer'] === null) &&
     (typeof value1['page_url'] === 'string' || value1['page_url'] === null) &&
     (value1['frame_url'] === undefined || typeof value1['frame_url'] === 'string') &&
+    (value1['browser_route'] === undefined || isBrowserRoute(value1['browser_route'])) &&
     (typeof value1['suggested_name'] === 'string' || value1['suggested_name'] === null) &&
     (typeof value1['mime'] === 'string' || value1['mime'] === null) &&
     (typeof value1['size_hint'] === 'number' || value1['size_hint'] === null) &&

@@ -109,6 +109,13 @@ pub fn can_refresh_link(row: &DownloadSummary) -> bool {
         DownloadStatus::Connecting => {
             matches!(row.waiting, Some(WaitReason::ServerRefused { .. }))
         }
+        DownloadStatus::Failed => {
+            row.media.is_some()
+                && row
+                    .error
+                    .as_ref()
+                    .is_some_and(|error| error.fix == Some(FixAction::Retry))
+        }
         _ => false,
     }
 }
@@ -126,7 +133,7 @@ pub fn offers_new_link(row: &DownloadSummary) -> bool {
 /// or the server turned it away.
 pub fn link_may_have_expired(row: &DownloadSummary) -> bool {
     can_refresh_link(row)
-        && (row.status == DownloadStatus::Paused
+        && (matches!(row.status, DownloadStatus::Paused | DownloadStatus::Failed)
             || matches!(row.waiting, Some(WaitReason::ServerRefused { .. })))
 }
 

@@ -154,6 +154,11 @@ describe('handover', () => {
         url: 'https://files.example.com/big.zip',
         referrer: 'https://example.com/downloads',
         page_url: 'https://example.com/downloads',
+        browser_route: {
+          private_window: false,
+          observed_page: null,
+          redirect_urls: [],
+        },
         suggested_name: 'big.zip',
         mime: 'application/zip',
         size_hint: 50_000_000,

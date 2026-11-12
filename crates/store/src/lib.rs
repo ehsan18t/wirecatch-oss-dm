@@ -1991,6 +1991,8 @@ mod tests {
                     value: "a=b".into(),
                 }],
                 forgot_sign_in: false,
+                sign_in_refreshed_at: None,
+                browser_source: None,
             },
             chosen_by: ChosenBy::Person,
             naming: NameChoice {

@@ -88,7 +88,9 @@ impl Manager {
         run_id: u64,
         remote: &ServerAnswer,
     ) -> Result<PathBuf, String> {
-        if let Some(path) = off_async_worker(|| self.begin_writing_at_settled_path(id, run_id))? {
+        if let Some(path) =
+            off_async_worker(|| self.begin_writing_at_settled_path(id, run_id, remote))?
+        {
             return Ok(path);
         }
         let url = self
@@ -108,14 +110,27 @@ impl Manager {
         &self,
         id: DownloadId,
         run_id: u64,
+        remote: &ServerAnswer,
     ) -> Result<Option<PathBuf>, String> {
         let path = {
-            let state = self.lock();
+            let mut state = self.lock();
             let entry = current_run(&state, id, run_id)?;
             if !entry.naming.settled {
                 return Ok(None);
             }
-            entry.path().to_path_buf()
+            let path = entry.path().to_path_buf();
+            let writing = entry.naming.writing;
+            if let Some(expect) = &entry.expect {
+                check_expectation(expect, remote)?;
+                if let Some(entry) = state.downloads.get_mut(&id) {
+                    entry.expect = None;
+                    self.save(&mut state, id);
+                }
+            }
+            if writing {
+                return Ok(Some(path));
+            }
+            path
         };
         // Before the record: with it, no part file means the file there is this download's, also after a crash or a failed run. The engine starts over from an empty one.
         let [part, _] = naming::partial_files(&path);

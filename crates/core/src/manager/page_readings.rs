@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use wirecatch_engine::Url;
+use wirecatch_engine::{CancellationToken, Url};
 use wirecatch_media::ytdlp::Info;
 use wirecatch_protocol::UnixMillis;
 
@@ -26,9 +26,18 @@ impl PageReadings {
         self.recent.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Keeps `info`, read from `page` at `now`.
-    pub(crate) fn put(&self, page: &Url, now: UnixMillis, info: Arc<Info>) {
+    /// Keeps a reading unless the run that made it has been stopped.
+    pub(crate) fn put(
+        &self,
+        page: &Url,
+        now: UnixMillis,
+        info: Arc<Info>,
+        cancel: &CancellationToken,
+    ) {
         let mut recent = self.recent();
+        if cancel.is_cancelled() {
+            return;
+        }
         recent.retain(|_, (at, _)| fresh(*at, now));
         if recent.len() >= MOST_KEPT
             && let Some(oldest) = recent
@@ -70,7 +79,12 @@ mod tests {
         let readings = PageReadings::default();
         let page = Url::parse("https://videos.example/watch?v=1").unwrap();
         let other = Url::parse("https://videos.example/watch?v=2").unwrap();
-        readings.put(&page, AT, Arc::new(Info::default()));
+        readings.put(
+            &page,
+            AT,
+            Arc::new(Info::default()),
+            &CancellationToken::new(),
+        );
         let almost = AT.saturating_add(READING_LIFETIME.saturating_sub(Duration::from_millis(1)));
 
         assert!(readings.fresh(&page, almost).is_some());
@@ -88,10 +102,11 @@ mod tests {
     #[test]
     fn the_oldest_reading_makes_room() {
         let readings = PageReadings::default();
+        let running = CancellationToken::new();
         let page = |n: usize| Url::parse(&format!("https://videos.example/{n}")).unwrap();
         let at = |n: usize| AT.saturating_add(Duration::from_millis(n as u64));
         for n in 0..=MOST_KEPT {
-            readings.put(&page(n), at(n), Arc::new(Info::default()));
+            readings.put(&page(n), at(n), Arc::new(Info::default()), &running);
         }
         let now = at(MOST_KEPT);
         assert!(readings.fresh(&page(0), now).is_none());

@@ -380,10 +380,10 @@ pub fn media_capture(url: impl AsRef<str>, kind: MediaKind, title: Option<&str>)
         cookies: Some("session=abc123; theme=dark".into()),
         user_agent: Some("TestBrowser/2".into()),
         source: CaptureSource::MediaButton,
-        media: Some(MediaHint {
+        media: Some(Box::new(MediaHint {
             kind,
             title: title.map(str::to_string),
-        }),
+        })),
         ..wirecatch_test_support::downloads::capture(url)
     }
 }

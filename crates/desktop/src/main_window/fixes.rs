@@ -7,7 +7,7 @@ use wirecatch_protocol::app::FixAction;
 use wirecatch_protocol::desktop::Reveal;
 use wirecatch_shell::api;
 
-use super::{bring_up, bring_up_with};
+use super::bring_up;
 use crate::backend::{act, command};
 use crate::files;
 use crate::library::Asked;
@@ -34,7 +34,8 @@ pub fn run(id: DownloadId, fix: FixAction, window: &mut Window, cx: &mut App) {
             bring_up(&Asked::Reveal(Reveal::proxy_settings()), cx);
         }
         FixAction::RefreshLink => {
-            super::refresh_dialog::open(super::library(cx), id, window, cx);
+            let library = super::library(cx);
+            super::refresh_window::open(&library, id, window, cx);
         }
         FixAction::ChangeQueue => {
             super::details::open(super::library(cx), id, window, cx);
@@ -46,7 +47,6 @@ pub fn run(id: DownloadId, fix: FixAction, window: &mut Window, cx: &mut App) {
 /// brings it up (D73.14).
 pub fn run_from_download_window(id: DownloadId, fix: FixAction, window: &mut Window, cx: &mut App) {
     match fix {
-        FixAction::RefreshLink => bring_up_with(cx, move |window, cx| run(id, fix, window, cx)),
         FixAction::ChangeQueue => bring_up(&Asked::Reveal(Reveal::details(id)), cx),
         _ => run(id, fix, window, cx),
     }

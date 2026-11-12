@@ -71,11 +71,9 @@ impl Manager {
         let url = parse_url(&capture.url)?;
         let Arrival {
             known,
-            ask,
-            placed,
             chosen_by,
             cookies,
-        } = self.arrival(&capture, &url)?;
+        } = self.arrival(&capture)?;
         let capture = NewDownload {
             cookies,
             cookie_jar: None,
@@ -91,9 +89,19 @@ impl Manager {
                 wirecatch_messages::capture_to_own_network(),
             ));
         }
+        if let Some(refreshed) = self.refresh_from_capture(&capture, &url, chosen_by)? {
+            return Ok(refreshed);
+        }
         if let Some(joined) = self.join_unfinished(&capture, &url)? {
             return Ok(joined);
         }
+        let (ask, placed) = {
+            let state = self.lock_open()?;
+            (
+                state.settings.extension.ask_before_download,
+                placed_capture(&state, &capture, &url)?,
+            )
+        };
         if capture
             .media
             .as_ref()
@@ -463,13 +471,10 @@ impl Manager {
     }
 
     /// How a capture arrives, read from the state in one go.
-    fn arrival(&self, capture: &NewDownload, url: &Url) -> Result<Arrival> {
+    fn arrival(&self, capture: &NewDownload) -> Result<Arrival> {
         let state = self.lock_open()?;
-        let placed = placed_capture(&state, capture, url)?;
         Ok(Arrival {
             known: state.handovers.get(&capture.handover_id).is_some(),
-            ask: state.settings.extension.ask_before_download,
-            placed,
             chosen_by: ChosenBy::of_capture(capture, &state.settings.local_sites, &state.suffixes),
             // The jar wins: the app keeps its suffix list current, the extension only per release (D112).
             cookies: match &capture.cookie_jar {
@@ -643,11 +648,15 @@ fn wanted_by(capture: &NewDownload) -> Wanted {
 fn captured(capture: &NewDownload, handover: Option<String>) -> Kind {
     Kind::Captured {
         handover,
-        expect: Expectation {
-            size: capture.size_hint,
-            name: capture.suggested_name.clone(),
-        },
+        expect: expectation_of(capture),
         media: direct_media(capture),
+    }
+}
+
+pub(super) fn expectation_of(capture: &NewDownload) -> Expectation {
+    Expectation {
+        size: capture.size_hint,
+        name: capture.suggested_name.clone(),
     }
 }
 
@@ -720,12 +729,9 @@ fn placed_capture(state: &State, capture: &NewDownload, url: &Url) -> Result<Pla
     state.place(request, &candidate)
 }
 
-/// How a capture arrives: whether its handover is known already, whether the
-/// person is asked first, the queue it goes to and why, and who chose its link.
+/// Whether a capture's handover is known, who chose its link and its sign-in.
 struct Arrival {
     known: bool,
-    ask: bool,
-    placed: Placed,
     chosen_by: ChosenBy,
     /// The `Cookie` header the download goes with.
     cookies: Option<Secret>,
@@ -742,6 +748,8 @@ pub(super) fn origin_of(capture: &NewDownload) -> Origin {
             &capture.extra_headers,
         ),
         forgot_sign_in: false,
+        sign_in_refreshed_at: None,
+        browser_source: super::refresh::browser_source(capture).map(Box::new),
     }
 }
 

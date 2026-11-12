@@ -14,6 +14,15 @@ use gpui_kit::{
 
 /// The bar, with `title` on the left.
 pub fn small_title_bar(title: impl IntoElement, window: &Window, cx: &App) -> AnyElement {
+    bar(title, true, window, cx)
+}
+
+/// The bar with Close only, for a window that cannot be minimised.
+pub fn close_only_title_bar(title: impl IntoElement, window: &Window, cx: &App) -> AnyElement {
+    bar(title, false, window, cx)
+}
+
+fn bar(title: impl IntoElement, minimizes: bool, window: &Window, cx: &App) -> AnyElement {
     let theme = cx.theme();
     // Under server-side decorations the window manager draws its own buttons.
     let own_buttons = cfg!(target_os = "windows")
@@ -37,12 +46,14 @@ pub fn small_title_bar(title: impl IntoElement, window: &Window, cx: &App) -> An
                 .child(title),
         )
         .when(own_buttons, |bar| {
-            bar.child(button(
-                "minimize",
-                IconName::WindowMinimize,
-                WindowControlArea::Min,
-                cx,
-            ))
+            bar.when(minimizes, |bar| {
+                bar.child(button(
+                    "minimize",
+                    IconName::WindowMinimize,
+                    WindowControlArea::Min,
+                    cx,
+                ))
+            })
             .child(button(
                 "close",
                 IconName::WindowClose,

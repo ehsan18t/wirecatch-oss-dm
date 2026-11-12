@@ -3,12 +3,14 @@
 
 use std::time::Duration;
 
+use tokio::sync::oneshot;
 use wirecatch_core::{CoreError, DEFAULT_QUEUE_ID, LinkFrom, RemoveFiles};
 use wirecatch_files::discard::test_trash::took;
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{
     AppSettingsPatch, DownloadStatus, FixAction, QueueSettings, UiEvent,
 };
+use wirecatch_protocol::extension::BrowserRoute;
 use wirecatch_protocol::wire::ErrorCode;
 
 use crate::common::{
@@ -66,6 +68,60 @@ async fn an_expired_link_is_refreshed_without_losing_bytes() -> TestResult {
         "asked again for bytes already here: {answers:?}, {} were here",
         paused.done
     );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_captured_refresh_checks_the_response_before_touching_a_partial_file() -> TestResult {
+    let len = 512 * KIB;
+    let keep = 128 * KIB;
+    let server = held_server(len, keep).await?;
+    let other = fast_server(256 * KIB).await?;
+    let h = Harness::new().await?;
+    let page = "https://project.example/releases";
+    let mut old = wirecatch_test_support::downloads::capture(server.url("file.bin").to_string());
+    old.page_url = Some(page.into());
+    old.suggested_name = Some("file.bin".into());
+    old.size_hint = Some(len);
+    old.browser_route = Some(Box::new(BrowserRoute {
+        private_window: false,
+        observed_page: Some(page.into()),
+        page_redirect_urls: None,
+        redirect_urls: vec!["https://project.example/releases/file.bin".into()],
+    }));
+    let id = h.manager.add_capture(old.clone()).await?.id.unwrap();
+    h.wait_for(id, "part of the file", |row| row.done >= keep)
+        .await;
+    h.manager.pause(id)?;
+    let paused = h.wait_status(id, DownloadStatus::Paused).await;
+    let [part, _] = partial_files(&paused.path);
+    let original = std::fs::read(&part)?;
+
+    let (saved, result) = oneshot::channel();
+    assert!(
+        h.manager
+            .watch_link(id, saved, wirecatch_engine::CancellationToken::new())?
+            .page()
+            .is_some()
+    );
+    let mut fresh = old;
+    fresh.handover_id = "fresh-file".into();
+    fresh.url = other.url("file.bin").to_string();
+    fresh.size_hint = None;
+    assert_eq!(h.manager.add_capture(fresh).await?.id, Some(id));
+    tokio::time::timeout(PATIENCE, result).await??;
+
+    let ended = h
+        .wait_for(id, "the refreshed run to finish", |row| {
+            matches!(
+                row.status,
+                DownloadStatus::Completed | DownloadStatus::Failed
+            )
+        })
+        .await;
+    assert_eq!(ended.status, DownloadStatus::Failed);
+    assert!(ended.error.unwrap().message.contains("different file"));
+    assert_eq!(std::fs::read(part)?, original);
     Ok(())
 }
 

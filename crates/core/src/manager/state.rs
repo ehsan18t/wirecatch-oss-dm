@@ -36,6 +36,7 @@ use super::addons::AddonSlot;
 use super::handovers::Handovers;
 use super::media::MediaPending;
 use super::questions::{Questions, Waiting};
+use super::refresh::WatchingLink;
 use super::suffix_list::SuffixCheck;
 use crate::batches::Batches;
 use crate::error::{CoreError, Result};
@@ -79,6 +80,7 @@ pub(super) struct State {
     /// The last time a newer list was looked for.
     pub suffix_check: SuffixCheck,
     pub handovers: Handovers,
+    pub link_refresh: Option<WatchingLink>,
     /// Rows changed since the last `DownloadsChanged` event.
     pub dirty: BTreeSet<DownloadId>,
     /// Cancelled when a removal has deleted its files; a quit waits for them.
@@ -758,6 +760,17 @@ impl State {
     }
 
     /// Records that `id` changed, for the next batched event.
+    /// Ends the watch for a fresh link if `id` is the download it waits for.
+    pub fn stop_watching_link(&mut self, id: DownloadId) {
+        if self
+            .link_refresh
+            .as_ref()
+            .is_some_and(|watch| watch.id == id)
+        {
+            self.link_refresh = None;
+        }
+    }
+
     pub fn touch(&mut self, id: DownloadId) {
         self.dirty.insert(id);
     }

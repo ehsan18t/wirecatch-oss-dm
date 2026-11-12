@@ -22,6 +22,7 @@ mod preferences;
 mod proxy;
 mod questions;
 mod queues;
+mod refresh;
 mod relocate;
 mod restore;
 mod run;
@@ -61,6 +62,7 @@ use crate::clock::{Clock, SystemClock};
 use crate::error::{CoreError, Result, blocking};
 use crate::naming;
 pub use downloads::{LinkFrom, RemoveFiles, can_move_to_queue};
+pub use refresh::LinkWatch;
 use state::{Entry, State, Stop};
 pub use suffix_list::PUBLIC_SUFFIX_LIST_URL;
 pub use ticker::PROGRESS_TICK;
@@ -559,6 +561,7 @@ impl Manager {
         let exits: Vec<CancellationToken> = {
             let mut state = self.lock();
             state.closed = true;
+            state.link_refresh = None;
             self.give_back_undecided_captures(&mut state);
             state
                 .downloads
@@ -736,6 +739,9 @@ impl Manager {
         {
             entry.note_changes(now);
             self.inner.store.save_downloads(vec![entry.stored()]);
+            if entry.row.status == wirecatch_protocol::app::DownloadStatus::Completed {
+                state.stop_watching_link(id);
+            }
             state.touch(id);
             self.inner.rows_changed.notify_one();
         }

@@ -179,7 +179,9 @@ const SIGNING_PARAMETERS: &[&str] = &[
 /// Prefixes of signing parameters, compared without case: S3 (`X-Amz-Signature`, `X-Amz-Date`) and Google Cloud Storage (`X-Goog-Signature`).
 const SIGNING_PREFIXES: &[&str] = &["x-amz-", "x-goog-"];
 
-pub(crate) fn is_signing_parameter(name: &str) -> bool {
+/// Whether this name is used for a signature or related authentication value.
+#[must_use]
+pub fn is_signing_parameter(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
     SIGNING_PARAMETERS.contains(&name.as_str())
         || SIGNING_PREFIXES

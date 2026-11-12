@@ -51,9 +51,8 @@ export default defineConfig({
       name: PRODUCT_NAME,
       description: EXTENSION_DESCRIPTION,
       homepage_url: WEBSITE_URL,
-      // webRequest: observe responses (never block or change them) to spot video and audio,
-      // that is HLS and DASH manifests and media files, so the media button and the popup can
-      // offer them. No blocking, declarativeNetRequest or webRequestBlocking permission is asked for.
+      // webRequest: observe responses to spot media and remember how downloads reached their
+      // files. No blocking, declarativeNetRequest or webRequestBlocking permission is asked for.
       permissions: [
         'downloads',
         'nativeMessaging',
