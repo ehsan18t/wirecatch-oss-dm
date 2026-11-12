@@ -155,23 +155,15 @@ async fn reading(
     ctx: &ytdlp::Context<'_>,
     cancel: &CancellationToken,
 ) -> Result<Arc<Info>, UserError> {
-    if let Some(info) = job
-        .readings
-        .fresh(&job.url, job.clock.unix_millis(), &job.origin)
-    {
+    if let Some(info) = job.readings.fresh(&job.url, job.clock.unix_millis()) {
         return Ok(info);
     }
     let info = ytdlp::extract(ctx, cancel)
         .await
         .map_err(|e| describe::ytdlp(&e, ctx.tools))?;
     let info = Arc::new(info);
-    job.readings.put(
-        &job.url,
-        job.clock.unix_millis(),
-        info.clone(),
-        &job.origin,
-        cancel,
-    );
+    job.readings
+        .put(&job.url, job.clock.unix_millis(), info.clone(), cancel);
     Ok(info)
 }
 

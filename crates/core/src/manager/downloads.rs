@@ -502,12 +502,8 @@ impl Manager {
         if !self.stop_run(entry, Stop::Requeue) {
             entry.row.status = DownloadStatus::Queued;
         }
-        if matches!(
-            entry.media_job,
-            Some(wirecatch_media::MediaJob::Page { .. })
-        ) {
-            self.inner.page_readings.forget(url);
-        }
+        // A reading made with the earlier sign-in is not reused.
+        self.inner.page_readings.forget(url);
         self.save(state, id);
         self.reconcile(state);
         Ok(())
