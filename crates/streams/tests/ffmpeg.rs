@@ -7,7 +7,9 @@ use std::process::Command;
 
 use wirecatch_streams::{Error, InputFormat, Outcome, Role, extension, ffmpeg_input_args};
 use wirecatch_test_support::files::FileServer;
-use wirecatch_test_support::{PrivateDir, TestResult, private_dir, real_ffmpeg, ts_segment};
+use wirecatch_test_support::{
+    PrivateDir, TestResult, built_example, private_dir, real_ffmpeg, ts_segment,
+};
 
 mod common;
 use common::{request, run};
@@ -19,22 +21,7 @@ const MPEGURL: &str = "application/vnd.apple.mpegurl";
 /// skips the examples; that fails loudly instead of skipping, because these
 /// tests prove the injection safety.
 fn fake_ffmpeg() -> TestResult<PathBuf> {
-    let exe = std::env::current_exe()?;
-    let debug = exe
-        .parent()
-        .and_then(Path::parent)
-        .ok_or("the test binary is not in a build folder")?;
-    let path = debug
-        .join("examples")
-        .join(format!("fake_ffmpeg{}", std::env::consts::EXE_SUFFIX));
-    if !path.is_file() {
-        let missing = path.display();
-        return Err(format!(
-            "{missing} is missing: run `cargo test -p wirecatch-streams`, which builds the examples"
-        )
-        .into());
-    }
-    Ok(path)
+    built_example("fake_ffmpeg")
 }
 
 /// A master playlist with video and separate audio, two segments each.

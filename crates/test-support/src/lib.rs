@@ -82,6 +82,29 @@ use std::time::Duration;
 /// decides how to report the failure.
 pub type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
+/// The program `cargo test` builds from the package's `examples/<name>.rs`, found in the
+/// nearest `examples` folder above the test binary: how deep that binary sits depends on
+/// the cargo release.
+///
+/// # Errors
+///
+/// The example is not built: the tests were built alone, which skips the examples.
+pub fn built_example(name: &str) -> TestResult<PathBuf> {
+    let file = format!("{name}{}", std::env::consts::EXE_SUFFIX);
+    let test = std::env::current_exe()?;
+    test.ancestors()
+        .skip(1)
+        .map(|folder| folder.join("examples").join(&file))
+        .find(|path| path.is_file())
+        .ok_or_else(|| {
+            format!(
+                "{file} is missing above {}: run `cargo test` for the whole package, which builds the examples",
+                test.display()
+            )
+            .into()
+        })
+}
+
 /// How long any wait in a test may take before the test fails: a bound on a hang, never a measure of the work. A test that finishes in a second alone can take many times that on a machine busy with other builds, and must still pass there, so this is far above any honest wait. A limit the code under test enforces (an idle limit, a time limit) is not a wait: a test that expects such a limit not to run out drives a paused clock rather than racing the machine (docs/ENGINEERING.md, section 7).
 pub const PATIENCE: Duration = Duration::from_secs(120);
 
