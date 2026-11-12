@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BrowserRoutes } from '../src/lib/capture/browser-route';
+import { BrowserRoutes, SourceTabs, type SourceTab } from '../src/lib/capture/browser-route';
 
 const PAGE = 'https://project.example/releases/v1';
 const INITIAL = 'https://project.example/releases/v1/report.pdf/download';
@@ -94,5 +94,45 @@ describe('the source of a browser download', () => {
       pageRedirectUrls: [entry],
       redirectUrls: [INITIAL],
     });
+  });
+});
+
+describe('the tab a request began in', () => {
+  function counted(tab: () => SourceTab | null) {
+    const reads: number[] = [];
+    const tabs = new SourceTabs((id) => {
+      reads.push(id);
+      return Promise.resolve(tab());
+    });
+    return { reads, tabs };
+  }
+
+  it('is read once for the requests of one page', async () => {
+    const { reads, tabs } = counted(() => ({ url: PAGE, incognito: false }));
+    await expect(tabs.of(1)).resolves.toMatchObject({ url: PAGE });
+    await expect(tabs.of(1)).resolves.toMatchObject({ url: PAGE });
+    await tabs.of(2);
+    expect(reads).toEqual([1, 2]);
+  });
+
+  it('is read again after the tab navigates', async () => {
+    let current = PAGE;
+    const { reads, tabs } = counted(() => ({ url: current, incognito: false }));
+    await tabs.of(1);
+    current = FINAL;
+    tabs.forget(1);
+    await expect(tabs.of(1)).resolves.toMatchObject({ url: FINAL });
+    expect(reads).toEqual([1, 1]);
+  });
+
+  it("is read each time while the page is the opener's or unknown", async () => {
+    const lent = counted(() => ({ url: PAGE, incognito: false, lent: true }));
+    await lent.tabs.of(1);
+    await lent.tabs.of(1);
+    expect(lent.reads).toEqual([1, 1]);
+    const unknown = counted(() => null);
+    await unknown.tabs.of(1);
+    await unknown.tabs.of(1);
+    expect(unknown.reads).toEqual([1, 1]);
   });
 });

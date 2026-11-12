@@ -57,6 +57,40 @@ function sourcePage(referrer: URL | null, tab: SourceTab, route: ObservedRoute):
 export interface SourceTab {
   url?: string;
   incognito: boolean;
+  /** The page is the opener's, standing in for a tab that is still blank. */
+  lent?: boolean;
+}
+
+/**
+ * One lookup per tab, shared by its requests until the tab navigates or closes
+ * (`forget`), so each request still gets the page that was open as it began.
+ */
+export class SourceTabs {
+  readonly #known = new Map<number, Promise<SourceTab | null>>();
+  readonly #read: (id: number) => Promise<SourceTab | null>;
+
+  /** `read` never rejects. */
+  constructor(read: (id: number) => Promise<SourceTab | null>) {
+    this.#read = read;
+  }
+
+  of(tabId: number): Promise<SourceTab | null> {
+    const known = this.#known.get(tabId);
+    if (known !== undefined) return known;
+    const tab = this.#read(tabId);
+    this.#known.set(tabId, tab);
+    void tab.then((found) => {
+      // Nothing reports the opener leaving its page, so a lent page is read again each time.
+      if ((found === null || found.lent === true) && this.#known.get(tabId) === tab) {
+        this.#known.delete(tabId);
+      }
+    });
+    return tab;
+  }
+
+  forget(tabId: number): void {
+    this.#known.delete(tabId);
+  }
 }
 
 /**

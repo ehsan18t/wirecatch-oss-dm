@@ -19,7 +19,12 @@ import {
   toolbarBadge,
 } from '@/lib/browser/adapters';
 import { registerCapture, type DownloadEvents } from '@/lib/capture/register';
-import { BrowserRoutes, type FileRequest } from '@/lib/capture/browser-route';
+import {
+  BrowserRoutes,
+  SourceTabs,
+  type FileRequest,
+  type SourceTab,
+} from '@/lib/capture/browser-route';
 import { installDiagnostics } from '@/lib/diag/install';
 import { fallback } from '@/lib/diag/log';
 import { appSide } from '@/lib/hub/app';
@@ -93,20 +98,28 @@ function registerMedia(hub: Hub, media: MediaCenter, watcher: MediaWatcher): voi
 }
 
 /** A newly opened tab may still be blank when its download begins. */
-async function downloadTab(tabId: number) {
+async function downloadTab(tabId: number): Promise<SourceTab> {
   const tab = await browser.tabs.get(tabId);
   if (tab.openerTabId === undefined || parseWebUrl(tab.url ?? '') !== null) return tab;
   const opener = await browser.tabs
     .get(tab.openerTabId)
     .catch(fallback('capture', 'Could not read the tab that opened the download', null));
-  return opener?.incognito === tab.incognito ? opener : tab;
+  return opener?.incognito === tab.incognito
+    ? { url: opener.url, incognito: opener.incognito, lent: true }
+    : tab;
 }
 
 /** Remembers the requests that can become downloads, and the navigation that led to each. */
 function watchedRoutes(): BrowserRoutes {
-  const routes = new BrowserRoutes((tabId) =>
+  const tabs = new SourceTabs((tabId) =>
     downloadTab(tabId).catch(fallback('capture', 'Could not read the source tab', null)),
   );
+  // A navigation that starts also counts: a tab the extension may not read reports no new address.
+  browser.tabs.onUpdated.addListener((tabId, change) => {
+    if (change.url !== undefined || change.status === 'loading') tabs.forget(tabId);
+  });
+  browser.tabs.onRemoved.addListener((tabId) => tabs.forget(tabId));
+  const routes = new BrowserRoutes((tabId) => tabs.of(tabId));
   const files = {
     urls: SITE_ORIGINS,
     types: ['main_frame', 'sub_frame', 'other'],
