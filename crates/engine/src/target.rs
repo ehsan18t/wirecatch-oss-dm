@@ -475,7 +475,10 @@ mod tests {
         assert_eq!(second.target.file, dir.join("f (1).bin"));
         assert_eq!(
             wirecatch_test_support::files_in(&dir),
-            ["f (1).bin.wcpart", "f.bin.wcpart"]
+            wirecatch_test_support::names_of([
+                crate::naming::part_paths(&first.target.file).0,
+                crate::naming::part_paths(&second.target.file).0,
+            ])
         );
         dir.remove().unwrap();
     }
@@ -738,7 +741,7 @@ mod tests {
     #[test]
     fn a_damaged_resume_file_is_logged_and_starts_over() {
         let dir = wirecatch_test_support::private_dir("damaged-state").unwrap();
-        let state = dir.join("f.bin.wcstate");
+        let state = crate::naming::partial_path(&dir.join("f.bin"), crate::STATE_EXT);
         std::fs::write(&state, b"not a resume file").unwrap();
         let (logs, _capturing) = wirecatch_test_support::logs::Logs::capture();
         assert!(saved_state(&state).unwrap().is_none());

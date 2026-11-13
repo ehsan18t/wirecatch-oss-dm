@@ -79,9 +79,9 @@ async fn partial_files_of_an_unknown_owner_stay_and_the_download_takes_a_free_na
     let server = server().await;
     let h = Harness::new().await?;
     let dir = folder_with(&h, &same_size())?;
-    let part = dir.join(format!("{NAME}{}", wirecatch_engine::PART_EXT));
+    let (part, state) = wirecatch_engine::naming::part_paths(&dir.join(NAME));
     std::fs::write(&part, b"someone's")?;
-    std::fs::create_dir(dir.join(format!("{NAME}{}", wirecatch_engine::STATE_EXT)))?;
+    std::fs::create_dir(state)?;
 
     let row = add_into(&h, server.url("report").as_str(), &dir).await?;
     let done = h.wait_status(row.id, DownloadStatus::Completed).await;

@@ -194,8 +194,16 @@ async fn resumes_after_cancel_without_downloading_again() {
         panic!("expected Paused with a known size, got {outcome:?}")
     };
     assert!(remaining > 0 && remaining < data.len() as u64);
-    assert_eq!(files_in(&dir), ["file.bin.wcpart", "file.bin.wcstate"]);
-    let state = std::fs::read_to_string(dir.join("file.bin.wcstate")).unwrap();
+    let (part, state) = wirecatch_engine::naming::part_paths(&dir.join("file.bin"));
+    assert_eq!(
+        files_in(&dir),
+        wirecatch_test_support::names_of([part, state])
+    );
+    let state = std::fs::read_to_string(wirecatch_engine::naming::partial_path(
+        &dir.join("file.bin"),
+        wirecatch_engine::STATE_EXT,
+    ))
+    .unwrap();
     assert!(
         !state.contains("s3cret"),
         "the resume file holds no password: {state}"
@@ -268,7 +276,8 @@ async fn an_old_resume_file_with_a_password_is_continued_and_cleaned() {
     assert!(matches!(outcome, Outcome::Paused { .. }), "{outcome:?}");
 
     // Make it look like a resume file from before passwords were left out.
-    let state_path = dir.join("file.bin.wcstate");
+    let state_path =
+        wirecatch_engine::naming::partial_path(&dir.join("file.bin"), wirecatch_engine::STATE_EXT);
     let state = std::fs::read_to_string(&state_path).unwrap();
     let with_password = state.replace("ftp://alice@", "ftp://alice:s3cret@");
     assert_ne!(state, with_password);
@@ -283,7 +292,11 @@ async fn an_old_resume_file_with_a_password_is_continued_and_cleaned() {
         .await
         .unwrap();
     assert!(matches!(outcome, Outcome::Paused { .. }), "{outcome:?}");
-    assert_eq!(files_in(&dir), ["file.bin.wcpart", "file.bin.wcstate"]);
+    let (part, state) = wirecatch_engine::naming::part_paths(&dir.join("file.bin"));
+    assert_eq!(
+        files_in(&dir),
+        wirecatch_test_support::names_of([part, state])
+    );
     let state = std::fs::read_to_string(&state_path).unwrap();
     assert!(!state.contains("s3cret"), "the password is gone: {state}");
 

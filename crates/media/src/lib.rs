@@ -19,7 +19,6 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use wirecatch_engine::Progress;
-use wirecatch_files::with_suffix;
 use wirecatch_protocol::UnixMillis;
 use wirecatch_protocol::app::{PER_MILLE_DONE, ProcessingProgress, ProcessingStep};
 use wirecatch_streams::{Stage, StreamProgress};
@@ -32,13 +31,13 @@ pub const WORK_SUFFIX: &str = ".wcmedia";
 
 #[must_use]
 pub fn work_dir(output: &Path) -> PathBuf {
-    with_suffix(output, WORK_SUFFIX)
+    wirecatch_engine::naming::partial_path(output, WORK_SUFFIX)
 }
 
 /// Where `wirecatch-streams` keeps segments while downloading `output`.
 #[must_use]
 pub fn stream_dir(output: &Path) -> PathBuf {
-    with_suffix(output, wirecatch_streams::DIR_SUFFIX)
+    wirecatch_engine::naming::partial_path(output, wirecatch_streams::DIR_SUFFIX)
 }
 
 /// The progress of a media download, made of the progress of its parts. Updates come a few times a second at most, so one lock over all of it costs nothing and every reading is consistent.

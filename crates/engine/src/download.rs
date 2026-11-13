@@ -211,8 +211,8 @@ pub enum Outcome {
     #[non_exhaustive]
     Paused {
         /// Where the file will be saved once complete. The data so far is in
-        /// this path plus [`PART_EXT`](crate::PART_EXT), next to the resume
-        /// file (plus [`STATE_EXT`](crate::STATE_EXT)).
+        /// its part file, next to its resume file
+        /// ([`naming::part_paths`](crate::naming::part_paths)).
         path: PathBuf,
         /// Bytes still to download, if the server gave the size.
         remaining: Option<u64>,

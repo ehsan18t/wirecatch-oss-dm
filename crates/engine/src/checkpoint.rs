@@ -381,7 +381,8 @@ mod tests {
             .await
             .expect("the failed flush did not stop the download");
         assert_flush_error(&result);
-        let kept = kept_ranges(&dir.join("f.bin.wcstate"), len as u64).unwrap();
+        let kept =
+            kept_ranges(&crate::naming::part_paths(&dir.join("f.bin")).1, len as u64).unwrap();
         assert!(
             kept.is_empty(),
             "the resume file counts bytes after the failed flush: {kept:?}"

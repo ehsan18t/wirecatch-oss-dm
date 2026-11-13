@@ -286,10 +286,8 @@ pub fn exists(path: impl AsRef<Path>) -> bool {
 /// The partial file and the state file the engine keeps beside `path` while
 /// it downloads.
 pub fn partial_files(path: &str) -> [PathBuf; 2] {
-    [
-        PathBuf::from(format!("{path}{}", wirecatch_engine::PART_EXT)),
-        PathBuf::from(format!("{path}{}", wirecatch_engine::STATE_EXT)),
-    ]
+    let (part, state) = wirecatch_engine::naming::part_paths(Path::new(path));
+    [part, state]
 }
 
 /// Polls `check` until it returns a value. Waiting on a condition rather than a

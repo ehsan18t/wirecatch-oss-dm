@@ -72,7 +72,8 @@
 //!    file, so no separate `HEAD` request is spent.
 //! 2. Space for the whole file is reserved without writing it (a sparse file on
 //!    NTFS, `fallocate` on Linux), as `<name>.wcpart` ([`PART_EXT`]) next to a
-//!    `<name>.wcstate` resume file ([`STATE_EXT`]), both hidden on Windows.
+//!    `<name>.wcstate` resume file ([`STATE_EXT`]), both hidden: the hidden
+//!    attribute on Windows, a leading dot elsewhere ([`naming::part_paths`]).
 //! 3. Up to [`DownloadOptions::connections`] connections each take a range.
 //!    When one finishes, it takes over the upper half of the largest range still
 //!    left, as long as both halves are at least [`DownloadOptions::min_split`].

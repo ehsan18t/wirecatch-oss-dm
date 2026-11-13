@@ -285,9 +285,7 @@ fn track_dir(dir: &Path, track: usize) -> PathBuf {
 
 /// The temporary folder for `output`.
 pub(crate) fn path_for(output: &Path) -> PathBuf {
-    let mut name = output.file_name().unwrap_or_default().to_owned();
-    name.push(DIR_SUFFIX);
-    output.with_file_name(name)
+    wirecatch_engine::naming::partial_path(output, DIR_SUFFIX)
 }
 
 /// Cuts a last line with no newline off the log, so the next line written does not join it.
@@ -343,7 +341,12 @@ mod tests {
         let dir = wirecatch_test_support::private_dir("workdir").unwrap();
         let out = dir.path().join("video.mp4");
         let work = WorkDir::open(&out, 1, &[3, 1]).unwrap();
-        assert_eq!(path_for(&out).file_name().unwrap(), "video.mp4.wcstream");
+        let name = path_for(&out)
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        assert!(name.ends_with("video.mp4.wcstream"), "{name}");
         fs::write(work.segment_path(0, 0), b"abc").unwrap();
         work.record_segment(0, 0, 3).unwrap();
         fs::write(work.segment_path(0, 1), b"abcd").unwrap();

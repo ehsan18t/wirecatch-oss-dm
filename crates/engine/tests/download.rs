@@ -182,8 +182,14 @@ fn complete_run(url: &str, total: usize) -> SavedRun<'_> {
 
 /// Saves what `run` leaves when it could not rename its part file holding `data`.
 fn left_complete(dir: &std::path::Path, run: &SavedRun<'_>, data: &[u8]) -> TestResult {
-    std::fs::write(dir.join("f.bin.wcpart"), data)?;
-    write_resume_file(&dir.join("f.bin.wcstate"), run)?;
+    std::fs::write(
+        wirecatch_engine::naming::partial_path(&dir.join("f.bin"), wirecatch_engine::PART_EXT),
+        data,
+    )?;
+    write_resume_file(
+        &wirecatch_engine::naming::partial_path(&dir.join("f.bin"), wirecatch_engine::STATE_EXT),
+        run,
+    )?;
     Ok(())
 }
 
@@ -296,7 +302,11 @@ async fn a_refused_link_does_not_finish_over_a_file_that_is_kept() {
     );
     assert_eq!(std::fs::read(&path).unwrap(), b"theirs");
     assert_eq!(
-        std::fs::read(dir.join("f.bin.wcpart")).unwrap(),
+        std::fs::read(wirecatch_engine::naming::partial_path(
+            &dir.join("f.bin"),
+            wirecatch_engine::PART_EXT
+        ))
+        .unwrap(),
         server.data
     );
     dir.remove().unwrap();
@@ -321,7 +331,11 @@ async fn a_complete_part_file_waits_when_the_server_cannot_answer() {
         matches!(error, Error::HttpStatus { status: 500, .. }),
         "{error:?}"
     );
-    assert_eq!(files_in(&dir), ["f.bin.wcpart", "f.bin.wcstate"]);
+    let (part, state) = wirecatch_engine::naming::part_paths(&dir.join("f.bin"));
+    assert_eq!(
+        files_in(&dir),
+        wirecatch_test_support::names_of([part, state])
+    );
 
     server.configure(|c| {
         c.refuse_paths.clear();
@@ -368,7 +382,8 @@ async fn a_complete_part_file_of_unknown_size_is_finished_at_its_length() {
     .await;
     let dir = private_dir("unknown-size-complete").unwrap();
     let path = dir.join("f.bin");
-    let part = dir.join("f.bin.wcpart");
+    let part =
+        wirecatch_engine::naming::partial_path(&dir.join("f.bin"), wirecatch_engine::PART_EXT);
     std::fs::write(&path, b"theirs").unwrap();
     let mut req = request(&server, "f.bin", &dir, 1);
     req.exact_path = Some(path.clone());
@@ -480,7 +495,8 @@ async fn a_download_with_nothing_new_does_not_save_again() {
     )
     .await;
     let dir = private_dir("no-new-save").unwrap();
-    let state = dir.join("f.bin.wcstate");
+    let state =
+        wirecatch_engine::naming::partial_path(&dir.join("f.bin"), wirecatch_engine::STATE_EXT);
     let mut req = request(&server, "f.bin", &dir, 1);
     req.options.checkpoint_interval = Duration::from_millis(10);
     req.options.stall_timeout = 2 * PATIENCE;
@@ -521,8 +537,20 @@ async fn resumes_after_pause_without_downloading_again() {
         .await
         .unwrap();
     assert!(matches!(paused, Outcome::Paused { .. }), "got {paused:?}");
-    assert!(dir.join("r.bin.wcpart").exists() && dir.join("r.bin.wcstate").exists());
-    let kept = kept_ranges(&dir.join("r.bin.wcstate"), len as u64).unwrap();
+    assert!(
+        wirecatch_engine::naming::partial_path(&dir.join("r.bin"), wirecatch_engine::PART_EXT)
+            .exists()
+            && wirecatch_engine::naming::partial_path(
+                &dir.join("r.bin"),
+                wirecatch_engine::STATE_EXT
+            )
+            .exists()
+    );
+    let kept = kept_ranges(
+        &wirecatch_engine::naming::partial_path(&dir.join("r.bin"), wirecatch_engine::STATE_EXT),
+        len as u64,
+    )
+    .unwrap();
     let first_run = server.seen_at("r.bin").len();
     server.release_bodies();
 
@@ -593,7 +621,8 @@ async fn a_tampered_resume_file_starts_the_download_over() {
             "{case}: {paused:?}"
         );
         server.release_bodies();
-        let state_path = dir.join("t.bin.wcstate");
+        let state_path =
+            wirecatch_engine::naming::partial_path(&dir.join("t.bin"), wirecatch_engine::STATE_EXT);
         let mut state: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&state_path).unwrap()).unwrap();
         state["remaining"] = serde_json::Value::Array(remaining);
@@ -633,12 +662,17 @@ async fn a_resume_file_with_nothing_left_finishes_the_whole_file() {
         .unwrap();
     assert!(matches!(paused, Outcome::Paused { .. }), "{paused:?}");
     server.release_bodies();
-    let state_path = dir.join("f.bin.wcstate");
+    let state_path =
+        wirecatch_engine::naming::partial_path(&dir.join("f.bin"), wirecatch_engine::STATE_EXT);
     let mut state: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&state_path).unwrap()).unwrap();
     state["remaining"] = serde_json::json!([]);
     std::fs::write(&state_path, serde_json::to_vec(&state).unwrap()).unwrap();
-    std::fs::write(dir.join("f.bin.wcpart"), &server.data).unwrap();
+    std::fs::write(
+        wirecatch_engine::naming::partial_path(&dir.join("f.bin"), wirecatch_engine::PART_EXT),
+        &server.data,
+    )
+    .unwrap();
 
     let outcome = run(request(&server, "f.bin", &dir, 2)).await.unwrap();
     let Outcome::Completed {
@@ -931,7 +965,10 @@ fn a_dropped_download_leaves_its_files_alone() {
         run(request(&server, "warm.bin", &dir, 1)).await.unwrap();
 
         let target = dir.join("f.bin");
-        let (part, state) = (dir.join("f.bin.wcpart"), dir.join("f.bin.wcstate"));
+        let (part, state) = (
+            wirecatch_engine::naming::partial_path(&dir.join("f.bin"), wirecatch_engine::PART_EXT),
+            wirecatch_engine::naming::partial_path(&dir.join("f.bin"), wirecatch_engine::STATE_EXT),
+        );
         std::fs::write(&part, b"old part").unwrap();
         std::fs::write(&state, b"not a resume file").unwrap();
 
@@ -1003,8 +1040,13 @@ async fn a_dropped_download_never_writes_its_resume_file_again() {
     task.abort();
     assert!(task.await.unwrap_err().is_cancelled());
     // A save that passed its last check before the drop holds its temporary file until it has replaced the resume file; any other replaces nothing. Once none is held, delete the files, as a cancelled download's owner does.
-    let (part, state) = (dir.join("d.bin.wcpart"), dir.join("d.bin.wcstate"));
-    let saving = dir.join("d.bin.wcstate.tmp");
+    let (part, state) = (
+        wirecatch_engine::naming::partial_path(&dir.join("d.bin"), wirecatch_engine::PART_EXT),
+        wirecatch_engine::naming::partial_path(&dir.join("d.bin"), wirecatch_engine::STATE_EXT),
+    );
+    let saving = wirecatch_engine::naming::resume_temp_path(
+        &wirecatch_engine::naming::partial_path(&dir.join("d.bin"), wirecatch_engine::STATE_EXT),
+    );
     let deadline = Instant::now() + PATIENCE;
     while saving.exists() {
         assert!(Instant::now() < deadline, "a save never finished");
@@ -1447,7 +1489,11 @@ async fn a_continued_download_never_replaces_a_file_saved_meanwhile() {
         .await
         .unwrap();
     assert!(matches!(paused, Outcome::Paused { .. }), "{paused:?}");
-    assert_eq!(files_in(&dir), ["t.bin.wcpart", "t.bin.wcstate"]);
+    let (part, state) = wirecatch_engine::naming::part_paths(&dir.join("t.bin"));
+    assert_eq!(
+        files_in(&dir),
+        wirecatch_test_support::names_of([part, state])
+    );
     // The probe from byte 0 is broken off, so what it sent would not count.
     server.configure(|c| c.hold_bodies_from = Some(0));
     server.hold_bodies_after(512 * KIB);

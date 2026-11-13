@@ -14,9 +14,14 @@ pub use crate::storage::{created_hidden, is_hidden, set_hidden};
 /// Most bytes in one file name on Linux (`NAME_MAX`). Windows counts 255
 /// UTF-16 units instead, which a name of at most 255 bytes never exceeds.
 const SYSTEM_NAME_BYTES: usize = 255;
-/// Most bytes in a name the engine takes: its part and resume files, named
-/// after it, fit too.
-const MAX_NAME_BYTES: usize = SYSTEM_NAME_BYTES - longer(PART_EXT, STATE_EXT).len();
+/// Most bytes in a name the engine takes: its partial files, named after it, fit too. The
+/// longest is the resume file's temporary copy.
+const MAX_NAME_BYTES: usize =
+    SYSTEM_NAME_BYTES - HIDING_PREFIX.len() - longer(PART_EXT, STATE_EXT).len() - TEMP_EXT.len();
+/// Ends the resume file's temporary copy ([`resume_temp_path`]).
+const TEMP_EXT: &str = ".tmp";
+/// Leads a partial file's name where a leading dot is what hides a file (D277).
+const HIDING_PREFIX: &str = if cfg!(unix) { "." } else { "" };
 /// Most bytes [`sanitize`] leaves, short of [`MAX_NAME_BYTES`] by room for
 /// what is added to a name after it: ` (1)` to make it free, or a caller's
 /// extension, such as a stream's container.
@@ -269,11 +274,19 @@ fn split_ext(name: &str) -> (&str, &str) {
 /// Paths of the in-progress data file and its resume state for a final path.
 #[must_use]
 pub fn part_paths(final_path: &Path) -> (PathBuf, PathBuf) {
-    let mut part = final_path.as_os_str().to_owned();
-    part.push(PART_EXT);
-    let mut state = final_path.as_os_str().to_owned();
-    state.push(STATE_EXT);
-    (PathBuf::from(part), PathBuf::from(state))
+    (
+        partial_path(final_path, PART_EXT),
+        partial_path(final_path, STATE_EXT),
+    )
+}
+
+/// The partial file or folder of `path` that ends in `suffix`, beside it: `name<suffix>`, led by a dot on Unix, where that hides it (D277).
+#[must_use]
+pub fn partial_path(path: &Path, suffix: &str) -> PathBuf {
+    let mut name = std::ffi::OsString::from(HIDING_PREFIX);
+    name.push(path.file_name().unwrap_or_default());
+    name.push(suffix);
+    path.with_file_name(name)
 }
 
 /// The finished file whose partial file `path` is ([`part_paths`], [`resume_temp_path`]), or `path` itself when it is none.
@@ -283,22 +296,27 @@ pub fn finished_path_of(path: &Path) -> PathBuf {
     else {
         return path.to_path_buf();
     };
-    let state_temp = format!("{STATE_EXT}.tmp");
+    let state_temp = format!("{STATE_EXT}{TEMP_EXT}");
+    let Some(ext) = [PART_EXT, STATE_EXT, state_temp.as_str()]
+        .into_iter()
+        .find(|ext| name.len() > HIDING_PREFIX.len() + ext.len() && name.ends_with(ext))
+    else {
+        return path.to_path_buf();
+    };
+    if !name.starts_with(HIDING_PREFIX) {
+        return path.to_path_buf();
+    }
     // Cut from the whole path, which keeps its separators as they were written.
-    [PART_EXT, STATE_EXT, state_temp.as_str()]
-        .iter()
-        .find(|ext| name.len() > ext.len() && name.ends_with(*ext))
-        .map_or_else(
-            || path.to_path_buf(),
-            |ext| PathBuf::from(&whole[..whole.len() - ext.len()]),
-        )
+    let folder = &whole[..whole.len() - name.len()];
+    let finished = &name[HIDING_PREFIX.len()..name.len() - ext.len()];
+    PathBuf::from(format!("{folder}{finished}"))
 }
 
 /// The temporary file a save of the resume file at `state` writes first. A kill during a save leaves it; a later save replaces it.
 #[must_use]
 pub fn resume_temp_path(state: &Path) -> PathBuf {
     let mut temp = state.as_os_str().to_owned();
-    temp.push(".tmp");
+    temp.push(TEMP_EXT);
     PathBuf::from(temp)
 }
 
@@ -649,8 +667,16 @@ mod tests {
     fn a_move_passes_over_files_and_downloads_in_progress() {
         let dir = wirecatch_test_support::private_dir("move-skip").unwrap();
         std::fs::write(dir.join("f.zip"), b"theirs").unwrap();
-        std::fs::write(dir.join("f (1).zip.wcpart"), b"x").unwrap();
-        std::fs::write(dir.join("f (2).zip.wcstate"), b"x").unwrap();
+        std::fs::write(
+            crate::naming::partial_path(&dir.join("f (1).zip"), crate::PART_EXT),
+            b"x",
+        )
+        .unwrap();
+        std::fs::write(
+            crate::naming::partial_path(&dir.join("f (2).zip"), crate::STATE_EXT),
+            b"x",
+        )
+        .unwrap();
         let from = finished(&dir, "from", "mine");
         let moved = move_to_free_name(&from, &dir, "f.zip").unwrap();
         assert_eq!(moved, dir.join("f (3).zip"));
@@ -733,12 +759,19 @@ mod tests {
     #[test]
     fn a_taken_name_at_the_limit_is_numbered_within_it() {
         let dir = wirecatch_test_support::private_dir("move-long-taken").unwrap();
-        let name = format!("{}n.mkv", "ж".repeat(121));
+        // One byte short of the limit in two-byte letters, so the cut must keep a letter whole.
+        let letters = (MAX_NAME_BYTES - ".mkv".len()) / 2;
+        let name = format!(
+            "{}{}.mkv",
+            "ж".repeat(letters),
+            "n".repeat((MAX_NAME_BYTES - 4) % 2)
+        );
         assert_eq!(name.len(), MAX_NAME_BYTES);
         std::fs::write(dir.join(&name), b"theirs").unwrap();
         let from = finished(&dir, "from", "mine");
         let moved = move_to_free_name(&from, &dir, &name).unwrap();
-        assert_eq!(moved, dir.join(format!("{} (1).mkv", "ж".repeat(119))));
+        let kept = (MAX_NAME_BYTES - " (1).mkv".len()) / 2;
+        assert_eq!(moved, dir.join(format!("{} (1).mkv", "ж".repeat(kept))));
         assert_eq!(std::fs::read(&moved).unwrap(), b"mine");
         assert_eq!(std::fs::read(dir.join(&name)).unwrap(), b"theirs");
         dir.remove().unwrap();
@@ -795,6 +828,18 @@ mod tests {
             proptest::prop_assert!((1..=SANITIZED_NAME_BYTES).contains(&safe.len()));
             proptest::prop_assert!(is_safe_name(&safe), "{:?}", safe);
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn partial_files_are_led_by_a_dot_where_that_hides_them() {
+        let (part, state) = part_paths(Path::new("/d/movie.mkv"));
+        assert_eq!(part, Path::new("/d/.movie.mkv.wcpart"));
+        assert_eq!(state, Path::new("/d/.movie.mkv.wcstate"));
+        assert_eq!(
+            finished_path_of(Path::new("/d/movie.mkv.wcpart")),
+            Path::new("/d/movie.mkv.wcpart")
+        );
     }
 
     #[test]
