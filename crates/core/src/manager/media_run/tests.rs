@@ -685,6 +685,20 @@ async fn a_work_folder_keeps_its_parts_only_for_its_own_link() {
     assert!(work.is_dir());
 }
 
+/// The work folder is hidden, also one an older build left on show.
+#[cfg(windows)]
+#[tokio::test]
+async fn a_work_folder_is_hidden() {
+    let dir = tempfile::tempdir().unwrap();
+    let work = dir.path().join("Clip.mp4.wcmedia");
+    let link = Url::parse("https://example.com/v").unwrap();
+    workdir::claim_for_link(&work, &link).await.unwrap();
+    assert!(wirecatch_test_support::is_hidden(&work));
+    wirecatch_engine::naming::set_hidden(&work, false);
+    workdir::claim_for_link(&work, &link).await.unwrap();
+    assert!(wirecatch_test_support::is_hidden(&work));
+}
+
 /// A folder that names no link, as one a crash left early, belongs to no one.
 #[tokio::test]
 async fn a_work_folder_that_names_no_link_is_cleared() {

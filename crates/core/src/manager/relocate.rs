@@ -599,7 +599,8 @@ type CopyBytes<'a> = dyn Fn(&mut std::fs::File, &mut std::fs::File) -> io::Resul
 /// Copies `from` under a temporary name beside `to` and renames it there when whole, so a file under the final name is always a whole one, even after a kill. When the original cannot be deleted (open in another program, say), the copy goes again, so the file is never left in two places.
 fn move_by_copy(from: &Path, to: &Path, copy_bytes: &CopyBytes<'_>) -> io::Result<()> {
     let mut source = std::fs::File::open(from)?;
-    let (staged, mut copy) = create_staged(to)?;
+    let hidden = wirecatch_engine::naming::is_hidden(from);
+    let (staged, mut copy) = create_staged(to, hidden)?;
     let whole = copy_bytes(&mut source, &mut copy)
         .and_then(|()| copy.sync_all())
         .and_then(|()| {
@@ -616,16 +617,18 @@ fn move_by_copy(from: &Path, to: &Path, copy_bytes: &CopyBytes<'_>) -> io::Resul
 }
 
 /// A new temporary file in the folder of `to`. Short, so a name near the system's limit still moves, and its own, so two moves to one folder never share it.
-fn create_staged(to: &Path) -> io::Result<(PathBuf, std::fs::File)> {
+/// `hidden` as the original is, since a copy is a new file (D277).
+fn create_staged(to: &Path, hidden: bool) -> io::Result<(PathBuf, std::fs::File)> {
     let dir = to.parent().unwrap_or(Path::new(""));
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    if hidden {
+        wirecatch_engine::naming::created_hidden(&mut options);
+    }
     let mut n = 0u64;
     loop {
         let staged = dir.join(format!("{STAGED_PREFIX}{n}"));
-        match std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&staged)
-        {
+        match options.open(&staged) {
             Ok(file) => return Ok((staged, file)),
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => n += 1,
             Err(e) => return Err(e),
@@ -742,8 +745,8 @@ mod tests {
     fn two_copies_to_one_folder_each_get_their_own_temporary_file() {
         let dir = tempfile::tempdir().unwrap();
         let to = dir.path().join("b.zip");
-        let (one, _held) = create_staged(&to).unwrap();
-        let (two, _also_held) = create_staged(&to).unwrap();
+        let (one, _held) = create_staged(&to, false).unwrap();
+        let (two, _also_held) = create_staged(&to, false).unwrap();
         assert_ne!(one, two);
     }
 
@@ -778,6 +781,26 @@ mod tests {
             0,
             "probe left behind"
         );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_partial_files_copy_is_hidden_and_a_finished_ones_is_not() {
+        use wirecatch_test_support::is_hidden;
+        let dir = tempfile::tempdir().unwrap();
+        let [part, _] = naming::partial_files(&dir.path().join("a.bin"));
+        let [copied_part, _] = naming::partial_files(&dir.path().join("b.bin"));
+        std::fs::write(&part, b"data").unwrap();
+        wirecatch_engine::naming::set_hidden(&part, true);
+        let copy = |source: &mut std::fs::File, copy: &mut std::fs::File| {
+            io::copy(source, copy).map(|_| ())
+        };
+        move_by_copy(&part, &copied_part, &copy).unwrap();
+        assert!(is_hidden(&copied_part));
+        let (done, copied) = (dir.path().join("c.zip"), dir.path().join("d.zip"));
+        std::fs::write(&done, b"done").unwrap();
+        move_by_copy(&done, &copied, &copy).unwrap();
+        assert!(!is_hidden(&copied));
     }
 
     #[test]

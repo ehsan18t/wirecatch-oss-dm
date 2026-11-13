@@ -63,15 +63,25 @@ async fn clear(work: &Path) -> std::io::Result<()> {
 pub(super) async fn claim_for_link(work: &Path, url: &Url) -> std::io::Result<()> {
     let digest = link_digest(url.as_str());
     let named = work.join(LINK);
-    if tokio::fs::read_to_string(&named)
+    if !tokio::fs::read_to_string(&named)
         .await
         .is_ok_and(|text| text == digest)
     {
-        return Ok(());
+        clear(work).await?;
+        tokio::fs::create_dir_all(work).await?;
+        tokio::fs::write(named, digest).await?;
     }
-    clear(work).await?;
-    tokio::fs::create_dir_all(work).await?;
-    tokio::fs::write(named, digest).await
+    hide(work).await;
+    Ok(())
+}
+
+/// Hides the work folder, also one an older build left on show (D277).
+pub(super) async fn hide(work: &Path) {
+    let work = work.to_path_buf();
+    let hiding = move || wirecatch_engine::naming::set_hidden(&work, true);
+    if let Err(error) = tokio::task::spawn_blocking(hiding).await {
+        tracing::debug!(%error, "could not hide a work folder");
+    }
 }
 
 /// Whose a stream's segments are: the link's site and port. A refreshed stream keeps them on any host of the site, while another site serving the same paths never takes them.

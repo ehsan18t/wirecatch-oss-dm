@@ -138,11 +138,11 @@ impl Manager {
             .parent()
             .map_or(Ok(()), std::fs::create_dir_all)
             .and_then(|()| {
-                std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&part)
-                    .map(drop)
+                wirecatch_engine::naming::created_hidden(
+                    std::fs::OpenOptions::new().create(true).append(true),
+                )
+                .open(&part)
+                .map(drop)
             });
         let mut guard = self.lock();
         let state = &mut *guard;
