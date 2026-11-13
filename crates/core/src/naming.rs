@@ -456,7 +456,7 @@ mod tests {
     fn unique_path_skips_disk_and_claimed_names() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("a.zip"), b"x").unwrap();
-        std::fs::write(dir.path().join("a (1).zip.wcpart"), b"x").unwrap();
+        std::fs::write(&partial_files(&dir.path().join("a (1).zip"))[0], b"x").unwrap();
         let mut claimed = Claimed::default();
         claimed.insert(&dir.path().join("a (2).zip"), DownloadId(1));
         assert_eq!(

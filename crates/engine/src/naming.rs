@@ -14,10 +14,12 @@ pub use crate::storage::{created_hidden, is_hidden, set_hidden};
 /// Most bytes in one file name on Linux (`NAME_MAX`). Windows counts 255
 /// UTF-16 units instead, which a name of at most 255 bytes never exceeds.
 const SYSTEM_NAME_BYTES: usize = 255;
-/// Most bytes in a name the engine takes: its part and resume files, named
-/// after it, fit too.
+/// Most bytes in a name the engine takes: its partial files, named after it, fit too. The
+/// longest is the resume file's temporary copy.
 const MAX_NAME_BYTES: usize =
-    SYSTEM_NAME_BYTES - HIDING_PREFIX.len() - longer(PART_EXT, STATE_EXT).len();
+    SYSTEM_NAME_BYTES - HIDING_PREFIX.len() - longer(PART_EXT, STATE_EXT).len() - TEMP_EXT.len();
+/// Ends the resume file's temporary copy ([`resume_temp_path`]).
+const TEMP_EXT: &str = ".tmp";
 /// Leads a partial file's name where a leading dot is what hides a file (D277).
 const HIDING_PREFIX: &str = if cfg!(unix) { "." } else { "" };
 /// Most bytes [`sanitize`] leaves, short of [`MAX_NAME_BYTES`] by room for
@@ -294,7 +296,7 @@ pub fn finished_path_of(path: &Path) -> PathBuf {
     else {
         return path.to_path_buf();
     };
-    let state_temp = format!("{STATE_EXT}.tmp");
+    let state_temp = format!("{STATE_EXT}{TEMP_EXT}");
     let Some(ext) = [PART_EXT, STATE_EXT, state_temp.as_str()]
         .into_iter()
         .find(|ext| name.len() > HIDING_PREFIX.len() + ext.len() && name.ends_with(ext))
@@ -314,7 +316,7 @@ pub fn finished_path_of(path: &Path) -> PathBuf {
 #[must_use]
 pub fn resume_temp_path(state: &Path) -> PathBuf {
     let mut temp = state.as_os_str().to_owned();
-    temp.push(".tmp");
+    temp.push(TEMP_EXT);
     PathBuf::from(temp)
 }
 
@@ -757,12 +759,19 @@ mod tests {
     #[test]
     fn a_taken_name_at_the_limit_is_numbered_within_it() {
         let dir = wirecatch_test_support::private_dir("move-long-taken").unwrap();
-        let name = format!("{}n.mkv", "ж".repeat(121));
+        // One byte short of the limit in two-byte letters, so the cut must keep a letter whole.
+        let letters = (MAX_NAME_BYTES - ".mkv".len()) / 2;
+        let name = format!(
+            "{}{}.mkv",
+            "ж".repeat(letters),
+            "n".repeat((MAX_NAME_BYTES - 4) % 2)
+        );
         assert_eq!(name.len(), MAX_NAME_BYTES);
         std::fs::write(dir.join(&name), b"theirs").unwrap();
         let from = finished(&dir, "from", "mine");
         let moved = move_to_free_name(&from, &dir, &name).unwrap();
-        assert_eq!(moved, dir.join(format!("{} (1).mkv", "ж".repeat(119))));
+        let kept = (MAX_NAME_BYTES - " (1).mkv".len()) / 2;
+        assert_eq!(moved, dir.join(format!("{} (1).mkv", "ж".repeat(kept))));
         assert_eq!(std::fs::read(&moved).unwrap(), b"mine");
         assert_eq!(std::fs::read(dir.join(&name)).unwrap(), b"theirs");
         dir.remove().unwrap();

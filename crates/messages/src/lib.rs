@@ -910,24 +910,32 @@ mod tests {
 
     #[test]
     fn a_disk_error_says_what_failed_with_which_file() {
+        let done = Path::new("/downloads").join("f.bin");
+        let (part, _) = wirecatch_engine::naming::part_paths(&done);
         let error = EngineError::Io {
             action: wirecatch_engine::IoAction::Flush,
-            path: "/downloads/f.bin.wcpart".into(),
+            path: part.clone(),
             source: io::ErrorKind::Other.into(),
         };
         let message = describe(&error, Path::new("/downloads"), Worked::Before).message;
         assert_eq!(
             message,
-            "Could not flush the file to the disk (/downloads/f.bin): other error. Check the drive, then try again."
+            format!(
+                "Could not flush the file to the disk ({}): other error. Check the drive, then try again.",
+                done.display()
+            )
         );
         let resize = EngineError::Io {
             action: wirecatch_engine::IoAction::Resize,
-            path: "/downloads/f.bin.wcpart".into(),
+            path: part,
             source: io::ErrorKind::Other.into(),
         };
         let message = describe(&resize, Path::new("/downloads"), Worked::Before).message;
         assert!(
-            message.starts_with("Could not set the size of the file (/downloads/f.bin)"),
+            message.starts_with(&format!(
+                "Could not set the size of the file ({})",
+                done.display()
+            )),
             "{message}"
         );
     }
