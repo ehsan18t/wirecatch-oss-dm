@@ -9,7 +9,7 @@ use url::Url;
 
 use crate::storage::{self, PART_EXT, STATE_EXT};
 
-pub use crate::storage::{created_hidden, set_hidden};
+pub use crate::storage::{created_hidden, is_hidden, set_hidden};
 
 /// Most bytes in one file name on Linux (`NAME_MAX`). Windows counts 255
 /// UTF-16 units instead, which a name of at most 255 bytes never exceeds.

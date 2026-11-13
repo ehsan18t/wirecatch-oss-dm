@@ -53,6 +53,24 @@ pub fn set_hidden(path: &Path, hidden: bool) {
     let _ = (path, hidden);
 }
 
+/// Whether a file manager hides `path` by default: the hidden attribute on Windows, a leading dot elsewhere.
+#[must_use]
+pub fn is_hidden(path: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt as _;
+        std::fs::symlink_metadata(path).is_ok_and(|meta| {
+            meta.file_attributes() & windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_HIDDEN
+                != 0
+        })
+    }
+    #[cfg(not(windows))]
+    {
+        path.file_name()
+            .is_some_and(|name| name.as_encoded_bytes().starts_with(b"."))
+    }
+}
+
 /// Reserves `total` bytes for a new, empty part file at `path` if the size is known, or fails with [`io::ErrorKind::StorageFull`] when the disk does not have them: a sparse file reserves nothing, so the download would only find out when the disk is full.
 pub(crate) fn size_part(path: &Path, file: &File, total: Option<u64>) -> io::Result<()> {
     let Some(len) = total else {

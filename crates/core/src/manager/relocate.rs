@@ -599,7 +599,8 @@ type CopyBytes<'a> = dyn Fn(&mut std::fs::File, &mut std::fs::File) -> io::Resul
 /// Copies `from` under a temporary name beside `to` and renames it there when whole, so a file under the final name is always a whole one, even after a kill. When the original cannot be deleted (open in another program, say), the copy goes again, so the file is never left in two places.
 fn move_by_copy(from: &Path, to: &Path, copy_bytes: &CopyBytes<'_>) -> io::Result<()> {
     let mut source = std::fs::File::open(from)?;
-    let (staged, mut copy) = create_staged(to)?;
+    let hidden = wirecatch_engine::naming::is_hidden(from);
+    let (staged, mut copy) = create_staged(to, hidden)?;
     let whole = copy_bytes(&mut source, &mut copy)
         .and_then(|()| copy.sync_all())
         .and_then(|()| {
@@ -616,12 +617,12 @@ fn move_by_copy(from: &Path, to: &Path, copy_bytes: &CopyBytes<'_>) -> io::Resul
 }
 
 /// A new temporary file in the folder of `to`. Short, so a name near the system's limit still moves, and its own, so two moves to one folder never share it.
-fn create_staged(to: &Path) -> io::Result<(PathBuf, std::fs::File)> {
+/// `hidden` as the original is, since a copy is a new file (D277).
+fn create_staged(to: &Path, hidden: bool) -> io::Result<(PathBuf, std::fs::File)> {
     let dir = to.parent().unwrap_or(Path::new(""));
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
-    // A copy is a new file: a partial file's is hidden as the original is (D277).
-    if wirecatch_engine::naming::finished_path_of(to) != to {
+    if hidden {
         wirecatch_engine::naming::created_hidden(&mut options);
     }
     let mut n = 0u64;
@@ -744,8 +745,8 @@ mod tests {
     fn two_copies_to_one_folder_each_get_their_own_temporary_file() {
         let dir = tempfile::tempdir().unwrap();
         let to = dir.path().join("b.zip");
-        let (one, _held) = create_staged(&to).unwrap();
-        let (two, _also_held) = create_staged(&to).unwrap();
+        let (one, _held) = create_staged(&to, false).unwrap();
+        let (two, _also_held) = create_staged(&to, false).unwrap();
         assert_ne!(one, two);
     }
 
