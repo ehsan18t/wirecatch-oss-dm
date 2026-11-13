@@ -475,7 +475,7 @@ pub(super) fn mark_cancelled(entry: &mut Entry) {
 
 /// A run that got an answer, or a download that had data from an earlier run, had a link that worked. Only data a next run can continue from is worth promising.
 fn worked_before(answered: bool, done: u64, next_run: NextRun) -> Worked {
-    if done > 0 && next_run == NextRun::Continues {
+    if done > 0 && next_run != NextRun::StartsOver {
         Worked::Before
     } else if answered || done > 0 {
         Worked::BeforeStartsOver
@@ -605,6 +605,7 @@ fn engine_request(
     } else {
         ExistingFile::Refuse
     };
+    request.data_complete = entry.next_run == NextRun::Finishes;
     request.options = headers::download_options(entry.chosen_by.private_network(), policy.proxy);
     let options = &mut request.options;
     options.connections = policy.connections;

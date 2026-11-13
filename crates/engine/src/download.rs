@@ -14,7 +14,7 @@ use crate::checkpoint::{Checkpoints, ResumeSaver};
 use crate::error::{Chain, Error, IoAction, IoContext, REFUSED_LINK_STATUSES, Result};
 use crate::file_work::FileWork;
 use crate::http::{Clients, Validators};
-use crate::net_guard::{PrivateGuard, guard_from, private_guard};
+use crate::net_guard::{Guard, PrivateGuard, guard_from, private_guard};
 use crate::numeric::saturating_cast;
 use crate::options::DownloadOptions;
 use crate::progress::Progress;
@@ -127,6 +127,11 @@ pub struct DownloadRequest {
     /// [`ExistingFile::Refuse`]. A download into [`dest_dir`](Self::dest_dir)
     /// never replaces anything, whatever this says.
     pub if_exists: ExistingFile,
+    /// The caller vouches that the part file at [`exact_path`](Self::exact_path) holds the whole
+    /// file: a run of this link ended with [`Error::TargetTaken`] and the caller moved its part
+    /// and resume files here. A part file the resume file shows complete is then finished without
+    /// asking the server; anything else downloads as usual.
+    pub data_complete: bool,
     /// The download's file work, to wait for after dropping it; see [`FileWork`].
     pub file_work: FileWork,
 }
@@ -168,6 +173,7 @@ impl std::fmt::Debug for DownloadRequest {
             )
             .field("options", &self.options)
             .field("if_exists", &self.if_exists)
+            .field("data_complete", &self.data_complete)
             .field("file_work", &self.file_work)
             .finish()
     }
@@ -184,6 +190,7 @@ impl DownloadRequest {
             resolve_path: None,
             options: DownloadOptions::default(),
             if_exists: ExistingFile::Replace,
+            data_complete: false,
             file_work: FileWork::new(),
         }
     }
@@ -252,6 +259,35 @@ impl Shared {
         };
         segment::request_end(from, to, limit)
     }
+
+    /// Starts showing the download of `target`, with `resumed_from` bytes already there.
+    fn start_progress(&self, target: &Target, resumed_from: u64) {
+        let can_continue = self.request.can_continue();
+        let total = self.request.total;
+        self.progress.start(
+            &target.file,
+            &target.name(),
+            total,
+            resumed_from,
+            can_continue,
+        );
+    }
+}
+
+/// The options of a run through `guard`, whose resolver `clients` then uses.
+fn through_guard(
+    options: &DownloadOptions,
+    clients: &mut Clients,
+    guard: Option<PrivateGuard>,
+) -> (DownloadOptions, Option<Guard>) {
+    let mut options = options.clone();
+    let guard = guard.map(|g| {
+        clients.set_resolver(g.resolver);
+        // QUIC connections would not go through the filtering resolver.
+        options.http3 = false;
+        g.guard
+    });
+    (options, guard)
 }
 
 /// Downloads `request.url` into `request.dest_dir`.
@@ -336,14 +372,14 @@ pub(crate) async fn download_guarded(
     let abandoned = abandonment.flag();
     // What the resume file records and compares: never a password.
     let saved_url = without_password(&request.url).to_string();
+    if request.data_complete
+        && let Some(done) =
+            finish_earlier_run(&request, &saved_url, &progress, &cancel, &abandoned).await?
+    {
+        return Ok(done);
+    }
     let complete = complete_earlier_run(&request, &saved_url).await?;
-    let mut opts = request.options.clone();
-    let session_guard = guard.map(|g| {
-        clients.set_resolver(g.resolver);
-        // QUIC connections would not go through the filtering resolver.
-        opts.http3 = false;
-        g.guard
-    });
+    let (opts, session_guard) = through_guard(&request.options, &mut clients, guard);
     let opened = transport::open(&request.url, &opts, &clients, &cancel, session_guard).await;
     if complete.is_some_and(|saved| still_stands(&saved, &opened))
         && let Some(done) =
@@ -401,13 +437,7 @@ pub(crate) async fn download_guarded(
         receiving: worker::Receivers::default(),
         file_work: request.file_work.clone(),
     });
-    shared.progress.start(
-        &target.file,
-        &target.name(),
-        total,
-        resumed_from,
-        shared.request.can_continue(),
-    );
+    shared.start_progress(&target, resumed_from);
     let saver = first_save(&shared, saved_url, &target, validators, &abandoned).await?;
 
     let first = first_work(&shared, resumed, &mut connection, body).await;
