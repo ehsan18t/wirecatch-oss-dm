@@ -210,6 +210,44 @@ async fn another_links_complete_part_file_is_not_finished_as_this_download() {
     dir.remove().unwrap();
 }
 
+/// Data the caller vouches for finishes without a request, whatever the server would say.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn vouched_complete_data_finishes_without_the_server() {
+    let server = TestServer::start(test_data(KIB_USIZE), Config::default()).await;
+    let dir = private_dir("vouched-complete").unwrap();
+    let path = dir.join("f.bin");
+    let url = server.url("f.bin");
+    left_complete(&dir, &complete_run(url.as_str(), KIB_USIZE), &server.data).unwrap();
+    server.configure(|c| c.refuse_paths = vec![("/f.bin".into(), 500)]);
+
+    let mut req = request(&server, "f.bin", &dir, 1);
+    req.exact_path = Some(path.clone());
+    req.data_complete = true;
+    run(req).await.unwrap();
+
+    assert_eq!(std::fs::read(&path).unwrap(), server.data);
+    assert!(server.seen_at("/f.bin").is_empty(), "asked the server");
+    dir.remove().unwrap();
+}
+
+/// Vouching covers only this link's whole data: another link's is downloaded over as usual.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn vouching_for_another_links_data_downloads_as_usual() {
+    let server = TestServer::start(test_data(KIB_USIZE), Config::default()).await;
+    let dir = private_dir("vouched-other").unwrap();
+    let path = dir.join("f.bin");
+    let run_of_other = complete_run("https://other.example/f.bin", KIB_USIZE);
+    left_complete(&dir, &run_of_other, &vec![0; KIB_USIZE]).unwrap();
+
+    let mut req = request(&server, "f.bin", &dir, 1);
+    req.exact_path = Some(path.clone());
+    req.data_complete = true;
+    run(req).await.unwrap();
+
+    assert_eq!(std::fs::read(&path).unwrap(), server.data);
+    dir.remove().unwrap();
+}
+
 /// The server says the file is another now: what the earlier run kept is not it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_complete_part_file_of_a_changed_file_is_fetched_again() {

@@ -127,10 +127,9 @@ pub struct DownloadRequest {
     /// [`ExistingFile::Refuse`]. A download into [`dest_dir`](Self::dest_dir)
     /// never replaces anything, whatever this says.
     pub if_exists: ExistingFile,
-    /// The caller vouches that the part file at [`exact_path`](Self::exact_path) holds the whole
-    /// file: a run of this link ended with [`Error::TargetTaken`] and the caller moved its part
-    /// and resume files here. A part file the resume file shows complete is then finished without
-    /// asking the server; anything else downloads as usual.
+    /// The caller vouches that the part file at [`exact_path`](Self::exact_path), moved there after
+    /// [`Error::TargetTaken`], holds the whole file: one this link's resume file shows complete is
+    /// finished without asking the server. Anything else downloads as usual.
     pub data_complete: bool,
     /// The download's file work, to wait for after dropping it; see [`FileWork`].
     pub file_work: FileWork,

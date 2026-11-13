@@ -419,11 +419,12 @@ fn take_reading(entry: &mut Entry, gauge: &Gauge) -> Worked {
     if reading.answered {
         entry.row.done = reading.done;
         entry.row.total = reading.total;
-        entry.next_run = if gauge.can_continue() {
-            NextRun::Continues
-        } else {
-            NextRun::StartsOver
-        };
+        entry.next_run = next_run_after(
+            entry.next_run,
+            gauge.can_continue(),
+            reading.done,
+            reading.total,
+        );
     }
     let worked = worked_before(reading.answered, entry.row.done, entry.next_run);
     entry.clear_live_fields();
@@ -471,6 +472,22 @@ pub(super) fn mark_cancelled(entry: &mut Entry) {
     entry.naming.writing = false;
     entry.row.error = None;
     entry.row.done = 0;
+}
+
+/// What a download's next run does after a run that showed `done` of `total` bytes. A run that finishes proven data asks the server nothing, so one that fails with the data still whole keeps it (D278).
+pub(super) fn next_run_after(
+    before: NextRun,
+    can_continue: bool,
+    done: u64,
+    total: Option<u64>,
+) -> NextRun {
+    if before == NextRun::Finishes && total == Some(done) {
+        NextRun::Finishes
+    } else if can_continue {
+        NextRun::Continues
+    } else {
+        NextRun::StartsOver
+    }
 }
 
 /// A run that got an answer, or a download that had data from an earlier run, had a link that worked. Only data a next run can continue from is worth promising.

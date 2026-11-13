@@ -1950,3 +1950,26 @@ fn a_download_added_paused_starts_rather_than_resumes() {
         .collect();
     assert_eq!(events, [Started]);
 }
+
+/// A failed finish of proven data keeps it proven; any other run's reading decides (D278).
+#[test]
+fn a_failed_finish_of_whole_data_still_finishes_next() {
+    use super::run::next_run_after;
+    use super::state::NextRun;
+    assert_eq!(
+        next_run_after(NextRun::Finishes, true, 8, Some(8)),
+        NextRun::Finishes
+    );
+    assert_eq!(
+        next_run_after(NextRun::Finishes, true, 3, Some(8)),
+        NextRun::Continues
+    );
+    assert_eq!(
+        next_run_after(NextRun::Continues, true, 8, Some(8)),
+        NextRun::Continues
+    );
+    assert_eq!(
+        next_run_after(NextRun::Finishes, false, 3, None),
+        NextRun::StartsOver
+    );
+}
