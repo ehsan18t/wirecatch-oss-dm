@@ -115,7 +115,13 @@ impl ResumeState {
         let write = || -> io::Result<()> {
             let json = serde_json::to_vec(self).map_err(io::Error::other)?;
             {
-                let mut file = File::create(&tmp)?;
+                let mut file = crate::storage::created_hidden(
+                    std::fs::OpenOptions::new()
+                        .write(true)
+                        .create(true)
+                        .truncate(true),
+                )
+                .open(&tmp)?;
                 file.write_all(&json)?;
                 file.sync_data()?;
             }
@@ -212,6 +218,24 @@ mod tests {
         assert!(!loaded.can_resume(true, Some(101), &v));
         assert!(!loaded.can_resume(true, Some(100), &validators(Some("\"def\""))));
         assert!(!loaded.can_resume(true, Some(100), &validators(None)));
+        dir.remove().unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_hidden_resume_file_and_a_hidden_leftover_are_saved_over() {
+        let dir = wirecatch_test_support::private_dir("state-hidden").unwrap();
+        let path = dir.path().join("f.bin.wcstate");
+        let live = Abandonment::new();
+        let state = ResumeState::new("https://a/f", Some(4), true, &validators(None), vec![]);
+        state.save(&path, &live.flag()).unwrap();
+        assert!(wirecatch_test_support::is_hidden(&path));
+        let leftover = crate::naming::resume_temp_path(&path);
+        std::fs::write(&leftover, b"cut short").unwrap();
+        crate::naming::set_hidden(&leftover, true);
+        state.save(&path, &live.flag()).unwrap();
+        assert!(wirecatch_test_support::is_hidden(&path));
+        assert!(!leftover.exists());
         dir.remove().unwrap();
     }
 
