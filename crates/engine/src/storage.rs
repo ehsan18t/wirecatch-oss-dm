@@ -44,22 +44,13 @@ pub fn created_hidden(options: &mut OpenOptions) -> &mut OpenOptions {
 
 /// Hides the file or folder at `path` from a file manager, or shows it again: the hidden attribute on Windows. Elsewhere nothing. A failure is logged: it costs only the look of the folder, and a network share may refuse the attribute.
 pub fn set_hidden(path: &Path, hidden: bool) {
-    if let Err(e) = try_set_hidden(path, hidden) {
+    #[cfg(windows)]
+    if let Err(e) = windows::set_hidden(path, hidden) {
         let error = crate::error::Chain(&e);
         tracing::debug!(path = %path.display(), hidden, %error, "could not change whether a download's file is hidden");
     }
-}
-
-fn try_set_hidden(path: &Path, hidden: bool) -> io::Result<()> {
-    #[cfg(windows)]
-    {
-        windows::set_hidden(path, hidden)
-    }
     #[cfg(not(windows))]
-    {
-        let _ = (path, hidden);
-        Ok(())
-    }
+    let _ = (path, hidden);
 }
 
 /// Reserves `total` bytes for a new, empty part file at `path` if the size is known, or fails with [`io::ErrorKind::StorageFull`] when the disk does not have them: a sparse file reserves nothing, so the download would only find out when the disk is full.
