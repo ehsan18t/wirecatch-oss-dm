@@ -1802,3 +1802,12 @@ Recorded on 2026-11-13. A running or paused download's part file, resume file an
 6. A video's work folder is hidden when it is made or taken up again; what is inside it needs nothing more. A file moved to another drive is copied into a new file, which takes the original's hidden attribute.
 7. On Linux every partial file and folder is named by `naming::partial_path`, which puts the dot in front, and the length a name may take leaves room for it and for the longest partial name, the resume file's temporary copy. Names without the dot are not taken up again: no release has left any.
 8. Release notes for the next release of `wirecatch-engine`. Changed: the part file, the resume file and its temporary file are hidden while a download runs: the hidden attribute on Windows, a name led by a dot on Linux; names on Windows are unchanged. Added: `naming::set_hidden`, `naming::is_hidden`, `naming::created_hidden`, `naming::partial_path` and `naming::finished_path_of`.
+
+### D278. Data moved off a taken name finishes without the server
+
+Recorded on 2026-11-13. Narrows D156 for one case.
+
+1. When another program takes a download's name while it runs, the run ends with all the data in the part file and core moves the part and resume files to the next free name (D30.7). The next run then finishes them without a request: the run that ended proved them whole, so an expired link or a network that went down costs nothing.
+2. Core keeps this as the download's next run (`NextRun::Finishes`), saved with it, so a quit before that run changes nothing. A run that fails with the data still whole, such as a scanner holding the file at the rename, keeps it; any other run replaces it.
+3. D156 still holds for a complete part file found at the start of any other run.
+4. Release notes for the next release of `wirecatch-engine`. Added: `DownloadRequest::data_complete`, which finishes a complete part file at `exact_path` without asking the server.

@@ -30,6 +30,8 @@ pub enum NextRun {
     Continues,
     /// The server takes no byte ranges or gave no size.
     StartsOver,
+    /// The whole file is in the part file, moved off a name another program took: the run finishes it without asking the server.
+    Finishes,
 }
 
 /// Decisions a download's next run acts on.

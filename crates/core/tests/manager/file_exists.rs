@@ -320,6 +320,31 @@ async fn a_file_saved_meanwhile_is_never_replaced() -> TestResult {
     Ok(())
 }
 
+/// The data under a name taken meanwhile is whole, so it takes the free name without the server.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_name_taken_meanwhile_costs_no_request() -> TestResult {
+    let server = TestServer::start(test_data(64 * KIB_USIZE), ranged()).await;
+    server.hold_bodies_after(16 * KIB);
+    let h = Harness::new().await?;
+    let dir = h.root.path().join("saved");
+    let row = add_into(&h, server.url("report").as_str(), &dir).await?;
+    h.wait_for(row.id, "the first bytes", |r| r.done > 0).await;
+    std::fs::write(dir.join(NAME), b"saved by another program")?;
+    server.configure(|c| c.refuse_paths = vec![("/report".into(), 500)]);
+    let asked = server.seen_at("/report").len();
+    server.release_bodies();
+
+    let done = h.wait_status(row.id, DownloadStatus::Completed).await;
+    assert_eq!(Path::new(&done.path), dir.join("report (1).pdf"));
+    assert_eq!(std::fs::read(&done.path)?, server.data);
+    assert_eq!(
+        server.seen_at("/report").len(),
+        asked,
+        "asked the server again"
+    );
+    Ok(())
+}
+
 /// One question is open on the file, so a second link with that name never reaches its path.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_open_question_keeps_its_path_from_other_downloads() -> TestResult {

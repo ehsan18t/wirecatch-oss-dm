@@ -394,6 +394,7 @@ pub enum AfterCancel {
 impl Entry {
     /// Queued but not started while its files move to another name.
     pub fn held_for_another_name(&mut self) {
+        self.next_run = NextRun::Finishes;
         self.hold.moving(CancellationToken::new());
         self.row.status = DownloadStatus::Queued;
     }
