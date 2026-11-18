@@ -84,7 +84,11 @@ export default defineConfig({
                 id: FIREFOX_EXTENSION_ID,
                 // storage.session, MV3 host permission prompts and data_collection_permissions.
                 strict_min_version: '140.0',
-                data_collection_permissions: { required: ['none'] },
+                // What reaches the app over native messaging (D279): addresses of downloads, pages
+                // and media; their cookies and request headers; and that something was downloaded.
+                data_collection_permissions: {
+                  required: ['browsingActivity', 'websiteContent', 'websiteActivity'],
+                },
               },
             },
           }

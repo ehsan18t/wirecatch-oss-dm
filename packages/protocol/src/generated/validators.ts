@@ -12,8 +12,6 @@ import type { AddonState } from './AddonState';
 import type { AppExceptions } from './AppExceptions';
 import type { AppSettings } from './AppSettings';
 import type { AppSettingsPatch } from './AppSettingsPatch';
-import type { BrowserControls } from './BrowserControls';
-import type { BrowserControlsPatch } from './BrowserControlsPatch';
 import type { BrowserNotice } from './BrowserNotice';
 import type { BrowserRoute } from './BrowserRoute';
 import type { Call } from './Call';
@@ -345,27 +343,6 @@ export function isAppSettingsPatch(value: unknown): value is AppSettingsPatch {
     (value1['proxy'] === undefined || isProxySettings(value1['proxy'])))(value);
 }
 
-/** Whether `value` has the shape of a {@link BrowserControls}; fields it does not name are not checked. */
-export function isBrowserControls(value: unknown): value is BrowserControls {
-  return ((value1: unknown): boolean =>
-    isRecord(value1) &&
-    (typeof value1['global_speed_limit'] === 'number' || value1['global_speed_limit'] === null) &&
-    typeof value1['max_concurrent_downloads'] === 'number' &&
-    isMediaDefaults(value1['media']))(value);
-}
-
-/** Whether `value` has the shape of a {@link BrowserControlsPatch}; fields it does not name are not checked. */
-export function isBrowserControlsPatch(value: unknown): value is BrowserControlsPatch {
-  return ((value1: unknown): boolean =>
-    isRecord(value1) &&
-    (value1['global_speed_limit'] === undefined ||
-      typeof value1['global_speed_limit'] === 'number' ||
-      value1['global_speed_limit'] === null) &&
-    (value1['max_concurrent_downloads'] === undefined ||
-      typeof value1['max_concurrent_downloads'] === 'number') &&
-    (value1['media'] === undefined || isMediaDefaultsPatch(value1['media'])))(value);
-}
-
 /** Whether `value` has the shape of a {@link BrowserNotice}; fields it does not name are not checked. */
 export function isBrowserNotice(value: unknown): value is BrowserNotice {
   return ((value1: unknown): boolean =>
@@ -383,7 +360,9 @@ export function isBrowserRoute(value: unknown): value is BrowserRoute {
   return ((value1: unknown): boolean =>
     isRecord(value1) &&
     typeof value1['private_window'] === 'boolean' &&
-    (value1['private_session'] === undefined || typeof value1['private_session'] === 'string') &&
+    (value1['private_session'] === undefined ||
+      typeof value1['private_session'] === 'string' ||
+      value1['private_session'] === null) &&
     (typeof value1['observed_page'] === 'string' || value1['observed_page'] === null) &&
     (value1['page_redirect_urls'] === undefined ||
       isArrayOf(value1['page_redirect_urls'], (value2: unknown) => typeof value2 === 'string')) &&

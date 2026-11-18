@@ -3,19 +3,18 @@
  * flows run end to end in tests without a browser, a bridge or an app.
  */
 import {
-  applyBrowserControlsPatch,
-  applyExtensionSettingsPatch,
+  DEFAULT_MEDIA_TABLES,
   downloadId,
   MIN_PROTOCOL_VERSION,
   PROTOCOL_VERSION,
   queueId,
   type AddAction,
-  type BrowserControls,
-  type BrowserControlsPatch,
   type Call,
   type Event,
-  type ExtensionSettings,
-  type ExtensionSettingsPatch,
+  type CheckAnswer,
+  type OptionList,
+  type PageOptions,
+  type ShellConfig,
   type Hello,
   type Message,
   type Outcome,
@@ -24,6 +23,7 @@ import {
   type QueueSummary,
   type WithdrawOutcome,
 } from '@wirecatch/protocol';
+import { DEFAULT_OPTIONS } from '@wirecatch/protocol/testing/options';
 import { vi } from 'vitest';
 import { browser } from 'wxt/browser';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
@@ -40,45 +40,55 @@ import type { CachedSettings, SettingsCache } from '../src/lib/cache';
 import type { Channel, Alert } from '../src/lib/popup-port';
 import type { NativePort, NativeTransport } from '../src/lib/native/client';
 
-export const DEFAULT_SETTINGS: ExtensionSettings = {
+/** The values the extension's checks use, as a fresh install has them (D279). */
+export const DEFAULT_SETTINGS: ShellConfig = {
+  revision: { instance: 'fake', counter: 1 },
   capture_enabled: true,
-  ask_before_download: false,
+  private_windows: true,
   show_media_button: true,
   ignored_sites: [],
   capture_extensions: [],
   min_capture_size: 0,
-  default_queue: queueId(1),
+  video_sites: [],
+  media: DEFAULT_MEDIA_TABLES,
 };
 
-/** The app's own settings the popup shows, as a fresh install has them. */
-export const CONTROLS: BrowserControls = {
-  global_speed_limit: null,
-  max_concurrent_downloads: 3,
-  media: {
-    video: {
-      format: 'original',
-      audio_kbps: null,
-      subtitle_languages: [],
-      auto_subtitles: true,
-      subtitles: 'off',
-      unembedded_subtitles: 'files',
-      chapters: false,
-    },
-    audio: {
-      format: 'original',
-      audio_kbps: null,
-      subtitle_languages: [],
-      auto_subtitles: true,
-      subtitles: 'off',
-      unembedded_subtitles: 'files',
-      chapters: false,
-    },
-    ask_each_time: true,
-    remember_choices: true,
-    quality: 'best',
-    fallback: 'lower',
-  },
-};
+/** `config` under the next revision, as the app sends a change. */
+export function nextRevision(config: ShellConfig): ShellConfig {
+  return {
+    ...config,
+    revision: { ...config.revision, counter: config.revision.counter + 1 },
+  };
+}
+
+/** `list` with option `id` holding `value`, as the app sends it after a change. */
+export function withOptionValue(list: OptionList, id: string, value: unknown): OptionList {
+  return {
+    revision: { ...list.revision, counter: list.revision.counter + 1 },
+    groups: list.groups.map((group) => ({
+      ...group,
+      options: group.options.map((option) =>
+        typeof option === 'object' && option !== null && 'id' in option && option.id === id
+          ? { ...option, value }
+          : option,
+      ),
+    })),
+  };
+}
+
+/** How the fake app answers `check_download`. */
+export type CheckBehavior = 'take' | 'hang' | { leave: string } | { cross_site: boolean };
+
+/** The site of an address with its scheme, without a list of public suffixes: enough for the fake's hosts. */
+function fakeSite(address: string | null | undefined): string | null {
+  if (address === null || address === undefined) return null;
+  try {
+    const url = new URL(address);
+    return `${url.protocol}//${url.hostname.split('.').slice(-2).join('.')}`;
+  } catch {
+    return null;
+  }
+}
 
 export const QUEUES: QueueSummary[] = [
   { id: queueId(1), name: 'Main', is_default: true },
@@ -170,9 +180,10 @@ function mayStartApp(hello: Partial<Pick<Hello, 'start_app'>>): boolean {
 
 /** The bridge plus the app, answering the protocol like the real ones would. */
 export class FakeApp implements NativeTransport {
-  settings: ExtensionSettings = { ...DEFAULT_SETTINGS };
-  controls: BrowserControls = structuredClone(CONTROLS);
+  settings: ShellConfig = { ...DEFAULT_SETTINGS };
+  options: OptionList = DEFAULT_OPTIONS;
   queues: QueueSummary[] = QUEUES;
+  checkBehavior: CheckBehavior = 'take';
   /** The protocol versions the app speaks. */
   versions = { oldest: MIN_PROTOCOL_VERSION, newest: PROTOCOL_VERSION };
   /** Whether the app reads `max_protocol_version`; an app from before version ranges reads only `protocol_version`. */
@@ -202,7 +213,7 @@ export class FakeApp implements NativeTransport {
     'withdrawn';
   /** How to answer the withdraw of one handover, over `withdrawBehavior`. */
   readonly withdrawFor = new Map<string, FakeApp['withdrawBehavior']>();
-  /** When set, `update_extension_settings` is refused with this error. */
+  /** When set, `set_option` and `invoke_action` are refused with this error. */
   updateError: ProtocolError | null = null;
   /** Every request received, in order. */
   readonly requests: { id: number; call: Call }[] = [];
@@ -233,15 +244,17 @@ export class FakeApp implements NativeTransport {
   }
 
   /** The app changes its settings on its own (for example in its settings window). */
-  changeSettings(changes: Partial<ExtensionSettings>): void {
-    this.settings = { ...this.settings, ...changes };
-    this.broadcast({ type: 'extension_settings_changed', data: this.settings });
+  changeSettings(changes: Partial<ShellConfig>): void {
+    this.settings = nextRevision({ ...this.settings, ...changes });
+    this.broadcast({ type: 'shell_config_changed', data: this.settings });
+    this.options = { ...this.syncedOptions(), revision: this.settings.revision };
+    this.broadcast({ type: 'options_changed', data: this.options });
   }
 
-  /** The app changes its own settings the popup shows, as in its settings window. */
-  changeControls(patch: BrowserControlsPatch): void {
-    this.controls = applyBrowserControlsPatch(this.controls, patch);
-    this.broadcast({ type: 'browser_controls_changed', data: this.controls });
+  /** The app changes one of the popup's options, as in its settings window. */
+  changeOption(id: string, value: unknown): void {
+    this.options = withOptionValue(this.options, id, value);
+    this.broadcast({ type: 'options_changed', data: this.options });
   }
 
   broadcast(event: Event): void {
@@ -269,8 +282,11 @@ export class FakeApp implements NativeTransport {
       return;
     }
     if (call.method === 'hello') this.greet(call.params, reply);
-    else if (call.method === 'update_extension_settings') this.updateSettings(call.params, reply);
-    else if (call.method === 'update_browser_controls') this.updateControls(call.params, reply);
+    else if (call.method === 'set_option')
+      this.setOption(call.params.id, call.params.change, reply);
+    else if (call.method === 'invoke_action') this.act(call.params.id, call.params.site, reply);
+    else if (call.method === 'page_options') this.page(call.params.host, reply);
+    else if (call.method === 'check_download') this.check(call.params.url, call.params, reply);
     else if (call.method === 'withdraw_download') this.withdraw(call.params.handover_id, reply);
     else if (call.method === 'add_download') this.add(port, { id, call }, reply);
   }
@@ -279,9 +295,10 @@ export class FakeApp implements NativeTransport {
   private plainReply(method: Call['method']): Reply | null {
     const done: Reply = { type: 'done' };
     const replies: Partial<Record<Call['method'], Reply>> = {
-      get_extension_settings: { type: 'extension_settings', data: this.settings },
-      get_browser_controls: { type: 'browser_controls', data: this.controls },
+      get_shell_config: { type: 'shell_config', data: this.settings },
+      get_options: { type: 'options', data: this.syncedOptions() },
       list_queues: { type: 'queues', data: this.queues },
+      private_session_ended: done,
       pause_all: done,
       resume_all: done,
       show_window: done,
@@ -333,24 +350,93 @@ export class FakeApp implements NativeTransport {
     return agreed >= Math.max(oldest, this.versions.oldest) ? agreed : null;
   }
 
-  private updateSettings(patch: ExtensionSettingsPatch, reply: (outcome: Outcome) => void): void {
-    if (this.updateError !== null) {
-      reply({ status: 'err', value: this.updateError });
-      return;
+  /** The options with the values `settings` holds for the ones they share, as the app keeps them alike. */
+  syncedOptions(): OptionList {
+    let list = this.options;
+    for (const [id, value] of Object.entries(this.settings)) {
+      if (id !== 'revision')
+        list = { ...withOptionValue(list, id, value), revision: list.revision };
     }
-    this.settings = applyExtensionSettingsPatch(this.settings, patch);
-    reply({ status: 'ok', value: { type: 'extension_settings', data: this.settings } });
-    this.broadcast({ type: 'extension_settings_changed', data: this.settings });
+    return list;
   }
 
-  private updateControls(patch: BrowserControlsPatch, reply: (outcome: Outcome) => void): void {
-    if (this.updateError !== null) {
-      reply({ status: 'err', value: this.updateError });
-      return;
+  private act(id: string, site: string | null, reply: (outcome: Outcome) => void): void {
+    if (this.updateError === null && site !== null) {
+      const covers = (entry: string): boolean => site === entry || site.endsWith(`.${entry}`);
+      const sites = this.settings.ignored_sites;
+      if (id === 'ignore_site' && !sites.includes(site)) {
+        this.changeSettings({ ignored_sites: [...sites, site.replace(/^www\./, '')] });
+      } else if (id === 'take_site') {
+        this.changeSettings({ ignored_sites: sites.filter((entry) => !covers(entry)) });
+      }
     }
-    this.controls = applyBrowserControlsPatch(this.controls, patch);
-    reply({ status: 'ok', value: { type: 'browser_controls', data: this.controls } });
-    this.broadcast({ type: 'browser_controls_changed', data: this.controls });
+    this.refusedOr(reply, { type: 'done' });
+  }
+
+  private refusedOr(reply: (outcome: Outcome) => void, value: Reply): void {
+    if (this.updateError === null) {
+      reply({ status: 'ok', value });
+    } else {
+      reply({ status: 'err', value: this.updateError });
+    }
+  }
+
+  private setOption(
+    id: string,
+    change: Extract<Call, { method: 'set_option' }>['params']['change'],
+    reply: (outcome: Outcome) => void,
+  ): void {
+    if (this.updateError === null && 'set' in change) {
+      this.options = withOptionValue(this.options, id, change.set);
+      if (id in this.settings) {
+        this.settings = nextRevision({ ...this.settings, [id]: change.set });
+        this.broadcast({ type: 'shell_config_changed', data: this.settings });
+      }
+    }
+    this.refusedOr(reply, { type: 'options', data: this.syncedOptions() });
+    if (this.updateError === null) {
+      this.broadcast({ type: 'options_changed', data: this.syncedOptions() });
+    }
+  }
+
+  private page(host: string, reply: (outcome: Outcome) => void): void {
+    const entry = this.settings.ignored_sites.find(
+      (site) => host === site || host.endsWith(`.${site}`),
+    );
+    const page: PageOptions = {
+      site: entry ?? host.replace(/^www\./, ''),
+      ignored: entry !== undefined,
+    };
+    reply({ status: 'ok', value: { type: 'page_options', data: page } });
+  }
+
+  private check(
+    url: string,
+    params: Extract<Call, { method: 'check_download' }>['params'],
+    reply: (outcome: Outcome) => void,
+  ): void {
+    const behavior = this.checkBehavior;
+    if (behavior === 'hang') return;
+    const request = params.cookie_request;
+    const site = fakeSite(url);
+    const answer: CheckAnswer =
+      typeof behavior === 'object' && 'leave' in behavior
+        ? { decision: 'leave', reason: behavior.leave }
+        : {
+            decision: 'take',
+            cookies: {
+              site,
+              top_level_site: request.navigation ? site : fakeSite(request.top_level),
+              // Another site than the page that asked for it, or than the tab's page, as the app judges it.
+              cross_site:
+                typeof behavior === 'object'
+                  ? behavior.cross_site
+                  : [request.initiator, request.top_level].some(
+                      (page) => page !== null && page !== undefined && fakeSite(page) !== site,
+                    ),
+            },
+          };
+    reply({ status: 'ok', value: { type: 'download_check', data: answer } });
   }
 
   private withdraw(handoverId: string, reply: (outcome: Outcome) => void): void {

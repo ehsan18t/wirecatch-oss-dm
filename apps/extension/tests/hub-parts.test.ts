@@ -1,4 +1,5 @@
 /** The hub's pure parts, tested on their own: timing defaults, menu planning, duplicate matching and its sentences. */
+import { CAPTURE_DEADLINE_MS } from '@wirecatch/protocol';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DownloadState, HandoverResult } from '../src/lib/capture/handover';
 import { DuplicateWatch } from '../src/lib/hub/duplicates';
@@ -34,6 +35,7 @@ describe('hubTiming', () => {
       connectWaitMs: START_WAIT_MS,
       requestTimeoutMs: REQUEST_TIMEOUT_MS,
       withdrawTimeoutMs: WITHDRAW_TIMEOUT_MS,
+      captureDeadlineMs: CAPTURE_DEADLINE_MS,
     });
     expect(hubTiming({ connectWaitMs: undefined, requestTimeoutMs: 50 })).toEqual({
       ...defaults,
@@ -55,7 +57,8 @@ describe('the waits', () => {
     app.addLateMs = REQUEST_TIMEOUT_MS - 1;
     const client = new NativeClient({
       transport: app,
-      hello: () => Promise.resolve({ client: 'extension', client_version: '0.1.0', browser: null }),
+      hello: () =>
+        Promise.resolve({ client: 'extension', client_version: '0.1.0', private_session: null }),
     });
     const settings = new KnownSettings({ cache: new MemoryCache() });
     const calls = new AppCalls(client, hubTiming(), settings, null);

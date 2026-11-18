@@ -1,13 +1,7 @@
 // A scripted background script for the preview page: the pages' real model, fed the snapshot and
 // media list of one sample state, answering every command the way the background would.
-import {
-  applyBrowserControlsPatch,
-  applyExtensionSettingsPatch,
-  queueId,
-  type BrowserControls,
-  type ExtensionSettings,
-  type QueueSummary,
-} from '@wirecatch/protocol';
+import type { OptionList } from '@wirecatch/protocol';
+import { DEFAULT_OPTIONS, LONG_OPTIONS } from '@wirecatch/protocol/testing/options';
 import type { MediaEntry, MediaView } from '../src/lib/media/center';
 import type {
   BackgroundMessage,
@@ -30,7 +24,6 @@ export const SAMPLE_STATES = [
   'no-access',
   'connecting',
   'long',
-  'old-app',
 ] as const;
 export type SampleState = (typeof SAMPLE_STATES)[number];
 
@@ -40,51 +33,6 @@ export const isSampleState = (value: unknown): value is SampleState =>
 /** How long the sample app takes to answer a Download button, so its busy state shows. */
 const SEND_DELAY_MS = 900;
 const MB = 1024 ** 2;
-
-const SETTINGS: ExtensionSettings = {
-  capture_enabled: true,
-  ask_before_download: true,
-  show_media_button: true,
-  private_windows: true,
-  ignored_sites: ['ads.example.org', 'intranet.example.com'],
-  capture_extensions: ['zip', 'exe', 'iso', 'mp4'],
-  min_capture_size: 2 * MB,
-  default_queue: queueId(1),
-};
-
-const CONTROLS: BrowserControls = {
-  global_speed_limit: null,
-  max_concurrent_downloads: 3,
-  media: {
-    video: {
-      format: 'mp4',
-      audio_kbps: null,
-      subtitle_languages: ['en'],
-      auto_subtitles: true,
-      subtitles: 'inside',
-      unembedded_subtitles: 'files',
-      chapters: true,
-    },
-    audio: {
-      format: 'mp3',
-      audio_kbps: 192,
-      subtitle_languages: [],
-      auto_subtitles: true,
-      subtitles: 'off',
-      unembedded_subtitles: 'files',
-      chapters: false,
-    },
-    ask_each_time: true,
-    remember_choices: true,
-    quality: { height: 1080 },
-    fallback: 'lower',
-  },
-};
-
-const QUEUES: QueueSummary[] = [
-  { id: queueId(1), name: 'Main', is_default: true },
-  { id: queueId(2), name: 'Night', is_default: false },
-];
 
 const MEDIA: MediaEntry[] = [
   { key: 'hls:1', kind: 'hls', title: 'Video stream (HLS)', detail: 'cdn.example.com', size: null },
@@ -162,23 +110,6 @@ const LONG_MEDIA: MediaEntry[] = [
   },
 ];
 
-const LONG_QUEUES: QueueSummary[] = [
-  { id: queueId(1), name: 'Main', is_default: true },
-  {
-    id: queueId(2),
-    name: 'Large files overnight, only while on the home network',
-    is_default: false,
-  },
-];
-
-const LONG_SITES = [
-  'objects.githubusercontent.com',
-  'release-assets.downloads.mirror-network.example-university.edu',
-];
-
-/** A speed limit with a decimal, as the "long" state shows it. */
-const LONG_SPEED_LIMIT = 1.5 * MB;
-
 /** The address of the page the "long" popup is opened over. */
 export const LONG_PAGE_URL =
   'https://release-assets.downloads.mirror-network.example-university.edu/x';
@@ -213,7 +144,6 @@ function status(state: SampleState): ConnectionStatus {
     case 'long':
     case 'many':
     case 'no-access':
-    case 'old-app':
       return { state: 'connected', appVersion: '0.1.0' };
   }
 }
@@ -223,24 +153,35 @@ function connected(state: SampleState): boolean {
   return status(state).state === 'connected';
 }
 
+/** The options with capture turned off, as the "capture-off" state shows them. */
+function withCaptureOff(list: OptionList): OptionList {
+  return withValue(list, 'capture_enabled', false);
+}
+
+/** `list` with option `id` holding `value`, as the app sends it after a change. */
+function withValue(list: OptionList, id: string, value: unknown): OptionList {
+  return {
+    ...list,
+    groups: list.groups.map((group) => ({
+      ...group,
+      options: group.options.map((option) =>
+        typeof option === 'object' && option !== null && 'id' in option && option.id === id
+          ? { ...option, value }
+          : option,
+      ),
+    })),
+  };
+}
+
 function snapshot(state: SampleState): Snapshot {
   if (!connected(state)) {
-    return { status: status(state), settings: null, controls: null, queues: [], alerts: [] };
+    return { status: status(state), options: null, privateWindows: true, alerts: [] };
   }
+  const options = state === 'long' ? LONG_OPTIONS : DEFAULT_OPTIONS;
   return {
     status: status(state),
-    settings: {
-      ...SETTINGS,
-      capture_enabled: state !== 'capture-off',
-      ...(state === 'long' ? { ignored_sites: LONG_SITES, default_queue: queueId(2) } : {}),
-    },
-    controls:
-      state === 'old-app'
-        ? null
-        : state === 'long'
-          ? { ...CONTROLS, global_speed_limit: LONG_SPEED_LIMIT }
-          : CONTROLS,
-    queues: state === 'long' ? LONG_QUEUES : QUEUES,
+    options: state === 'capture-off' ? withCaptureOff(options) : options,
+    privateWindows: true,
     alerts: state === 'many' || state === 'long' ? ALERTS : [],
   };
 }
@@ -253,12 +194,8 @@ function media(state: SampleState, tabId: number): MediaView {
 
 /** What the popup shows once the sample app carried out `command`: `shown` itself when nothing changed. */
 function changed(shown: Snapshot, command: PopupCommand): Snapshot {
-  const { settings, controls } = shown;
-  if (command.type === 'update_settings' && settings !== null) {
-    return { ...shown, settings: applyExtensionSettingsPatch(settings, command.patch) };
-  }
-  if (command.type === 'update_controls' && controls !== null) {
-    return { ...shown, controls: applyBrowserControlsPatch(controls, command.patch) };
+  if (command.type === 'set_option' && shown.options !== null && 'set' in command.change) {
+    return { ...shown, options: withValue(shown.options, command.id, command.change.set) };
   }
   if (command.type === 'dismiss_alert') {
     return { ...shown, alerts: shown.alerts.filter((n) => n.id !== command.id) };
@@ -281,6 +218,11 @@ export function sampleModel(state: SampleState): PopupModel {
       setTimeout(() => {
         send({ type: 'result', id, ok: true, message: 'Sent to Wirecatch.' });
       }, SEND_DELAY_MS);
+      return;
+    }
+    if (command.type === 'page_options') {
+      // The sample app ignores no site: the page's own is named.
+      send({ type: 'result', id, ok: true, page: { site: command.host, ignored: false } });
       return;
     }
     if (command.type === 'watch_media') send({ type: 'media', view: media(state, command.tabId) });

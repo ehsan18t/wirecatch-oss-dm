@@ -31,7 +31,6 @@ import { NOTICES_CHECKS } from './gate/notices.mjs';
 import { PATH_TEXT_CHECKS } from './gate/path-text.mjs';
 import { DESKTOP_CRATE, installTools, RUST_CHECKS, toolSpecs } from './gate/rust.mjs';
 import { PRODUCT_NAME_CHECKS } from './gate/product-name.mjs';
-import { SUFFIX_LIST_CHECKS } from './gate/suffix-list.mjs';
 import { TEST_TIMING_CHECKS } from './gate/test-timing.mjs';
 import { TEXT_CHECKS } from './gate/text.mjs';
 
@@ -54,7 +53,6 @@ const CHECKS = {
   ...BROWSER_CHECKS,
   ...TEXT_CHECKS,
   ...COMMIT_CHECKS,
-  ...SUFFIX_LIST_CHECKS,
   ...NOTICES_CHECKS,
   ...ICON_CHECKS,
   ...PATH_TEXT_CHECKS,
@@ -98,10 +96,8 @@ const GROUPS = {
   // Only when publishing a release, never in DEFAULT: the product identity still holds placeholders until the publisher's details are decided (D29). `product` first, so committed generated files are what is checked. Every step that publishes runs this group first.
   publish: ['product', 'product-placeholders'],
   // What the extension's publishing step runs instead of `publish`: the extension alone ships the Public Suffix List, so only its releases wait on the list's age, which needs the registry and changes as the calendar moves (D35).
-  'publish-extension': ['publish', 'suffix-list'],
   // What a release build runs before it builds: the same checks, but a placeholder is only warned about, so installers and store packages can be built and tried before the publisher's details are decided; publishing still refuses them (D49).
   'release-build': ['product', 'product-placeholders-warn'],
-  'release-build-extension': ['release-build', 'suffix-list'],
 };
 
 /** What `node scripts/gate.mjs` runs with no names: every check CI runs. */

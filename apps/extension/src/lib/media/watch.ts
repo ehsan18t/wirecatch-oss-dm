@@ -20,6 +20,8 @@ export interface WatchDeps {
   isPrivateTab: (tabId: number) => Promise<boolean>;
   /** "Work in private windows" (D82). */
   privateWindowsOn: () => Promise<boolean>;
+  /** The same, as far as it is known this moment; unknown counts as off. Without it, a request's `Cookie` header is held until its answer says whether the tab may be watched. */
+  privateWindowsNow?: () => boolean;
   /**
    * Settles once the lists saved by a previous run are restored (`MediaCenter.start`).
    * Responses wait for it, in order, so a navigation that woke the background clears
@@ -72,6 +74,9 @@ export class MediaWatcher {
   /** A request is about to go out (`webRequest.onSendHeaders`): holds its `Cookie` header for its answer. */
   onRequest(request: ObservedRequest): void {
     if (request.tabId < 0) return;
+    // A private tab's header is not read while private windows are off or not known (D279).
+    const fromPrivate = request.incognito ?? this.#private.get(request.tabId) ?? false;
+    if (fromPrivate && this.#deps.privateWindowsNow?.() !== true) return;
     // Sent again after a redirect: the last hop's header is the one its answer came to.
     this.#sent.delete(request.requestId);
     this.#sent.set(request.requestId, sentCookies(request));

@@ -967,6 +967,56 @@ mod tests {
         );
     }
 
+    /// The option lists the extension's tests and preview draw, written by this builder so they
+    /// never drift from it: `WIRECATCH_WRITE_FIXTURES=1 cargo test -p wirecatch-core options`
+    /// writes them again.
+    #[test]
+    fn the_extension_samples_match_the_option_lists() {
+        let revision = || Revision {
+            instance: "sample".into(),
+            counter: 1,
+        };
+        let mut long = wirecatch_settings::default_settings();
+        long.global_speed_limit = Some(3 * MIB / 2);
+        long.media.quality = VideoQuality::Height(1080);
+        long.media.video.subtitles = SubtitleChoice::Inside;
+        long.media.video.subtitle_languages = vec!["en".into(), "pt-br".into()];
+        let long_queues = vec![
+            queues()[0].clone(),
+            QueueSummary {
+                id: wirecatch_protocol::QueueId(2),
+                name: "Videos for the long weekend trip, sorted by who sent them".into(),
+                is_default: false,
+            },
+        ];
+        long.extension.default_queue = wirecatch_protocol::QueueId(2);
+        let lists = json!({
+            "default": wirecatch_protocol::shell::OptionList {
+                revision: revision(),
+                groups: option_groups(&wirecatch_settings::default_settings(), &queues()),
+            },
+            "long": wirecatch_protocol::shell::OptionList {
+                revision: revision(),
+                groups: option_groups(&long, &long_queues),
+            },
+        });
+        let text = format!("{}
+", serde_json::to_string_pretty(&lists).unwrap());
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/protocol/src/options.sample.json");
+        if std::env::var_os("WIRECATCH_WRITE_FIXTURES").is_some() {
+            std::fs::write(&path, &text).unwrap();
+        }
+        let saved = std::fs::read_to_string(&path).unwrap_or_default().replace("
+", "
+");
+        assert!(
+            saved == text,
+            "{} is out of date: run WIRECATCH_WRITE_FIXTURES=1 cargo test -p wirecatch-core options",
+            path.display()
+        );
+    }
+
     #[test]
     fn rates_read_as_the_popup_shows_them() {
         assert_eq!(rate_text(5 * MIB), "5 MB/s");

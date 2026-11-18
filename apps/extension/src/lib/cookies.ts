@@ -1,6 +1,9 @@
-import { isSameSite, type CookieRequest, type NewDownload } from '@wirecatch/protocol';
-import { getDomain } from 'tldts';
-import { parseWebUrl } from './url';
+import {
+  isSameSite,
+  type CookiePlan,
+  type CookieRequest,
+  type NewDownload,
+} from '@wirecatch/protocol';
 
 /** The fields of a `cookies.Cookie` needed to build a `Cookie` header. */
 export interface CookieLike {
@@ -10,12 +13,6 @@ export interface CookieLike {
   sameSite?: string;
   /** Present on partitioned cookies only; `hasCrossSiteAncestor` from Chromium 130. */
   partitionKey?: { topLevelSite?: string; hasCrossSiteAncestor?: boolean };
-}
-
-/** `[{name: "a", value: "1"}, {name: "b", value: "2"}]` becomes `"a=1; b=2"`; no cookies gives null. */
-export function cookieHeader(cookies: readonly CookieLike[]): string | null {
-  if (cookies.length === 0) return null;
-  return cookies.map((c) => (c.name === '' ? c.value : `${c.name}=${c.value}`)).join('; ');
 }
 
 /** The cookie store a request belongs to: Firefox names it (a container, or its private store); Chromium names none, so `private` says which. */
@@ -40,71 +37,6 @@ export interface CookieQuery {
   firstPartyDomain?: string;
 }
 
-/**
- * Both sections of the Public Suffix List: shared hosts such as `myshopify.com` give
- * every customer a site of their own. The list is the one bundled in `tldts`, which
- * must stay current (D35).
- */
-const PSL_OPTIONS = { allowPrivateDomains: true, extractHostname: false } as const;
-
-/**
- * The registrable domain of a host (`www.example.co.uk` gives `example.co.uk`),
- * from the Public Suffix List, as the browser decides what is same-site. IP
- * addresses, single labels, hosts with an empty label and hosts that are a
- * public suffix themselves are their own site.
- */
-export function registrableDomain(host: string): string {
-  const h = host.toLowerCase().replace(/\.+$/, '');
-  if (h.split('.').includes('')) return h;
-  return getDomain(h, PSL_OPTIONS) ?? h;
-}
-
-/** The site of a web address, with its scheme (`https://example.com`), or null for anything else. */
-export function siteOf(url: string | null): string | null {
-  const u = url === null ? null : parseWebUrl(url);
-  if (u === null) return null;
-  return `${u.protocol}//${registrableDomain(u.hostname)}`;
-}
-
-/**
- * True when the browser would treat the request as cross-site: the page that
- * started it, an address it was redirected from, or the tab's page is on another
- * site (scheme included, as Chromium compares them). An unknown starting page
- * counts as cross-site, so a page that hides its address gains nothing by it.
- */
-export function isCrossSite(url: string, context: CookieRequest): boolean {
-  const target = siteOf(url);
-  if (target === null) return true;
-  const initiator = siteOf(context.initiator);
-  if (initiator !== target) return true;
-  const originalUrl = context.original_url ?? null;
-  if (originalUrl !== null && siteOf(originalUrl) !== target) return true;
-  const topLevel = context.top_level ?? null;
-  return topLevel !== null && siteOf(topLevel) !== target;
-}
-
-/**
- * The cookies the browser would send with this request, from what `cookies.getAll`
- * returned for its address. Same-site: all of them. Cross-site: never
- * `SameSite=Strict`; `Lax` (and cookies without the attribute, which Chromium
- * treats as Lax) only for a top-level navigation; `SameSite=None` always. A
- * top-level navigation has no frame above it, so it never gets cookies partitioned
- * for a frame with a cross-site ancestor.
- */
-export function cookiesToSend<T extends CookieLike>(
-  cookies: readonly T[],
-  url: string,
-  context: CookieRequest,
-): T[] {
-  const crossSite = isCrossSite(url, context);
-  return reachedBy(cookies, context).filter((c) => {
-    if (!crossSite) return true;
-    if (c.sameSite === 'strict') return false;
-    if (c.sameSite === 'lax' || c.sameSite === 'unspecified') return context.navigation;
-    return true;
-  });
-}
-
 /** A top-level navigation has no frame above it, so it never gets cookies partitioned for a frame with a cross-site ancestor. */
 function reachedBy<T extends CookieLike>(cookies: readonly T[], request: CookieRequest): T[] {
   return cookies.filter(
@@ -112,28 +44,22 @@ function reachedBy<T extends CookieLike>(cookies: readonly T[], request: CookieR
   );
 }
 
-/**
- * What a download takes of the browser's cookies (D112): the header picked here, for an app
- * before protocol version 2, and the cookies the request can reach with the request itself, for
- * a newer app to pick from with its own Public Suffix List.
- */
+/** The cookies sent with a download: the browser's whole jar for its address, from which the app picks with its own Public Suffix List (D112, D279). `cookies`, the header itself, goes only with media whose own request was seen. */
 export type DownloadCookies = Pick<NewDownload, 'cookies' | 'cookie_jar'>;
 
 export const NO_COOKIES: DownloadCookies = { cookies: null };
 
 export function downloadCookies(
   cookies: readonly CookieLike[],
-  url: string,
   request: CookieRequest,
 ): DownloadCookies {
-  const reached = reachedBy(cookies, request);
   return {
-    cookies: cookieHeader(cookiesToSend(reached, url, request)),
+    cookies: null,
     cookie_jar: {
-      cookies: reached.map((c) => ({
+      cookies: reachedBy(cookies, request).map((c) => ({
         name: c.name,
         value: c.value,
-        // Kept as SameSite=None, as `cookiesToSend` keeps it: the app reads no other value.
+        // Kept as SameSite=None: the app reads no other value for a cookie without the attribute.
         same_site: isSameSite(c.sameSite) ? c.sameSite : 'no_restriction',
       })),
       request,
@@ -169,11 +95,12 @@ export interface StoredCookie extends CookieLike {
 export function cookieReads(
   url: string,
   storeId: string | null,
-  context: CookieRequest,
+  plan: Pick<CookiePlan, 'site' | 'top_level_site'>,
 ): CookieQuery[][] {
   const base: CookieQuery = storeId === null ? { url } : { url, storeId };
-  const site = siteOf(url);
-  const topLevel = context.navigation ? site : siteOf(context.top_level ?? null);
+  // The app names the sites with its own Public Suffix List, so the extension carries none (D279).
+  const site = plan.site;
+  const topLevel = plan.top_level_site;
   const firstParty = topLevel ?? site;
   const firstPartyDomain = firstParty === null ? null : firstParty.replace(/^https?:\/\//, '');
   const read = (query: CookieQuery): CookieQuery[] =>

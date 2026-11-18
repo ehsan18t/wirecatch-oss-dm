@@ -5,7 +5,7 @@ import { installDiagnostics } from '@/lib/diag/install';
 import { fallback } from '@/lib/diag/log';
 import { readDiagnostics } from '@/lib/diag/persist';
 import { diagnosticsReport } from '@/lib/diag/report';
-import { helloFromExtension, sessionArea } from '@/lib/browser/adapters';
+import { browserInfo, sessionArea } from '@/lib/browser/adapters';
 import {
   activeTab,
   connectPage,
@@ -21,11 +21,17 @@ const CHROMIUM_SHORTCUTS = 'chrome://extensions/shortcuts';
 
 async function diagnostics(connection: string): Promise<string> {
   const area = sessionArea();
-  const [identity, entries] = await Promise.all([
-    helloFromExtension(),
+  const [info, entries] = await Promise.all([
+    browserInfo(),
     area ? readDiagnostics(area) : Promise.resolve([]),
   ]);
-  return diagnosticsReport({ identity, connection, now: Date.now(), entries });
+  return diagnosticsReport({
+    version: browser.runtime.getManifest().version,
+    browser: info,
+    connection,
+    now: Date.now(),
+    entries,
+  });
 }
 
 function openShortcuts(): void {
@@ -49,6 +55,7 @@ async function start(): Promise<void> {
     props: {
       model,
       currentUrl: tab.url,
+      privateTab: browser.extension.inIncognitoContext,
       siteAccess,
       requestSiteAccess,
       mediaShortcut: shortcut,

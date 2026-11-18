@@ -64,7 +64,7 @@ async function setup(options: Options = {}): Promise<Setup> {
       Promise.resolve({
         client: 'extension',
         client_version: '0.1.0',
-        browser: null,
+        private_session: null,
       }),
     backoffMs: [60_000],
   });
@@ -84,7 +84,12 @@ async function setup(options: Options = {}): Promise<Setup> {
     alert,
     badge: { set: (text) => void badges.push(text) },
     newHandoverId: () => `h${String((next += 1))}`,
-    timing: { connectWaitMs: 3000, requestTimeoutMs: 5000, withdrawTimeoutMs: 3000 },
+    timing: {
+      connectWaitMs: 3000,
+      requestTimeoutMs: 5000,
+      withdrawTimeoutMs: 3000,
+      captureDeadlineMs: 3000,
+    },
   });
   const started = hub.start();
   if (options.start !== false) {
@@ -156,7 +161,9 @@ describe('handover', () => {
         page_url: 'https://example.com/downloads',
         browser_route: {
           private_window: false,
+          private_session: null,
           observed_page: null,
+          page_redirect_urls: undefined,
           redirect_urls: [],
         },
         suggested_name: 'big.zip',
@@ -166,7 +173,8 @@ describe('handover', () => {
         user_agent: 'TestBrowser/1.0',
         extra_headers: [],
         source: 'browser_download',
-        queue: 1,
+        // The app picks the queue (D279).
+        queue: null,
       },
     ]);
   });
@@ -675,7 +683,7 @@ describe('handover', () => {
         configure: (app) => {
           // Connected, but the app stops answering calls from its first settings request on.
           app.onRequest = (call) => {
-            if (call.method === 'get_extension_settings') app.answers = false;
+            if (call.method === 'get_shell_config') app.answers = false;
           };
         },
       });
@@ -1467,7 +1475,7 @@ describe('context menu', () => {
       frame_url: 'https://example.com/page',
       cookies: 'session=abc',
       source: 'context_menu',
-      queue: 1,
+      queue: null,
     });
     expect(s.cookieCalls).toEqual([
       ['https://example.com/file.iso', { id: 'firefox-container-2', private: false }],

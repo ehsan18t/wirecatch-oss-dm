@@ -1,4 +1,4 @@
-/** The `Cookie` header for a request, read from a browser's cookie store the way each browser answers. */
+/** The cookies read for a request from a browser's cookie store, the way each browser answers, for the sites the app names (D279). */
 import type { CookieRequest } from '@wirecatch/protocol';
 import { describe, expect, it, vi } from 'vitest';
 import { browser } from 'wxt/browser';
@@ -6,9 +6,25 @@ import { cookiesFor } from '../src/lib/browser/adapters';
 import type { CookieQuery, StoredCookie } from '../src/lib/cookies';
 import { NORMAL_STORE, stubCookieStores, stubGetAll } from './fakes';
 
-/** The header picked for an app before protocol version 2. */
-async function header(...args: Parameters<typeof cookiesFor>): Promise<string | null> {
-  return (await cookiesFor(...args)).cookies;
+/** The site of an address as the app names it for these hosts, which have no public suffix of more than one label. */
+function site(address: string | null | undefined): string | null {
+  return address === null || address === undefined ? null : new URL(address).origin;
+}
+
+/** The cookies read for a request, as a header would carry them, with the sites the app would name (D279); null for none. */
+async function header(
+  url: string,
+  store: Parameters<typeof cookiesFor>[1],
+  request: CookieRequest,
+): Promise<string | null> {
+  const plan = {
+    site: site(url),
+    top_level_site: request.navigation ? site(url) : site(request.top_level),
+    cross_site: false,
+  };
+  const jar = (await cookiesFor(url, store, request, plan)).cookie_jar;
+  const read = jar?.cookies.map((c) => `${c.name}=${c.value}`) ?? [];
+  return read.length === 0 ? null : read.join('; ');
 }
 
 const SITE = 'https://downloads.test';

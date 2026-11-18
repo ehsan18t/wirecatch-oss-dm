@@ -17,6 +17,8 @@ export interface ObservedRequest {
   tabId: number;
   /** In Chromium the `Cookie` header is among them only when asked for with `extraHeaders`. */
   requestHeaders?: { name: string; value?: string }[];
+  /** Firefox only: true for requests from private windows. Chromium leaves it out. */
+  incognito?: boolean;
 }
 
 /** The `Cookie` header a request was sent with, or null when it was sent without one. */

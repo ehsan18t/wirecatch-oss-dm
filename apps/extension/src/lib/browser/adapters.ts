@@ -2,9 +2,10 @@
  * The browser APIs the background script hands to the hub and the media center, in
  * the shapes those take, so the logic behind them stays testable without a browser.
  */
-import type { BrowserInfo, CookieRequest } from '@wirecatch/protocol';
+import type { CookiePlan, CookieRequest } from '@wirecatch/protocol';
 import { browser } from 'wxt/browser';
-import { detectBrowser, type Brand } from '../browser-info';
+import { detectBrowser, type Brand, type BrowserInfo } from '../browser-info';
+import type { PrivateSession } from '../private-session';
 import { memoryArea, RETIRED_LOCAL_KEYS, storageCache, type SettingsCache } from '../cache';
 import {
   cookieReads,
@@ -50,7 +51,7 @@ export function isFirefox(): boolean {
   return typeof runtime.getBrowserInfo === 'function';
 }
 
-async function browserInfo(): Promise<BrowserInfo> {
+export async function browserInfo(): Promise<BrowserInfo> {
   const runtime: typeof browser.runtime & FirefoxRuntime = browser.runtime;
   const firefox = runtime.getBrowserInfo
     ? await runtime
@@ -66,12 +67,14 @@ async function browserInfo(): Promise<BrowserInfo> {
   });
 }
 
-/** What this extension says about itself in `hello`. */
-export async function helloFromExtension(): Promise<HelloIdentity> {
+/** What this extension says about itself in `hello`: its version, and the private session while a private window is open (D279). */
+export async function helloFromExtension(
+  session: Pick<PrivateSession, 'current'> | null,
+): Promise<HelloIdentity> {
   return {
     client: 'extension',
     client_version: browser.runtime.getManifest().version,
-    browser: await browserInfo(),
+    private_session: (await session?.current()) ?? null,
   };
 }
 
@@ -80,6 +83,7 @@ export async function cookiesFor(
   url: string,
   store: CookieStore,
   context: CookieRequest,
+  plan: CookiePlan,
 ): Promise<DownloadCookies> {
   const storeId = await storeToRead(store);
   if (storeId === undefined) {
@@ -87,7 +91,7 @@ export async function cookiesFor(
     log.warn('capture', 'Could not find the cookies of the private windows; sending none');
     return NO_COOKIES;
   }
-  const queries = cookieReads(url, storeId, context);
+  const queries = cookieReads(url, storeId, plan);
   const reads = await Promise.all(queries.map(firstAccepted));
   const failures = reads.flatMap((read, i) =>
     'rejected' in read
@@ -110,7 +114,7 @@ export async function cookiesFor(
     }
   }
   const cookies = reads.flatMap((read) => ('cookies' in read ? [read.cookies] : []));
-  return downloadCookies(mergeCookies(cookies), url, context);
+  return downloadCookies(mergeCookies(cookies), context);
 }
 
 /** The store id to read, null for the default store; undefined when a private window's cannot be found. */

@@ -9,20 +9,24 @@ import { MediaCenter } from '../src/lib/media/center';
 import { MediaRegistry } from '../src/lib/media/registry';
 import { NativeClient } from '../src/lib/native/client';
 import { parseUrl } from '../src/lib/url';
-import {
-  DEFAULT_SETTINGS,
-  FakeApp,
-  FakeDownloads,
-  NORMAL_STORE,
-  QUEUES,
-  flush,
-  stubGetAll,
-} from './fakes';
+import { DEFAULT_SETTINGS, FakeApp, FakeDownloads, NORMAL_STORE, flush, stubGetAll } from './fakes';
 import { NO_COOKIES } from '../src/lib/cookies';
 
 /** The header picked for an app before protocol version 2. */
-async function header(...args: Parameters<typeof cookiesFor>): Promise<string | null> {
-  return (await cookiesFor(...args)).cookies;
+/** The cookies read for a request to `a.example`, as a header would carry them; null for none. */
+async function header(
+  url: string,
+  store: Parameters<typeof cookiesFor>[1],
+  request: Parameters<typeof cookiesFor>[2],
+): Promise<string | null> {
+  const plan = {
+    site: 'https://a.example',
+    top_level_site: 'https://a.example',
+    cross_site: false,
+  };
+  const jar = (await cookiesFor(url, store, request, plan)).cookie_jar;
+  const sent = jar?.cookies.map((c) => `${c.name}=${c.value}`) ?? [];
+  return sent.length === 0 ? null : sent.join('; ');
 }
 
 /** The entries made while `run` runs. */
@@ -44,7 +48,8 @@ describe('routed errors', () => {
   it('logs unreadable saved settings and paused downloads, and still starts', async () => {
     const client = new NativeClient({
       transport: new FakeApp(),
-      hello: () => Promise.resolve({ client: 'extension', client_version: '0.1.0', browser: null }),
+      hello: () =>
+        Promise.resolve({ client: 'extension', client_version: '0.1.0', private_session: null }),
       backoffMs: [60_000],
     });
     stopped.push(client);
@@ -71,7 +76,7 @@ describe('routed errors', () => {
       cache: { load: () => Promise.resolve(null), save: failing('quota') },
     });
     const entries = await logged(async () => {
-      settings.refreshed(DEFAULT_SETTINGS, null, QUEUES);
+      settings.adopt(DEFAULT_SETTINGS);
       await Promise.resolve();
     });
     expect(entries).toEqual([

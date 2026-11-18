@@ -232,7 +232,7 @@ async function setup(
       Promise.resolve({
         client: 'extension',
         client_version: '0.1.0',
-        browser: null,
+        private_session: null,
       }),
     backoffMs: [60_000],
   });
@@ -438,6 +438,7 @@ describe('media button messages', () => {
       browser_route: {
         observed_page: 'https://example.com/watch',
         private_window: false,
+        private_session: null,
         redirect_urls: [],
       },
       suggested_name: null,
@@ -447,7 +448,7 @@ describe('media button messages', () => {
       user_agent: 'TestAgent/1.0',
       extra_headers: [],
       source: 'media_button',
-      queue: 1,
+      queue: null,
       media: { kind: 'hls', title: 'A nice video' },
     });
     expect(cookieCalls).toEqual([[HLS.url, { id: null, private: false }]]);

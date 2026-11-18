@@ -1,14 +1,14 @@
-import { isExtensionSettings, type ExtensionSettings } from '@wirecatch/protocol';
+import { isShellConfig, type ShellConfig } from '@wirecatch/protocol';
 import { isUnknown, object } from './validate';
 
 /**
- * The copy of the app's settings the extension keeps for the browser session (D61): read from
+ * The copy of the values the extension's checks use, kept for the browser session (D61, D279): read from
  * the app when it connects, kept in `storage.session` so a background the browser stopped still
  * knows it, and gone when the browser closes. The app is the only store of settings (D5).
  */
 export interface CachedSettings {
-  /** What a download is judged by while the app is still connecting. */
-  settings: ExtensionSettings;
+  /** What a download is judged by before the app answers. */
+  settings: ShellConfig;
   /** The app was closed when last seen, so waking does not start a bridge only to find that out again. */
   appClosed: boolean;
 }
@@ -19,7 +19,7 @@ export interface SettingsCache {
 }
 
 /** Key of the copy of the app's settings kept for the browser session, in `storage.session` (D61). */
-export const CACHE_KEY = 'wirecatch.session.v1';
+export const CACHE_KEY = 'wirecatch.session.v2';
 
 /** What earlier versions kept in `storage.local`: removed when the extension is installed or updated, so nothing of the app's settings outlives the browser session (D61). */
 export const RETIRED_LOCAL_KEYS: readonly string[] = [
@@ -34,7 +34,7 @@ export interface StorageArea {
 }
 
 /** `appClosed` is read leniently: one that does not read counts as false, so waking connects once to find out. */
-const isEntry = object({ settings: isExtensionSettings, appClosed: isUnknown });
+const isEntry = object({ settings: isShellConfig, appClosed: isUnknown });
 
 /** Reads a copy back, or null if it is missing or written in another shape. */
 export function asCachedSettings(value: unknown): CachedSettings | null {

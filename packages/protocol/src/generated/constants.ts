@@ -1489,7 +1489,12 @@ export const CAPTURE_DEADLINE_MS = 12000;
 /**
  * The control kinds an option may name (`shell::kinds`, D279).
  */
-export const OPTION_KINDS: Readonly<Record<string, string>> = {
+export const OPTION_KINDS: Readonly<
+  Record<
+    'toggle' | 'choice' | 'choices' | 'number' | 'limit' | 'action' | 'note' | 'browser',
+    string
+  >
+> = {
   action: 'action',
   browser: 'browser',
   choice: 'choice',
@@ -1508,7 +1513,7 @@ export const BROWSER_ROWS: readonly string[] = ['shortcut', 'page_site'];
 /**
  * The actions the extension's own design runs (`shell::actions`).
  */
-export const SHELL_ACTIONS: Readonly<Record<string, string>> = {
+export const SHELL_ACTIONS: Readonly<Record<'ignore_site' | 'take_site', string>> = {
   ignore_site: 'ignore_site',
   take_site: 'take_site',
 };

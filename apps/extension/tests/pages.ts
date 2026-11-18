@@ -29,7 +29,8 @@ export async function wirePage(
   configure?.(app, cache);
   const client = new NativeClient({
     transport: app,
-    hello: () => Promise.resolve({ client: 'extension', client_version: '0.1.0', browser: null }),
+    hello: () =>
+      Promise.resolve({ client: 'extension', client_version: '0.1.0', private_session: null }),
     backoffMs: [60_000],
   });
   const hub = new Hub({

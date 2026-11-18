@@ -1,13 +1,16 @@
 import { PRODUCT_NAME } from '@wirecatch/product';
-import {
-  takesPrivateWindows,
-  type AddedDownload,
-  type Call,
-  type ExtensionSettings,
-  type NewDownload,
-  type NoticeId,
-  type Reply,
-  type WithdrawOutcome,
+import type {
+  AddedDownload,
+  Call,
+  CheckAnswer,
+  CookiePlan,
+  DownloadCheck,
+  NewDownload,
+  NoticeId,
+  PageOptions,
+  Reply,
+  ShellConfig,
+  WithdrawOutcome,
 } from '@wirecatch/protocol';
 import {
   newDownload,
@@ -16,36 +19,34 @@ import {
   type JudgingSettings,
   type SubmitResult,
 } from '../capture/handover';
+import type { DownloadCookies } from '../cookies';
 import { log } from '../diag/log';
+import { messageOf } from '../errors';
 import type { PopupCommand } from '../popup-port';
-import { RequestError, type NativeClient } from '../native/client';
+import type { NativeClient } from '../native/client';
 import { hubTiming, type HubDeps, type HubTiming } from './deps';
 import { KnownSettings } from './settings';
 
 /** The popup's commands that the app carries out. */
 export type AppCommand = Extract<
   PopupCommand,
-  {
-    type: 'open_settings' | 'pause_all' | 'resume_all' | 'update_settings' | 'update_controls';
-  }
+  { type: 'open_settings' | 'pause_all' | 'resume_all' | 'set_option' | 'invoke_action' }
 >;
 
-/** The popup's commands the background carries out itself; the app carries out the rest (`AppCalls.run`). */
+/** The popup's commands the background carries out itself, or answers with data; the app carries out the rest (`AppCalls.run`). */
 export type LocalCommand = Extract<
   PopupCommand,
-  { type: 'watch_media' | 'download_media' | 'reconnect' | 'dismiss_alert' }
+  { type: 'watch_media' | 'download_media' | 'reconnect' | 'dismiss_alert' | 'page_options' }
 >;
 const LOCAL_COMMANDS: ReadonlySet<PopupCommand['type']> = new Set<LocalCommand['type']>([
   'watch_media',
   'download_media',
   'reconnect',
   'dismiss_alert',
+  'page_options',
 ]);
 export const isLocalCommand = (command: PopupCommand): command is LocalCommand =>
   LOCAL_COMMANDS.has(command.type);
-
-/** The popup's two kinds of settings change. */
-type SettingsUpdate = Extract<AppCommand, { type: 'update_settings' | 'update_controls' }>;
 
 /** The calls the background makes to the app, each with its wait, keeping `KnownSettings` up to date with the answers. */
 export class AppCalls {
@@ -68,6 +69,10 @@ export class AppCalls {
 
   get connected(): boolean {
     return this.#client.status.state === 'connected';
+  }
+
+  get timing(): HubTiming {
+    return this.#timing;
   }
 
   /** The wait for a call that connects first when the app is not connected, which may start it: as long as a hello may take, then `answerMs` for the answer. */
@@ -97,52 +102,92 @@ export class AppCalls {
     return reply.data;
   }
 
-  /** Offers a download from this side (not a browser download) to the app, into its default queue. */
+  /** Offers a download from this side (not a browser download) to the app, which picks its queue. */
   submit(handoverId: string, fields: DownloadFields): Promise<SubmitResult> {
-    return submit(
-      newDownload(handoverId, this.#userAgent, this.#settings.live?.default_queue ?? null, fields),
-      {
-        addDownload: (download) => this.addDownload(download),
-        withdraw: (id) => this.withdraw(id),
-      },
-    );
+    return submit(newDownload(handoverId, this.#userAgent, fields), {
+      addDownload: (download) => this.addDownload(download),
+      withdraw: (id) => this.withdraw(id),
+    });
   }
 
   /**
-   * Asks the app for its settings, connecting (and starting it) first if needed, and
-   * adopts them. Rejects when the app cannot be reached in time; null when it gave
-   * another answer.
+   * Offers something the person picked (the menu, the media button) to the app: first asks
+   * whether it takes it, with no cookies, then reads the cookies for the sites it named and hands
+   * it over (D279). The person acted, so this may start the app.
    */
-  async fetchSettings(): Promise<ExtensionSettings | null> {
-    const reply = await this.#client.request(
-      { method: 'get_extension_settings' },
-      this.#timing.connectWaitMs,
-    );
-    if (reply.type !== 'extension_settings') return null;
+  async submitChecked(
+    handoverId: string,
+    check: DownloadCheck,
+    fields: Omit<DownloadFields, 'cookies' | 'cookie_jar'>,
+    cookies: (plan: CookiePlan) => Promise<DownloadCookies>,
+  ): Promise<SubmitResult> {
+    let answer: CheckAnswer;
+    try {
+      answer = await this.check(check, this.#mayConnect(this.#timing.requestTimeoutMs));
+    } catch (error) {
+      // Nothing with credentials was sent, so the app has nothing to withdraw.
+      return { taken: false, reason: 'no_answer', detail: messageOf(error), uncertain: false };
+    }
+    if (answer.decision === 'leave') {
+      return { taken: false, reason: 'refused', detail: null, uncertain: false };
+    }
+    return this.submit(handoverId, { ...fields, ...(await cookies(answer.cookies)) });
+  }
+
+  /**
+   * Asks the app for the values the extension's checks use, connecting (and starting it) first
+   * if needed, and adopts them. Rejects when the app cannot be reached within `timeoutMs`.
+   */
+  async fetchConfig(timeoutMs = this.#timing.connectWaitMs): Promise<ShellConfig | null> {
+    const reply = await this.#client.request({ method: 'get_shell_config' }, timeoutMs);
+    if (reply.type !== 'shell_config') return null;
     this.#settings.adopt(reply.data);
     return reply.data;
   }
 
-  /** Reads the settings and queues again after connecting; the browser controls too, from an app that has them (D61). */
+  /** Asks whether the app takes a capture, before any cookie is read. Rejects when no answer comes within `timeoutMs`. */
+  async check(check: DownloadCheck, timeoutMs: number): Promise<CheckAnswer> {
+    const reply = await this.#client.request(
+      { method: 'check_download', params: check },
+      timeoutMs,
+    );
+    if (reply.type !== 'download_check') {
+      throw new Error(`${PRODUCT_NAME} gave an unexpected answer.`);
+    }
+    return reply.data;
+  }
+
+  /** Reads the values and the options again after connecting. */
   async refresh(): Promise<void> {
     try {
       const timeout = this.#timing.requestTimeoutMs;
-      const [settings, queues, controls] = await Promise.all([
-        this.#client.request({ method: 'get_extension_settings' }, timeout),
-        this.#client.request({ method: 'list_queues' }, timeout),
-        this.#client.supports('get_browser_controls')
-          ? this.#client.request({ method: 'get_browser_controls' }, timeout)
-          : null,
+      const [config, options] = await Promise.all([
+        this.#client.request({ method: 'get_shell_config' }, timeout),
+        this.#client.request({ method: 'get_options' }, timeout),
       ]);
-      this.#settings.refreshed(
-        settings.type === 'extension_settings' ? settings.data : null,
-        controls?.type === 'browser_controls' ? controls.data : null,
-        queues.type === 'queues' ? queues.data : null,
-      );
+      if (config.type === 'shell_config') this.#settings.adopt(config.data);
+      if (options.type === 'options') this.#settings.adoptOptions(options.data);
     } catch (error) {
       // The status listener already reports a broken connection; a slow answer is retried on the next connection.
-      log.warn('settings', 'Could not refresh the settings and queues', error);
+      log.warn('settings', 'Could not read the options', error);
     }
+  }
+
+  /** What the popup shows about the page on `host`. */
+  async pageOptions(host: string): Promise<PageOptions> {
+    const reply = await this.call({ method: 'page_options', params: { host } });
+    if (reply.type !== 'page_options')
+      throw new Error(`${PRODUCT_NAME} gave an unexpected answer.`);
+    return reply.data;
+  }
+
+  /** Tells a connected app that the private session `id` ended. An app not connected forgets it once no connection names it. */
+  async privateSessionEnded(id: string): Promise<void> {
+    if (!this.connected) return;
+    await this.#client.request(
+      { method: 'private_session_ended', params: { id } },
+      this.#timing.requestTimeoutMs,
+    );
   }
 
   /** Tells the app a note showed (D65). Only while connected: the note came from the app. */
@@ -161,27 +206,12 @@ export class AppCalls {
     );
   }
 
-  /** Shows the app's window. Sent even when the app is closed: a request starts it, and the app then shows its window. */
-  async showWindow(): Promise<void> {
+  /** Shows the app's browser settings (D61), starting the app first like any request. */
+  async showBrowserSettings(): Promise<void> {
     await this.#client.request(
-      { method: 'show_window' },
+      { method: 'show_browser_settings' },
       this.#mayConnect(this.#timing.requestTimeoutMs),
     );
-  }
-
-  /** Shows the app's browser settings (D61), starting the app first like `showWindow`; an app from before them shows its window. */
-  async showBrowserSettings(): Promise<void> {
-    try {
-      await this.#client.request(
-        { method: 'show_browser_settings' },
-        this.#mayConnect(this.#timing.requestTimeoutMs),
-      );
-    } catch (error) {
-      const tooOld =
-        error instanceof RequestError && error.protocolError?.code === 'unsupported_call';
-      if (!tooOld) throw error;
-      await this.showWindow();
-    }
   }
 
   /** Carries out a popup command that the app does. */
@@ -194,21 +224,20 @@ export class AppCalls {
       case 'resume_all':
         await this.call({ method: command.type });
         return;
-      case 'update_settings':
-      case 'update_controls':
-        await this.#update(command);
+      case 'set_option': {
+        const reply = await this.call({
+          method: 'set_option',
+          params: { id: command.id, change: command.change },
+        });
+        if (reply.type === 'options') this.#settings.adoptOptions(reply.data);
         return;
-    }
-  }
-
-  /** A settings change from the popup: the extension's own settings, or the app's it shows (D61). */
-  async #update(change: SettingsUpdate): Promise<void> {
-    if (change.type === 'update_settings') {
-      const reply = await this.call({ method: 'update_extension_settings', params: change.patch });
-      if (reply.type === 'extension_settings') this.#settings.adopt(reply.data);
-    } else {
-      const reply = await this.call({ method: 'update_browser_controls', params: change.patch });
-      if (reply.type === 'browser_controls') this.#settings.adoptControls(reply.data);
+      }
+      case 'invoke_action':
+        await this.call({
+          method: 'invoke_action',
+          params: { id: command.id, site: command.site },
+        });
+        return;
     }
   }
 
@@ -221,35 +250,35 @@ export class AppCalls {
   }
 
   /**
-   * The settings to judge a paused download by: the app's, connecting first if
-   * needed; when the app cannot be reached in time, the session copy (marked as
-   * such, so a "capture off" in it still keeps the download in the browser).
+   * The values to judge a capture by: the app's, connecting first if needed and within
+   * `timeoutMs`; when the app cannot be reached in time, the session copy, marked as such so
+   * nothing is taken on it alone; null when neither is known.
    */
-  async judgingSettings(): Promise<JudgingSettings | null> {
+  async judgingSettings(timeoutMs = this.#timing.connectWaitMs): Promise<JudgingSettings | null> {
     const { live } = this.#settings;
     if (live !== null && this.connected) {
       return { settings: live, fromApp: true };
     }
     try {
-      const settings = await this.fetchSettings();
+      const settings = await this.fetchConfig(timeoutMs);
       if (settings !== null) return { settings, fromApp: true };
     } catch (error) {
       log.warn('settings', 'Could not reach the app; judging by the session copy', error);
     }
-    // Read after the wait: settings that came in meanwhile are the newest copy.
+    // Read after the wait: values that came in meanwhile are the newest copy.
     const { cached } = this.#settings;
     return cached === null ? null : { settings: cached.settings, fromApp: false };
   }
 
-  /** "Work in private windows" (D82). Unknown settings are asked of the app: taken as on, they would let through a private window the person turned off. */
+  /** "Work in private windows" (D82) for something the person did, such as the menu: asked of the app when unknown, which may start it; an app that cannot be reached counts as off. */
   async privateWindowsOn(): Promise<boolean> {
     await this.#settings.ready;
     const settings = this.#settings.known() ?? (await this.judgingSettings())?.settings;
-    return settings === undefined || takesPrivateWindows(settings);
+    return settings?.private_windows === true;
   }
 }
 
-/** The app's settings and the calls to it, which the hub, the media side and the notices share. */
+/** The app's values and the calls to it, which the hub, the media side and the notices share. */
 export interface AppSide {
   settings: KnownSettings;
   app: AppCalls;

@@ -1,0 +1,1341 @@
+{
+  "default": {
+    "groups": [
+      {
+        "folded": false,
+        "id": "capture",
+        "options": [
+          {
+            "disabled": null,
+            "help": "Send downloads from this browser to Wirecatch.",
+            "id": "capture_enabled",
+            "kind": "toggle",
+            "label": "Capture downloads",
+            "value": true
+          },
+          {
+            "disabled": null,
+            "help": "Choose where each file goes before it starts.",
+            "id": "ask_before_download",
+            "kind": "toggle",
+            "label": "Ask before each download",
+            "value": true
+          },
+          {
+            "disabled": null,
+            "help": "Choose a quality for each video. When off, videos use your Video and audio settings.",
+            "id": "ask_each_video",
+            "kind": "toggle",
+            "label": "Ask about each video",
+            "value": true
+          },
+          {
+            "disabled": null,
+            "help": "The browser must also allow Wirecatch there.",
+            "id": "private_windows",
+            "kind": "toggle",
+            "label": "Work in private windows",
+            "value": true
+          },
+          {
+            "browser": "page_site",
+            "disabled": null,
+            "help": null,
+            "id": "page_site",
+            "kind": "browser",
+            "label": "",
+            "value": null
+          }
+        ],
+        "summary": null,
+        "title": null
+      },
+      {
+        "folded": true,
+        "id": "downloads",
+        "options": [
+          {
+            "choices": [
+              {
+                "label": "Main",
+                "value": 1
+              }
+            ],
+            "disabled": null,
+            "help": "Downloads captured from the browser are added to this queue.",
+            "id": "default_queue",
+            "kind": "choice",
+            "label": "Queue for browser downloads",
+            "value": 1
+          },
+          {
+            "decimals": 1,
+            "disabled": null,
+            "help": "Keeps browsing and calls smooth while downloads run.",
+            "id": "global_speed_limit",
+            "kind": "limit",
+            "label": "Global speed limit",
+            "max": null,
+            "min": 0.1,
+            "on_value": 5242880,
+            "scale": 1048576,
+            "step": 0.5,
+            "unit": "MB/s",
+            "value": null
+          },
+          {
+            "decimals": 0,
+            "disabled": null,
+            "help": "Across all queues.",
+            "id": "max_concurrent_downloads",
+            "kind": "number",
+            "label": "Downloads at the same time",
+            "max": 100.0,
+            "min": 1.0,
+            "scale": 1,
+            "step": 1.0,
+            "unit": "",
+            "value": 5
+          }
+        ],
+        "summary": "No speed limit · 5 at once · Main",
+        "title": "Downloads"
+      },
+      {
+        "folded": true,
+        "id": "media",
+        "options": [
+          {
+            "disabled": null,
+            "help": "Adds a small button over video and audio on web pages.",
+            "id": "show_media_button",
+            "kind": "toggle",
+            "label": "Show a download button on videos",
+            "value": true
+          },
+          {
+            "browser": "shortcut",
+            "disabled": null,
+            "help": null,
+            "id": "shortcut",
+            "kind": "browser",
+            "label": "",
+            "value": null
+          },
+          {
+            "choices": [
+              {
+                "label": "Best available",
+                "value": "best"
+              },
+              {
+                "label": "2160p",
+                "value": 2160
+              },
+              {
+                "label": "1440p",
+                "value": 1440
+              },
+              {
+                "label": "1080p",
+                "value": 1080
+              },
+              {
+                "label": "720p",
+                "value": 720
+              },
+              {
+                "label": "480p",
+                "value": 480
+              },
+              {
+                "label": "360p",
+                "value": 360
+              },
+              {
+                "label": "Audio only",
+                "value": "audio_only"
+              }
+            ],
+            "disabled": null,
+            "help": "Used for videos that download without asking, and preselected in the quality window.",
+            "id": "media_quality",
+            "kind": "choice",
+            "label": "Resolution",
+            "value": "best"
+          },
+          {
+            "choices": [
+              {
+                "label": "Original",
+                "value": "original"
+              },
+              {
+                "label": "MP4",
+                "value": "mp4"
+              },
+              {
+                "label": "MKV",
+                "value": "mkv"
+              },
+              {
+                "label": "WebM",
+                "value": "webm"
+              }
+            ],
+            "disabled": null,
+            "help": "Original keeps the site’s format. Other formats convert only when needed.",
+            "id": "video_format",
+            "kind": "choice",
+            "label": "Save videos as",
+            "value": "original"
+          },
+          {
+            "choices": [
+              {
+                "label": "Off",
+                "value": "off"
+              },
+              {
+                "label": "In the video",
+                "value": "inside"
+              },
+              {
+                "label": "Separate files",
+                "value": "files"
+              }
+            ],
+            "disabled": null,
+            "help": "In the video file, where players show them, or as .srt files next to it.",
+            "id": "subtitles",
+            "kind": "choice",
+            "label": "Subtitles",
+            "value": "off"
+          },
+          {
+            "disabled": null,
+            "help": "Adds a video’s chapters to MP4, MKV and WebM files, so players can jump between them.",
+            "id": "chapters",
+            "kind": "toggle",
+            "label": "Add chapters",
+            "value": false
+          },
+          {
+            "choices": [
+              {
+                "label": "Original",
+                "value": "original"
+              },
+              {
+                "label": "MP3",
+                "value": "mp3"
+              },
+              {
+                "label": "M4A",
+                "value": "m4a"
+              },
+              {
+                "label": "Opus",
+                "value": "opus"
+              },
+              {
+                "label": "FLAC",
+                "value": "flac"
+              },
+              {
+                "label": "WAV",
+                "value": "wav"
+              }
+            ],
+            "disabled": null,
+            "help": "Downloaded audio is converted to this format. MP3, M4A and FLAC files include the title, artist and cover art.",
+            "id": "audio_format",
+            "kind": "choice",
+            "label": "Save audio as",
+            "value": "original"
+          }
+        ],
+        "summary": "Best available · Original",
+        "title": "Video and audio"
+      }
+    ],
+    "revision": {
+      "counter": 1,
+      "instance": "sample"
+    }
+  },
+  "long": {
+    "groups": [
+      {
+        "folded": false,
+        "id": "capture",
+        "options": [
+          {
+            "disabled": null,
+            "help": "Send downloads from this browser to Wirecatch.",
+            "id": "capture_enabled",
+            "kind": "toggle",
+            "label": "Capture downloads",
+            "value": true
+          },
+          {
+            "disabled": null,
+            "help": "Choose where each file goes before it starts.",
+            "id": "ask_before_download",
+            "kind": "toggle",
+            "label": "Ask before each download",
+            "value": true
+          },
+          {
+            "disabled": null,
+            "help": "Choose a quality for each video. When off, videos use your Video and audio settings.",
+            "id": "ask_each_video",
+            "kind": "toggle",
+            "label": "Ask about each video",
+            "value": true
+          },
+          {
+            "disabled": null,
+            "help": "The browser must also allow Wirecatch there.",
+            "id": "private_windows",
+            "kind": "toggle",
+            "label": "Work in private windows",
+            "value": true
+          },
+          {
+            "browser": "page_site",
+            "disabled": null,
+            "help": null,
+            "id": "page_site",
+            "kind": "browser",
+            "label": "",
+            "value": null
+          }
+        ],
+        "summary": null,
+        "title": null
+      },
+      {
+        "folded": true,
+        "id": "downloads",
+        "options": [
+          {
+            "choices": [
+              {
+                "label": "Main",
+                "value": 1
+              },
+              {
+                "label": "Videos for the long weekend trip, sorted by who sent them",
+                "value": 2
+              }
+            ],
+            "disabled": null,
+            "help": "Downloads captured from the browser are added to this queue.",
+            "id": "default_queue",
+            "kind": "choice",
+            "label": "Queue for browser downloads",
+            "value": 2
+          },
+          {
+            "decimals": 1,
+            "disabled": null,
+            "help": "Keeps browsing and calls smooth while downloads run.",
+            "id": "global_speed_limit",
+            "kind": "limit",
+            "label": "Global speed limit",
+            "max": null,
+            "min": 0.1,
+            "on_value": 5242880,
+            "scale": 1048576,
+            "step": 0.5,
+            "unit": "MB/s",
+            "value": 1572864
+          },
+          {
+            "decimals": 0,
+            "disabled": null,
+            "help": "Across all queues.",
+            "id": "max_concurrent_downloads",
+            "kind": "number",
+            "label": "Downloads at the same time",
+            "max": 100.0,
+            "min": 1.0,
+            "scale": 1,
+            "step": 1.0,
+            "unit": "",
+            "value": 5
+          }
+        ],
+        "summary": "1.5 MB/s · 5 at once · Videos for the long weekend trip, sorted by who sent them",
+        "title": "Downloads"
+      },
+      {
+        "folded": true,
+        "id": "media",
+        "options": [
+          {
+            "disabled": null,
+            "help": "Adds a small button over video and audio on web pages.",
+            "id": "show_media_button",
+            "kind": "toggle",
+            "label": "Show a download button on videos",
+            "value": true
+          },
+          {
+            "browser": "shortcut",
+            "disabled": null,
+            "help": null,
+            "id": "shortcut",
+            "kind": "browser",
+            "label": "",
+            "value": null
+          },
+          {
+            "choices": [
+              {
+                "label": "Best available",
+                "value": "best"
+              },
+              {
+                "label": "2160p",
+                "value": 2160
+              },
+              {
+                "label": "1440p",
+                "value": 1440
+              },
+              {
+                "label": "1080p",
+                "value": 1080
+              },
+              {
+                "label": "720p",
+                "value": 720
+              },
+              {
+                "label": "480p",
+                "value": 480
+              },
+              {
+                "label": "360p",
+                "value": 360
+              },
+              {
+                "label": "Audio only",
+                "value": "audio_only"
+              }
+            ],
+            "disabled": null,
+            "help": "Used for videos that download without asking, and preselected in the quality window.",
+            "id": "media_quality",
+            "kind": "choice",
+            "label": "Resolution",
+            "value": 1080
+          },
+          {
+            "choices": [
+              {
+                "label": "Next lower",
+                "value": "lower"
+              },
+              {
+                "label": "Next higher",
+                "value": "higher"
+              },
+              {
+                "label": "Ask me",
+                "value": "ask"
+              }
+            ],
+            "disabled": null,
+            "help": "Take the next lower or next higher resolution, or ask with the quality window.",
+            "id": "media_fallback",
+            "kind": "choice",
+            "label": "If a video doesn’t offer that resolution",
+            "value": "lower"
+          },
+          {
+            "choices": [
+              {
+                "label": "Original",
+                "value": "original"
+              },
+              {
+                "label": "MP4",
+                "value": "mp4"
+              },
+              {
+                "label": "MKV",
+                "value": "mkv"
+              },
+              {
+                "label": "WebM",
+                "value": "webm"
+              }
+            ],
+            "disabled": null,
+            "help": "Original keeps the site’s format. Other formats convert only when needed.",
+            "id": "video_format",
+            "kind": "choice",
+            "label": "Save videos as",
+            "value": "original"
+          },
+          {
+            "choices": [
+              {
+                "label": "Off",
+                "value": "off"
+              },
+              {
+                "label": "In the video",
+                "value": "inside"
+              },
+              {
+                "label": "Separate files",
+                "value": "files"
+              }
+            ],
+            "disabled": null,
+            "help": "In the video file, where players show them, or as .srt files next to it.",
+            "id": "subtitles",
+            "kind": "choice",
+            "label": "Subtitles",
+            "value": "inside"
+          },
+          {
+            "choices": [
+              {
+                "label": "Abkhazian (ab)",
+                "value": "ab"
+              },
+              {
+                "label": "Afar (aa)",
+                "value": "aa"
+              },
+              {
+                "label": "Afrikaans (af)",
+                "value": "af"
+              },
+              {
+                "label": "Akan (ak)",
+                "value": "ak"
+              },
+              {
+                "label": "Albanian (sq)",
+                "value": "sq"
+              },
+              {
+                "label": "Amharic (am)",
+                "value": "am"
+              },
+              {
+                "label": "Arabic (ar)",
+                "value": "ar"
+              },
+              {
+                "label": "Aragonese (an)",
+                "value": "an"
+              },
+              {
+                "label": "Armenian (hy)",
+                "value": "hy"
+              },
+              {
+                "label": "Assamese (as)",
+                "value": "as"
+              },
+              {
+                "label": "Avaric (av)",
+                "value": "av"
+              },
+              {
+                "label": "Aymara (ay)",
+                "value": "ay"
+              },
+              {
+                "label": "Azerbaijani (az)",
+                "value": "az"
+              },
+              {
+                "label": "Bambara (bm)",
+                "value": "bm"
+              },
+              {
+                "keywords": "Bengali",
+                "label": "Bangla (bn)",
+                "value": "bn"
+              },
+              {
+                "label": "Bashkir (ba)",
+                "value": "ba"
+              },
+              {
+                "label": "Basque (eu)",
+                "value": "eu"
+              },
+              {
+                "label": "Belarusian (be)",
+                "value": "be"
+              },
+              {
+                "label": "Bislama (bi)",
+                "value": "bi"
+              },
+              {
+                "label": "Bosnian (bs)",
+                "value": "bs"
+              },
+              {
+                "label": "Breton (br)",
+                "value": "br"
+              },
+              {
+                "label": "Bulgarian (bg)",
+                "value": "bg"
+              },
+              {
+                "label": "Burmese (my)",
+                "value": "my"
+              },
+              {
+                "label": "Catalan (ca)",
+                "value": "ca"
+              },
+              {
+                "label": "Chamorro (ch)",
+                "value": "ch"
+              },
+              {
+                "label": "Chechen (ce)",
+                "value": "ce"
+              },
+              {
+                "label": "Chinese (zh)",
+                "value": "zh"
+              },
+              {
+                "label": "Church Slavic (cu)",
+                "value": "cu"
+              },
+              {
+                "label": "Chuvash (cv)",
+                "value": "cv"
+              },
+              {
+                "label": "Cornish (kw)",
+                "value": "kw"
+              },
+              {
+                "label": "Corsican (co)",
+                "value": "co"
+              },
+              {
+                "label": "Cree (cr)",
+                "value": "cr"
+              },
+              {
+                "label": "Croatian (hr)",
+                "value": "hr"
+              },
+              {
+                "label": "Czech (cs)",
+                "value": "cs"
+              },
+              {
+                "label": "Danish (da)",
+                "value": "da"
+              },
+              {
+                "keywords": "Dhivehi Maldivian",
+                "label": "Divehi (dv)",
+                "value": "dv"
+              },
+              {
+                "label": "Dutch (nl)",
+                "value": "nl"
+              },
+              {
+                "label": "Dzongkha (dz)",
+                "value": "dz"
+              },
+              {
+                "label": "English (en)",
+                "value": "en"
+              },
+              {
+                "label": "Esperanto (eo)",
+                "value": "eo"
+              },
+              {
+                "label": "Estonian (et)",
+                "value": "et"
+              },
+              {
+                "label": "Ewe (ee)",
+                "value": "ee"
+              },
+              {
+                "label": "Faroese (fo)",
+                "value": "fo"
+              },
+              {
+                "label": "Fijian (fj)",
+                "value": "fj"
+              },
+              {
+                "label": "Filipino (tl)",
+                "value": "tl"
+              },
+              {
+                "label": "Finnish (fi)",
+                "value": "fi"
+              },
+              {
+                "label": "French (fr)",
+                "value": "fr"
+              },
+              {
+                "label": "Fula (ff)",
+                "value": "ff"
+              },
+              {
+                "label": "Galician (gl)",
+                "value": "gl"
+              },
+              {
+                "label": "Ganda (lg)",
+                "value": "lg"
+              },
+              {
+                "label": "Georgian (ka)",
+                "value": "ka"
+              },
+              {
+                "label": "German (de)",
+                "value": "de"
+              },
+              {
+                "label": "Greek (el)",
+                "value": "el"
+              },
+              {
+                "label": "Guarani (gn)",
+                "value": "gn"
+              },
+              {
+                "label": "Gujarati (gu)",
+                "value": "gu"
+              },
+              {
+                "label": "Haitian Creole (ht)",
+                "value": "ht"
+              },
+              {
+                "label": "Hausa (ha)",
+                "value": "ha"
+              },
+              {
+                "label": "Hebrew (he)",
+                "value": "he"
+              },
+              {
+                "label": "Herero (hz)",
+                "value": "hz"
+              },
+              {
+                "label": "Hindi (hi)",
+                "value": "hi"
+              },
+              {
+                "label": "Hiri Motu (ho)",
+                "value": "ho"
+              },
+              {
+                "label": "Hungarian (hu)",
+                "value": "hu"
+              },
+              {
+                "label": "Icelandic (is)",
+                "value": "is"
+              },
+              {
+                "label": "Ido (io)",
+                "value": "io"
+              },
+              {
+                "label": "Igbo (ig)",
+                "value": "ig"
+              },
+              {
+                "label": "Indonesian (id)",
+                "value": "id"
+              },
+              {
+                "label": "Interlingua (ia)",
+                "value": "ia"
+              },
+              {
+                "label": "Interlingue (ie)",
+                "value": "ie"
+              },
+              {
+                "label": "Inuktitut (iu)",
+                "value": "iu"
+              },
+              {
+                "label": "Inupiaq (ik)",
+                "value": "ik"
+              },
+              {
+                "label": "Irish (ga)",
+                "value": "ga"
+              },
+              {
+                "label": "Italian (it)",
+                "value": "it"
+              },
+              {
+                "label": "Japanese (ja)",
+                "value": "ja"
+              },
+              {
+                "label": "Javanese (jv)",
+                "value": "jv"
+              },
+              {
+                "keywords": "Greenlandic",
+                "label": "Kalaallisut (kl)",
+                "value": "kl"
+              },
+              {
+                "label": "Kannada (kn)",
+                "value": "kn"
+              },
+              {
+                "label": "Kanuri (kr)",
+                "value": "kr"
+              },
+              {
+                "label": "Kashmiri (ks)",
+                "value": "ks"
+              },
+              {
+                "label": "Kazakh (kk)",
+                "value": "kk"
+              },
+              {
+                "label": "Khmer (km)",
+                "value": "km"
+              },
+              {
+                "label": "Kikuyu (ki)",
+                "value": "ki"
+              },
+              {
+                "label": "Kinyarwanda (rw)",
+                "value": "rw"
+              },
+              {
+                "label": "Komi (kv)",
+                "value": "kv"
+              },
+              {
+                "label": "Kongo (kg)",
+                "value": "kg"
+              },
+              {
+                "label": "Korean (ko)",
+                "value": "ko"
+              },
+              {
+                "label": "Kuanyama (kj)",
+                "value": "kj"
+              },
+              {
+                "label": "Kurdish (ku)",
+                "value": "ku"
+              },
+              {
+                "keywords": "Kirghiz",
+                "label": "Kyrgyz (ky)",
+                "value": "ky"
+              },
+              {
+                "label": "Lao (lo)",
+                "value": "lo"
+              },
+              {
+                "label": "Latin (la)",
+                "value": "la"
+              },
+              {
+                "label": "Latvian (lv)",
+                "value": "lv"
+              },
+              {
+                "label": "Limburgish (li)",
+                "value": "li"
+              },
+              {
+                "label": "Lingala (ln)",
+                "value": "ln"
+              },
+              {
+                "label": "Lithuanian (lt)",
+                "value": "lt"
+              },
+              {
+                "label": "Luba-Katanga (lu)",
+                "value": "lu"
+              },
+              {
+                "label": "Luxembourgish (lb)",
+                "value": "lb"
+              },
+              {
+                "label": "Macedonian (mk)",
+                "value": "mk"
+              },
+              {
+                "label": "Malagasy (mg)",
+                "value": "mg"
+              },
+              {
+                "label": "Malay (ms)",
+                "value": "ms"
+              },
+              {
+                "label": "Malayalam (ml)",
+                "value": "ml"
+              },
+              {
+                "label": "Maltese (mt)",
+                "value": "mt"
+              },
+              {
+                "label": "Manx (gv)",
+                "value": "gv"
+              },
+              {
+                "label": "Marathi (mr)",
+                "value": "mr"
+              },
+              {
+                "label": "Marshallese (mh)",
+                "value": "mh"
+              },
+              {
+                "label": "Mongolian (mn)",
+                "value": "mn"
+              },
+              {
+                "label": "Māori (mi)",
+                "value": "mi"
+              },
+              {
+                "label": "Nauru (na)",
+                "value": "na"
+              },
+              {
+                "label": "Navajo (nv)",
+                "value": "nv"
+              },
+              {
+                "label": "Ndonga (ng)",
+                "value": "ng"
+              },
+              {
+                "label": "Nepali (ne)",
+                "value": "ne"
+              },
+              {
+                "label": "North Ndebele (nd)",
+                "value": "nd"
+              },
+              {
+                "label": "Northern Sami (se)",
+                "value": "se"
+              },
+              {
+                "label": "Norwegian (no)",
+                "value": "no"
+              },
+              {
+                "label": "Norwegian Bokmål (nb)",
+                "value": "nb"
+              },
+              {
+                "label": "Norwegian Nynorsk (nn)",
+                "value": "nn"
+              },
+              {
+                "keywords": "Chichewa Chewa",
+                "label": "Nyanja (ny)",
+                "value": "ny"
+              },
+              {
+                "label": "Occitan (oc)",
+                "value": "oc"
+              },
+              {
+                "keywords": "Oriya",
+                "label": "Odia (or)",
+                "value": "or"
+              },
+              {
+                "label": "Ojibwa (oj)",
+                "value": "oj"
+              },
+              {
+                "label": "Oromo (om)",
+                "value": "om"
+              },
+              {
+                "keywords": "Ossetic",
+                "label": "Ossetian (os)",
+                "value": "os"
+              },
+              {
+                "label": "Pali (pi)",
+                "value": "pi"
+              },
+              {
+                "label": "Pashto (ps)",
+                "value": "ps"
+              },
+              {
+                "label": "Persian (fa)",
+                "value": "fa"
+              },
+              {
+                "label": "Polish (pl)",
+                "value": "pl"
+              },
+              {
+                "label": "Portuguese (pt)",
+                "value": "pt"
+              },
+              {
+                "keywords": "Panjabi",
+                "label": "Punjabi (pa)",
+                "value": "pa"
+              },
+              {
+                "label": "Quechua (qu)",
+                "value": "qu"
+              },
+              {
+                "label": "Romanian (ro)",
+                "value": "ro"
+              },
+              {
+                "label": "Romansh (rm)",
+                "value": "rm"
+              },
+              {
+                "label": "Rundi (rn)",
+                "value": "rn"
+              },
+              {
+                "label": "Russian (ru)",
+                "value": "ru"
+              },
+              {
+                "label": "Samoan (sm)",
+                "value": "sm"
+              },
+              {
+                "label": "Sango (sg)",
+                "value": "sg"
+              },
+              {
+                "label": "Sanskrit (sa)",
+                "value": "sa"
+              },
+              {
+                "label": "Sardinian (sc)",
+                "value": "sc"
+              },
+              {
+                "label": "Scottish Gaelic (gd)",
+                "value": "gd"
+              },
+              {
+                "label": "Serbian (sr)",
+                "value": "sr"
+              },
+              {
+                "label": "Shona (sn)",
+                "value": "sn"
+              },
+              {
+                "keywords": "Nuosu",
+                "label": "Sichuan Yi (ii)",
+                "value": "ii"
+              },
+              {
+                "label": "Sindhi (sd)",
+                "value": "sd"
+              },
+              {
+                "label": "Sinhala (si)",
+                "value": "si"
+              },
+              {
+                "label": "Slovak (sk)",
+                "value": "sk"
+              },
+              {
+                "label": "Slovenian (sl)",
+                "value": "sl"
+              },
+              {
+                "label": "Somali (so)",
+                "value": "so"
+              },
+              {
+                "label": "South Ndebele (nr)",
+                "value": "nr"
+              },
+              {
+                "label": "Southern Sotho (st)",
+                "value": "st"
+              },
+              {
+                "label": "Spanish (es)",
+                "value": "es"
+              },
+              {
+                "label": "Sundanese (su)",
+                "value": "su"
+              },
+              {
+                "label": "Swahili (sw)",
+                "value": "sw"
+              },
+              {
+                "label": "Swati (ss)",
+                "value": "ss"
+              },
+              {
+                "label": "Swedish (sv)",
+                "value": "sv"
+              },
+              {
+                "label": "Tahitian (ty)",
+                "value": "ty"
+              },
+              {
+                "label": "Tajik (tg)",
+                "value": "tg"
+              },
+              {
+                "label": "Tamil (ta)",
+                "value": "ta"
+              },
+              {
+                "label": "Tatar (tt)",
+                "value": "tt"
+              },
+              {
+                "label": "Telugu (te)",
+                "value": "te"
+              },
+              {
+                "label": "Thai (th)",
+                "value": "th"
+              },
+              {
+                "label": "Tibetan (bo)",
+                "value": "bo"
+              },
+              {
+                "label": "Tigrinya (ti)",
+                "value": "ti"
+              },
+              {
+                "label": "Tongan (to)",
+                "value": "to"
+              },
+              {
+                "label": "Tsonga (ts)",
+                "value": "ts"
+              },
+              {
+                "label": "Tswana (tn)",
+                "value": "tn"
+              },
+              {
+                "label": "Turkish (tr)",
+                "value": "tr"
+              },
+              {
+                "label": "Turkmen (tk)",
+                "value": "tk"
+              },
+              {
+                "label": "Twi (tw)",
+                "value": "tw"
+              },
+              {
+                "label": "Ukrainian (uk)",
+                "value": "uk"
+              },
+              {
+                "label": "Urdu (ur)",
+                "value": "ur"
+              },
+              {
+                "keywords": "Uighur",
+                "label": "Uyghur (ug)",
+                "value": "ug"
+              },
+              {
+                "label": "Uzbek (uz)",
+                "value": "uz"
+              },
+              {
+                "label": "Venda (ve)",
+                "value": "ve"
+              },
+              {
+                "label": "Vietnamese (vi)",
+                "value": "vi"
+              },
+              {
+                "label": "Volapük (vo)",
+                "value": "vo"
+              },
+              {
+                "label": "Walloon (wa)",
+                "value": "wa"
+              },
+              {
+                "label": "Welsh (cy)",
+                "value": "cy"
+              },
+              {
+                "label": "Western Frisian (fy)",
+                "value": "fy"
+              },
+              {
+                "label": "Wolof (wo)",
+                "value": "wo"
+              },
+              {
+                "label": "Xhosa (xh)",
+                "value": "xh"
+              },
+              {
+                "label": "Yiddish (yi)",
+                "value": "yi"
+              },
+              {
+                "label": "Yoruba (yo)",
+                "value": "yo"
+              },
+              {
+                "label": "Zhuang (za)",
+                "value": "za"
+              },
+              {
+                "label": "Zulu (zu)",
+                "value": "zu"
+              },
+              {
+                "label": "pt-br (pt-br)",
+                "value": "pt-br"
+              }
+            ],
+            "disabled": null,
+            "help": "Languages a video doesn’t have are skipped.",
+            "id": "subtitle_languages",
+            "kind": "choices",
+            "label": "Subtitle languages",
+            "placeholder": "The video’s language",
+            "search_placeholder": "Search languages",
+            "value": [
+              "en",
+              "pt-br"
+            ]
+          },
+          {
+            "disabled": null,
+            "help": "Used when a language has no subtitles written by people.",
+            "id": "auto_subtitles",
+            "kind": "toggle",
+            "label": "Use auto-generated subtitles",
+            "value": true
+          },
+          {
+            "choices": [
+              {
+                "label": "Save them as separate files",
+                "value": "files"
+              },
+              {
+                "label": "Leave them out",
+                "value": "skip"
+              }
+            ],
+            "disabled": null,
+            "help": "MP4, MKV and WebM hold subtitles. Original keeps the site’s file as it is, which may not, and audio files hold none.",
+            "id": "unembedded_subtitles",
+            "kind": "choice",
+            "label": "If the format can’t hold subtitles",
+            "value": "files"
+          },
+          {
+            "disabled": null,
+            "help": "Adds a video’s chapters to MP4, MKV and WebM files, so players can jump between them.",
+            "id": "chapters",
+            "kind": "toggle",
+            "label": "Add chapters",
+            "value": false
+          },
+          {
+            "choices": [
+              {
+                "label": "Original",
+                "value": "original"
+              },
+              {
+                "label": "MP3",
+                "value": "mp3"
+              },
+              {
+                "label": "M4A",
+                "value": "m4a"
+              },
+              {
+                "label": "Opus",
+                "value": "opus"
+              },
+              {
+                "label": "FLAC",
+                "value": "flac"
+              },
+              {
+                "label": "WAV",
+                "value": "wav"
+              }
+            ],
+            "disabled": null,
+            "help": "Downloaded audio is converted to this format. MP3, M4A and FLAC files include the title, artist and cover art.",
+            "id": "audio_format",
+            "kind": "choice",
+            "label": "Save audio as",
+            "value": "original"
+          }
+        ],
+        "summary": "1080p · Original",
+        "title": "Video and audio"
+      }
+    ],
+    "revision": {
+      "counter": 1,
+      "instance": "sample"
+    }
+  }
+}

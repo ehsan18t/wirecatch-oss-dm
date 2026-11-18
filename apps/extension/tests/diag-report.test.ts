@@ -17,16 +17,12 @@ function entry(change: Partial<DiagEntry>): DiagEntry {
   };
 }
 
-const identity = {
-  client: 'extension' as const,
-  client_version: '1.2.3',
-  browser: { name: 'edge', version: '130.0' },
-};
+const facts = { version: '1.2.3', browser: { name: 'edge', version: '130.0' } };
 
 describe('the diagnostics report', () => {
   it('names the extension, the browser and the connection, then each entry with its detail', () => {
     const text = diagnosticsReport({
-      identity,
+      ...facts,
       connection: 'Closed',
       now: AT + 60_000,
       entries: [entry({ repeated: 2, detail: 'timed out after 5 s' })],
@@ -45,7 +41,8 @@ describe('the diagnostics report', () => {
 
   it('leaves out what was logged while a private window was open, and says how much', () => {
     const text = diagnosticsReport({
-      identity: { ...identity, browser: null },
+      ...facts,
+      browser: null,
       connection: 'Connected',
       now: AT,
       entries: [entry({ private: true, message: 'from a private tab' })],

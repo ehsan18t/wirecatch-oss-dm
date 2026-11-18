@@ -15,13 +15,12 @@ import {
   type HelloIdentity,
 } from '../src/lib/native/client';
 import type { ConnectionStatus } from '../src/lib/native/status';
-import { patchOf } from '../src/lib/settings-patch';
 import { FakeApp, flush } from './fakes';
 
 const HELLO: HelloIdentity = {
   client: 'extension',
   client_version: '0.1.0',
-  browser: { name: 'chrome', version: '141' },
+  private_session: null,
 };
 
 function makeClient(app: FakeApp, backoffMs: Backoff = [1000, 2000, 4000]): NativeClient {
@@ -105,9 +104,9 @@ describe('NativeClient', () => {
     client.start();
     await flush();
 
-    const reply = await client.request({ method: 'get_extension_settings' }, 5000);
+    const reply = await client.request({ method: 'get_shell_config' }, 5000);
 
-    expect(reply.type).toBe('extension_settings');
+    expect(reply.type).toBe('shell_config');
     expect(app.starts).toBe(1);
     expect(client.status.state).toBe('connected');
   });
@@ -120,9 +119,9 @@ describe('NativeClient', () => {
     client = makeClient(app);
     client.start();
 
-    const reply = await client.request({ method: 'get_extension_settings' }, 5000);
+    const reply = await client.request({ method: 'get_shell_config' }, 5000);
 
-    expect(reply.type).toBe('extension_settings');
+    expect(reply.type).toBe('shell_config');
     expect(app.starts).toBe(1);
   });
 
@@ -142,7 +141,7 @@ describe('NativeClient', () => {
     client.start();
     await flush();
     app.answers = false;
-    const settings = client.request({ method: 'get_extension_settings' }, 1000);
+    const settings = client.request({ method: 'get_shell_config' }, 1000);
     const queues = client.request({ method: 'list_queues' }, 1000);
     await flush();
     const [first, second] = app.requests.slice(-2);
@@ -157,9 +156,9 @@ describe('NativeClient', () => {
     port.deliver({
       kind: 'response',
       id: first.id,
-      outcome: { status: 'ok', value: { type: 'extension_settings', data: app.settings } },
+      outcome: { status: 'ok', value: { type: 'shell_config', data: app.settings } },
     });
-    expect((await settings).type).toBe('extension_settings');
+    expect((await settings).type).toBe('shell_config');
     expect((await queues).type).toBe('queues');
   });
 
@@ -183,7 +182,7 @@ describe('NativeClient', () => {
     await flush();
     app.openPort?.deliver({
       kind: 'event',
-      event: { type: 'extension_settings_changed', data: { capture_enabled: 'yes' } },
+      event: { type: 'shell_config_changed', data: { capture_enabled: 'yes' } },
     } as never);
     await flush();
     expect(events).toEqual([]);
@@ -195,7 +194,7 @@ describe('NativeClient', () => {
     await flush();
     app.answers = false;
     const settings = client
-      .request({ method: 'get_extension_settings' }, 1000)
+      .request({ method: 'get_shell_config' }, 1000)
       .catch((error: unknown) => error);
     await flush();
     const request = app.requests.at(-1);
@@ -203,7 +202,7 @@ describe('NativeClient', () => {
     app.openPort?.deliver({
       kind: 'response',
       id: request.id,
-      outcome: { status: 'ok', value: { type: 'extension_settings', data: { min: 'x' } } },
+      outcome: { status: 'ok', value: { type: 'shell_config', data: { min: 'x' } } },
     } as never);
     await flush();
     expect(await settings).toMatchObject({ kind: 'unreadable', protocolError: null });
@@ -260,16 +259,13 @@ describe('NativeClient', () => {
     const port = app.openPort;
     const huge = 'x'.repeat(MAX_FRAME_LEN);
     const error = await client
-      .request(
-        { method: 'update_extension_settings', params: patchOf({ add_ignored_sites: [huge] }) },
-        1000,
-      )
+      .request({ method: 'invoke_action', params: { id: 'ignore_site', site: huge } }, 1000)
       .catch((error_: unknown) => error_);
     expect(error).toMatchObject({ kind: 'too_large' });
     expect((error as RequestError).message).toContain(
       `too large to send to Wirecatch (over ${formatBytes(MAX_FRAME_LEN)})`,
     );
-    expect(app.calls('update_extension_settings')).toHaveLength(0);
+    expect(app.calls('invoke_action')).toHaveLength(0);
     expect(client.status.state).toBe('connected');
     expect(app.openPort).toBe(port);
     expect(await client.request({ method: 'pause_all' }, 1000)).toEqual({ type: 'done' });
@@ -282,10 +278,7 @@ describe('NativeClient', () => {
     // About 0.4 M characters, but each is 3 bytes in UTF-8: over 1 MB.
     const wide = '€'.repeat(400_000);
     const error = await client
-      .request(
-        { method: 'update_extension_settings', params: patchOf({ add_ignored_sites: [wide] }) },
-        1000,
-      )
+      .request({ method: 'invoke_action', params: { id: 'ignore_site', site: wide } }, 1000)
       .catch((error_: unknown) => error_);
     expect(error).toMatchObject({ kind: 'too_large' });
   });
@@ -410,7 +403,7 @@ describe('NativeClient', () => {
     await flush();
     app.updateError = { code: 'invalid_request', message: 'No such queue.' };
     const error = await client
-      .request({ method: 'update_extension_settings', params: {} }, 1000)
+      .request({ method: 'invoke_action', params: { id: 'ignore_site', site: null } }, 1000)
       .catch((error_: unknown) => error_);
     expect(error).toMatchObject({
       kind: 'app',
@@ -427,7 +420,10 @@ describe('NativeClient', () => {
     await flush();
     app.changeSettings({ capture_enabled: false });
     await flush();
-    expect(events).toEqual([{ type: 'extension_settings_changed', data: app.settings }]);
+    expect(events).toEqual([
+      { type: 'shell_config_changed', data: app.settings },
+      { type: 'options_changed', data: app.options },
+    ]);
   });
 
   it('reports a missing native host and retries with growing delays', async () => {
@@ -496,7 +492,7 @@ describe('NativeClient', () => {
     if (first === undefined) throw new Error('no port');
     app.updateError = { code: 'app_unavailable', message: 'Wirecatch closed.' };
     const error = await client
-      .request({ method: 'update_extension_settings', params: {} }, 1000)
+      .request({ method: 'invoke_action', params: { id: 'ignore_site', site: null } }, 1000)
       .catch((error_: unknown) => error_);
     expect(error).toMatchObject({ kind: 'app', protocolError: { code: 'app_unavailable' } });
     expect(client.status).toMatchObject({
@@ -506,7 +502,7 @@ describe('NativeClient', () => {
     // The extension itself closes the port: the bridge never reconnects to the app within one port.
     expect(first.closedByExtension).toBe(true);
     expect(app.ports).toHaveLength(1);
-    expect(first.methods).toEqual(['hello', 'update_extension_settings']);
+    expect(first.methods).toEqual(['hello', 'invoke_action']);
 
     // The new port waits for the backoff delay.
     app.updateError = null;
@@ -520,7 +516,7 @@ describe('NativeClient', () => {
     expect(client.status.state).toBe('connected');
     // Later calls go on the new port only.
     await client.request({ method: 'pause_all' }, 1000);
-    expect(first.methods).toEqual(['hello', 'update_extension_settings']);
+    expect(first.methods).toEqual(['hello', 'invoke_action']);
     expect(second?.methods).toEqual(['hello', 'pause_all']);
   });
 
@@ -539,13 +535,16 @@ describe('NativeClient', () => {
     expect(client.status.state).toBe('connected');
   });
 
-  it('connects to an app from before version ranges, in version 1', async () => {
+  it('refuses an app that speaks only version 1, which no build speaks since D279, and says to update it', async () => {
     app.versions = { oldest: 1, newest: 1 };
     app.readsVersionRanges = false;
     client = makeClient(app);
     client.start();
     await flush();
-    expect(client.status.state).toBe('connected');
+    expect(client.status).toMatchObject({
+      state: 'unavailable',
+      problem: { kind: 'version_mismatch' },
+    });
   });
 
   it('speaks the newest version a newer app shares with it', async () => {
@@ -588,12 +587,10 @@ describe('NativeClient', () => {
   });
 
   it('sends no call newer than the version agreed with the app, and says so', async () => {
-    app.versions = { oldest: 1, newest: 1 };
-    app.readsVersionRanges = false;
     client = new NativeClient({
       transport: app,
       hello: () => Promise.resolve(HELLO),
-      callSince: { ...CALL_SINCE, show_window: 2 },
+      callSince: { ...CALL_SINCE, show_window: PROTOCOL_VERSION + 1 },
     });
     expect(client.supports('pause_all')).toBe(false);
     client.start();

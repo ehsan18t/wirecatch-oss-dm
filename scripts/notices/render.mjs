@@ -19,7 +19,7 @@ const UNBUILT_FOLDER =
 /** Not a licence, whatever its name: code, or an icon such as `copyright.svg`. */
 const SOURCE_FILE = /\.(?:rs|toml|json|js|ts|py|sh|c|h|html|svg|png)$/i;
 
-/** Data built into every release that no package's licence covers: `crates/sites/data` and, through `tldts`, the extension. */
+/** Data built into every release that no package's licence covers: `crates/sites/data`. */
 const BUILT_IN_DATA = [
   {
     name: 'Public Suffix List',

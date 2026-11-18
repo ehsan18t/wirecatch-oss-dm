@@ -1,10 +1,12 @@
 // The text "Copy diagnostics" puts on the clipboard (EXT-7): the extension, the browser and the connection, then what was logged. Entries made while a private window was open stay out, as private browsing leaves nothing behind.
 import { PRODUCT_NAME } from '@wirecatch/product';
-import type { HelloIdentity } from '../native/client';
+import type { BrowserInfo } from '../browser-info';
 import type { DiagEntry } from './log';
 
 export interface ReportFacts {
-  identity: HelloIdentity;
+  /** The extension's version. */
+  version: string;
+  browser: BrowserInfo | null;
   /** The connection to the app as the popup shows it ("Connected", "Closed"). */
   connection: string;
   /** Milliseconds since the epoch. */
@@ -12,14 +14,18 @@ export interface ReportFacts {
   entries: readonly DiagEntry[];
 }
 
-export function diagnosticsReport({ identity, connection, now, entries }: ReportFacts): string {
-  const browser = identity.browser
-    ? [identity.browser.name, identity.browser.version].filter(Boolean).join(' ')
-    : 'unknown';
+export function diagnosticsReport({
+  version,
+  browser: info,
+  connection,
+  now,
+  entries,
+}: ReportFacts): string {
+  const browser = info ? [info.name, info.version].filter(Boolean).join(' ') : 'unknown';
   const shared = entries.filter((entry) => !entry.private);
   const left = entries.length - shared.length;
   const lines = [
-    `${PRODUCT_NAME} extension ${identity.client_version}`,
+    `${PRODUCT_NAME} extension ${version}`,
     `Browser: ${browser}`,
     `Connection: ${connection}`,
     `Copied: ${new Date(now).toISOString()}`,

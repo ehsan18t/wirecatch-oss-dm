@@ -90,7 +90,7 @@ async function realHub(
       Promise.resolve({
         client: 'extension',
         client_version: '0.1.0',
-        browser: null,
+        private_session: null,
       }),
     backoffMs: [60_000],
   });

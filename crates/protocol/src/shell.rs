@@ -386,7 +386,7 @@ pub(crate) fn name_tables() -> Vec<crate::exported::Constant> {
         Constant::json(
             "OPTION_KINDS",
             &[" The control kinds an option may name (`shell::kinds`, D279)."],
-            "Readonly<Record<string, string>>",
+            "Readonly<Record<'toggle' | 'choice' | 'choices' | 'number' | 'limit' | 'action' | 'note' | 'browser', string>>",
             &[],
             &kinds,
         ),
@@ -400,7 +400,7 @@ pub(crate) fn name_tables() -> Vec<crate::exported::Constant> {
         Constant::json(
             "SHELL_ACTIONS",
             &[" The actions the extension's own design runs (`shell::actions`)."],
-            "Readonly<Record<string, string>>",
+            "Readonly<Record<'ignore_site' | 'take_site', string>>",
             &[],
             &actions,
         ),

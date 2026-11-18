@@ -10250,6 +10250,7 @@ dependencies = [
  "futures-util",
  "jiff",
  "lzma-rust2",
+ "percent-encoding",
  "pgp",
  "rand 0.8.8",
  "rusqlite",

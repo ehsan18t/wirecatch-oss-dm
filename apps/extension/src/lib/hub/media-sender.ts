@@ -1,5 +1,4 @@
 import type { CookieRequest } from '@wirecatch/protocol';
-import { isCrossSite } from '../cookies';
 import { log } from '../diag/log';
 import type { MediaRequest, MediaSendResult } from '../media/center';
 import { MEDIA_UNREACHABLE } from '../media/messages';
@@ -8,7 +7,10 @@ import { MEDIA_NO_SITE_ACCESS, mediaAnswer } from './alerts';
 import type { AppSide } from './app';
 import type { HubDeps } from './deps';
 
-export type MediaSenderDeps = Pick<HubDeps, 'cookies' | 'hasSiteAccess' | 'newHandoverId'>;
+export type MediaSenderDeps = Pick<
+  HubDeps,
+  'cookies' | 'hasSiteAccess' | 'newHandoverId' | 'privateSession'
+>;
 
 /** True when the extension may read cookies for `url`; a failed check counts as not granted. */
 export async function hasAccess(
@@ -45,9 +47,9 @@ export class MediaSender {
     }
     await settings.ready;
     if (!app.connected || settings.live === null) {
-      // Connect (and learn the default queue) first, so "could not be reached" is certain: nothing has been sent yet when this fails.
+      // Connect first, so "could not be reached" is certain: nothing has been sent yet when this fails.
       try {
-        await app.fetchSettings();
+        await app.fetchConfig();
       } catch (error) {
         log.warn('hub', 'Could not reach the app to send media', error);
         return { ok: false, message: MEDIA_UNREACHABLE };
@@ -59,27 +61,45 @@ export class MediaSender {
       top_level: request.pageUrl,
       navigation: target.kind === 'page',
     };
-    const result = await app.submit(newHandoverId(this.#deps), {
-      url: target.url,
-      referrer: refererFor(target.url, request.referrer),
-      page_url: request.pageUrl,
-      browser_route: {
-        observed_page: request.pageUrl ?? target.requestedBy,
-        private_window: request.cookieStore.private,
-        redirect_urls: [],
+    const privateSession = request.cookieStore.private
+      ? ((await this.#deps.privateSession?.current()) ?? null)
+      : null;
+    const result = await app.submitChecked(
+      newHandoverId(this.#deps),
+      {
+        url: target.url,
+        page_url: request.pageUrl,
+        file_name: null,
+        mime: target.mime,
+        size: target.size,
+        source: 'media_button',
+        private_session: privateSession,
+        cookie_request: context,
       },
-      // The document that requested the media chose its address; left out when unknown.
-      ...(target.requestedBy === null ? {} : { frame_url: target.requestedBy }),
-      suggested_name: null,
-      mime: target.mime,
-      size_hint: target.size,
-      // Media from another site goes with the cookies its own request carried, when it was seen: no cookie read can tell whether the browser sends its unpartitioned cookies to another site (D59). Otherwise they are read now, so they are the freshest.
-      ...(target.sentCookies !== undefined && isCrossSite(target.url, context)
-        ? { cookies: target.sentCookies }
-        : await this.#deps.cookies(target.url, request.cookieStore, context)),
-      source: 'media_button',
-      media: { kind: target.kind, title: request.title },
-    });
+      {
+        url: target.url,
+        referrer: refererFor(target.url, request.referrer),
+        page_url: request.pageUrl,
+        browser_route: {
+          observed_page: request.pageUrl ?? target.requestedBy,
+          private_window: request.cookieStore.private,
+          private_session: privateSession,
+          redirect_urls: [],
+        },
+        // The document that requested the media chose its address; left out when unknown.
+        ...(target.requestedBy === null ? {} : { frame_url: target.requestedBy }),
+        suggested_name: null,
+        mime: target.mime,
+        size_hint: target.size,
+        source: 'media_button',
+        media: { kind: target.kind, title: request.title },
+      },
+      // Media from another site goes with the cookies its own request carried, when it was seen: no cookie read can tell whether the browser sends its unpartitioned cookies to another site (D59). The app says whether it is from another site (D279).
+      async (plan) =>
+        target.sentCookies !== undefined && plan.cross_site
+          ? { cookies: target.sentCookies }
+          : this.#deps.cookies(target.url, request.cookieStore, context, plan),
+    );
     return mediaAnswer(result);
   }
 }

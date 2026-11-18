@@ -1,17 +1,22 @@
-import type { BrowserControls, ExtensionSettings, QueueSummary } from '@wirecatch/protocol';
+import type { OptionList, Revision, ShellConfig } from '@wirecatch/protocol';
 import { fallback } from '../diag/log';
 import type { Snapshot } from '../popup-port';
 import type { CachedSettings } from '../cache';
 import type { HubDeps } from './deps';
 
-/** The part of the popup's snapshot that comes from the settings. */
-export type SettingsView = Pick<Snapshot, 'settings' | 'controls' | 'queues'>;
+/** The part of the popup's snapshot that comes from the app. */
+export type SettingsView = Pick<Snapshot, 'options' | 'privateWindows'>;
+
+/** Whether `next` replaces `held`: one from a new app instance always does, and one from the same instance with a higher counter. */
+export function isNewer(next: Revision, held: Revision | null): boolean {
+  if (held === null) return true;
+  return next.instance !== held.instance || next.counter > held.counter;
+}
 
 /**
- * The app's settings and queues as the background knows them (D61): live from a connected
- * app, which pushes every change, and the copy kept for the browser session, which judges a
- * download while the app is still connecting. The popup shows only the live values, so it never
- * shows a setting the app may have changed since.
+ * What the app told the background (D279): the values the extension's own checks use, live from
+ * a connected app and kept for the browser session, and the popup's options, live only. The popup
+ * shows only live values, so it never shows a setting the app may have changed since.
  */
 export class KnownSettings {
   readonly #deps: Pick<HubDeps, 'cache' | 'mediaButtonSetting'>;
@@ -19,9 +24,8 @@ export class KnownSettings {
   readonly #listeners: (() => void)[] = [];
   readonly #ready: Promise<void>;
   #markReady: () => void = () => undefined;
-  #live: ExtensionSettings | null = null;
-  #controls: BrowserControls | null = null;
-  #queues: QueueSummary[] = [];
+  #live: ShellConfig | null = null;
+  #options: OptionList | null = null;
   #cached: CachedSettings | null = null;
   /** The "Show download button on videos" value last told to the media buttons. */
   #buttonSetting: boolean | null = null;
@@ -43,8 +47,8 @@ export class KnownSettings {
     return this.#ready;
   }
 
-  /** The connected app's settings; null while it is not connected. */
-  get live(): ExtensionSettings | null {
+  /** The connected app's values; null while it is not connected. */
+  get live(): ShellConfig | null {
     return this.#live;
   }
 
@@ -53,8 +57,8 @@ export class KnownSettings {
     return this.#cached;
   }
 
-  /** The app's settings, or the session copy when the app is not connected; null before either is known. */
-  known(): ExtensionSettings | null {
+  /** The app's values, or the session copy when the app is not connected; null before either is known. Never a default: an unknown setting is not a setting the person chose. */
+  known(): ShellConfig | null {
     return this.#live ?? this.#cached?.settings ?? null;
   }
 
@@ -69,13 +73,21 @@ export class KnownSettings {
     return this.mediaButtonOn();
   }
 
-  /** What the popup shows: the live values while connected, nothing otherwise. */
-  view(connected: boolean): SettingsView {
-    if (!connected || this.#live === null) return { settings: null, controls: null, queues: [] };
-    return { settings: this.#live, controls: this.#controls, queues: this.#queues };
+  /** "Work in private windows" for what the extension does unasked (watching media, the button, notices): only a known yes counts, and nothing is asked of the app, so a page never starts it (D25.6). */
+  async privateWindowsKnownOn(): Promise<boolean> {
+    await this.#ready;
+    return this.known()?.private_windows === true;
   }
 
-  /** Takes the session copy read at start; settings fetched from the app while it was read win over it. */
+  /** What the popup shows: the live options while connected, nothing otherwise. */
+  view(connected: boolean): SettingsView {
+    return {
+      options: connected ? this.#options : null,
+      privateWindows: this.known()?.private_windows === true,
+    };
+  }
+
+  /** Takes the session copy read at start; values fetched from the app while it was read win over it. */
   loaded(cached: CachedSettings | null): void {
     if (this.#cached === null) this.#cached = cached;
     // The buttons ask for the setting as they start, so only a change from here on is told.
@@ -83,43 +95,28 @@ export class KnownSettings {
     this.#markReady();
   }
 
-  adopt(settings: ExtensionSettings): void {
-    this.#live = settings;
+  /** Takes values from the app, unless they are older than the ones held. */
+  adopt(config: ShellConfig): void {
+    if (!isNewer(config.revision, this.#live?.revision ?? null)) return;
+    this.#live = config;
     this.#save();
     this.#publishButtonSetting();
     this.#changed();
   }
 
-  adoptControls(controls: BrowserControls): void {
-    this.#controls = controls;
+  /** Takes the popup's options, unless they are older than the ones held. */
+  adoptOptions(options: OptionList): void {
+    if (!isNewer(options.revision, this.#options?.revision ?? null)) return;
+    this.#options = options;
     this.#changed();
   }
 
-  /** The app's answers after connecting; null for an answer of another kind, or one the app cannot give. */
-  refreshed(
-    settings: ExtensionSettings | null,
-    controls: BrowserControls | null,
-    queues: QueueSummary[] | null,
-  ): void {
-    if (queues !== null) this.#queues = queues;
-    if (controls !== null) this.#controls = controls;
-    if (settings === null) {
-      this.#changed();
-    } else {
-      this.adopt(settings);
-    }
-  }
-
-  adoptQueues(queues: QueueSummary[]): void {
-    this.#queues = queues;
-    this.#changed();
-  }
-
-  /** The connection is gone: what it said stops counting. When the person closed the app, the session copy keeps that for the next wake. */
+  /** The connection is gone: what it said stops counting, and the next one starts afresh. When the person closed the app, the session copy keeps that for the next wake. */
   disconnected(appClosed: boolean): void {
     this.#live = null;
-    this.#controls = null;
+    this.#options = null;
     if (appClosed) this.#rememberClosed();
+    this.#changed();
   }
 
   #rememberClosed(): void {

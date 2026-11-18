@@ -1,4 +1,9 @@
-import type { BrowserInfo } from '@wirecatch/protocol';
+/** The browser the extension runs in, for the diagnostics a person copies; never sent to the app. */
+export interface BrowserInfo {
+  /** For example `chrome`, `edge`, `brave`, `firefox`. */
+  name: string;
+  version: string | null;
+}
 
 /** One entry of `navigator.userAgentData.brands` (Chromium only). */
 export interface Brand {
@@ -26,7 +31,7 @@ const BRAND_NAMES: readonly [RegExp, string][] = [
   [/^chromium$/i, 'chromium'],
 ];
 
-/** Works out which browser this is, for the `hello` call. Pure so every branch is testable. */
+/** Works out which browser this is, for the diagnostics. Pure so every branch is testable. */
 export function detectBrowser(clues: BrowserClues): BrowserInfo {
   if (clues.firefox) {
     return { name: clues.firefox.name.toLowerCase(), version: clues.firefox.version };

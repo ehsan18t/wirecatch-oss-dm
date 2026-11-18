@@ -1,4 +1,4 @@
-import type { ExtensionSettings } from '@wirecatch/protocol';
+import type { ShellConfig } from '@wirecatch/protocol';
 import { describe, expect, it } from 'vitest';
 import { candidateFromItem } from '../src/lib/capture/candidate';
 import { shouldCapture, type CaptureCandidate } from '../src/lib/capture/should-capture';
@@ -20,7 +20,7 @@ function candidate(overrides: Partial<CaptureCandidate> = {}): CaptureCandidate 
   };
 }
 
-function settings(overrides: Partial<ExtensionSettings> = {}): ExtensionSettings {
+function settings(overrides: Partial<ShellConfig> = {}): ShellConfig {
   return { ...DEFAULT_SETTINGS, ...overrides };
 }
 

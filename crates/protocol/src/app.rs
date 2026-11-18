@@ -2293,22 +2293,6 @@ mod tests {
         serde_json::from_value(value).unwrap()
     }
 
-    /// The popup shows a change with a port of `BrowserControls::apply` before the app confirms
-    /// it, while the app saves it with `AppSettings::apply`: both give the same settings (D61).
-    #[test]
-    fn browser_controls_apply_as_the_app_settings_do() {
-        for (before, patch) in crate::extension::browser_controls_cases() {
-            let mut settings = read_settings(stored_settings());
-            settings.global_speed_limit = before.global_speed_limit;
-            settings.max_concurrent_downloads = before.max_concurrent_downloads;
-            settings.media = before.media.clone();
-            settings.apply(patch.clone().into());
-            let mut controls = before;
-            controls.apply(patch);
-            assert_eq!(settings.browser_controls(), controls);
-        }
-    }
-
     #[test]
     fn appearance_settings_round_trip() {
         let settings = read_settings(stored_settings());

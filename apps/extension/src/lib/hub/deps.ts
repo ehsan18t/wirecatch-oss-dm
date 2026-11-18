@@ -1,5 +1,5 @@
 /** What the hub is given: the connection, browser APIs and stores, and the shapes it hands back. */
-import type { CookieRequest } from '@wirecatch/protocol';
+import { CAPTURE_DEADLINE_MS, type CookiePlan, type CookieRequest } from '@wirecatch/protocol';
 import type { SettingsCache } from '../cache';
 import type { DownloadRoute } from '../capture/browser-route';
 import type { DownloadItemLike } from '../capture/candidate';
@@ -50,8 +50,15 @@ export interface HubDeps {
   client: NativeClient;
   cache: SettingsCache;
   downloads: BrowserDownloads;
-  /** The `Cookie` header the browser would send to a URL in this context, or null. Never rejects. */
-  cookies: (url: string, store: CookieStore, request: CookieRequest) => Promise<DownloadCookies>;
+  /** The cookies the browser holds for a URL in this context, read for the sites the app named (D279). Never rejects. */
+  cookies: (
+    url: string,
+    store: CookieStore,
+    request: CookieRequest,
+    plan: CookiePlan,
+  ) => Promise<DownloadCookies>;
+  /** The browser's private session, named with each private capture (D279); without it none is named. */
+  privateSession?: { current: () => Promise<string | null> };
   /** True when the extension may read cookies for this address (the person can revoke site access in Firefox). */
   hasSiteAccess: (url: string) => Promise<boolean>;
   userAgent: string | null;
@@ -102,6 +109,8 @@ export interface HubTiming {
   requestTimeoutMs: number;
   /** How long to wait for the answer to `withdraw_download`. */
   withdrawTimeoutMs: number;
+  /** How long a browser download waits for the app, from the browser's event to the answer to `check_download` (D279). */
+  captureDeadlineMs: number;
 }
 
 /**
@@ -113,6 +122,7 @@ const DEFAULT_TIMING: HubTiming = {
   connectWaitMs: START_WAIT_MS,
   requestTimeoutMs: REQUEST_TIMEOUT_MS,
   withdrawTimeoutMs: WITHDRAW_TIMEOUT_MS,
+  captureDeadlineMs: CAPTURE_DEADLINE_MS,
 };
 
 /**
@@ -124,5 +134,6 @@ export function hubTiming(given: Partial<HubTiming> = {}): HubTiming {
     connectWaitMs: given.connectWaitMs ?? DEFAULT_TIMING.connectWaitMs,
     requestTimeoutMs: given.requestTimeoutMs ?? DEFAULT_TIMING.requestTimeoutMs,
     withdrawTimeoutMs: given.withdrawTimeoutMs ?? DEFAULT_TIMING.withdrawTimeoutMs,
+    captureDeadlineMs: given.captureDeadlineMs ?? DEFAULT_TIMING.captureDeadlineMs,
   };
 }
