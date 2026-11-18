@@ -28,6 +28,9 @@ pub struct BrowserSource {
     pub page_redirect_urls: Vec<Secret>,
     pub redirect_urls: Vec<Secret>,
     pub private_window: bool,
+    /// The private session it came from (D279). Never saved, since a private download is not.
+    #[serde(skip)]
+    pub private_session: Option<String>,
     /// The browser's name, before the person or the app chose a different name on disk.
     pub file_name: Option<String>,
 }

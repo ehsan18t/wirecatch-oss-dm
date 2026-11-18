@@ -294,7 +294,7 @@ where
         client_version: wirecatch_product::PRODUCT_VERSION.to_owned(),
         protocol_version: VersionRange::THIS_BUILD.oldest(),
         max_protocol_version: Some(VersionRange::THIS_BUILD.newest()),
-        browser: None,
+        private_session: None,
         start_app: false,
     });
     let version = match ask(stream, 1, hello, deadline).await? {

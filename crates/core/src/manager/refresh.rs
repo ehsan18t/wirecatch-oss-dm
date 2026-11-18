@@ -200,6 +200,7 @@ pub(super) fn browser_source(capture: &NewDownload) -> Option<BrowserSource> {
         page_redirect_urls: safe_redirects(route.page_redirect_urls.as_deref().unwrap_or_default()),
         redirect_urls: safe_redirects(&route.redirect_urls),
         private_window: route.private_window,
+        private_session: route.private_session.clone(),
         file_name: capture
             .suggested_name
             .as_ref()

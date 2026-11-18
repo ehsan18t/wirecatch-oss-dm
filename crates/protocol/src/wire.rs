@@ -11,9 +11,12 @@ use ts_rs::TS;
 
 use crate::QueueId;
 use crate::extension::{
-    AddedDownload, BrowserControls, BrowserControlsPatch, BrowserNotice, ExtensionSettings,
-    ExtensionSettingsPatch, NewDownload, NoticeId, NoticePressed, NoticeShown, WithdrawOutcome,
-    WithdrawRequest,
+    AddedDownload, BrowserNotice, NewDownload, NoticeId, NoticePressed, NoticeShown,
+    WithdrawOutcome, WithdrawRequest,
+};
+use crate::shell::{
+    CheckAnswer, DownloadCheck, InvokeAction, OptionList, PageOptions, PageQuery,
+    PrivateSessionEnded, SetOption, ShellConfig,
 };
 use crate::version::{VersionError, VersionRange};
 
@@ -118,16 +121,10 @@ pub enum Call {
     /// the first call on a connection; answered with [`Reply::Hello`].
     Hello(Hello),
     /// Hands over a download captured in the browser; answered with [`Reply::DownloadAdded`].
-    AddDownload(NewDownload),
+    AddDownload(Box<NewDownload>),
     /// Asks the app to forget a handover the extension gave up waiting for; answered with
     /// [`Reply::Withdrawn`].
     WithdrawDownload(WithdrawRequest),
-    /// Asks for the settings the extension shows; answered with [`Reply::ExtensionSettings`].
-    GetExtensionSettings,
-    /// Changes some of the extension's settings; answered with the new
-    /// [`Reply::ExtensionSettings`], and every client also gets
-    /// [`Event::ExtensionSettingsChanged`].
-    UpdateExtensionSettings(ExtensionSettingsPatch),
     /// Asks for the queues a download can be added to; answered with [`Reply::Queues`].
     ListQueues,
     /// Pauses every download that is running or waiting; answered with [`Reply::Done`].
@@ -136,13 +133,6 @@ pub enum Call {
     ResumeAll,
     /// Brings the app's main window to the front, starting the app first like any call (the extension's "Open Wirecatch").
     ShowWindow,
-    /// Asks for the app settings the popup shows besides the extension's own (D61); answered
-    /// with [`Reply::BrowserControls`].
-    GetBrowserControls,
-    /// Changes some of the app settings the popup shows besides the extension's own; answered
-    /// with the new [`Reply::BrowserControls`], and every client also gets
-    /// [`Event::BrowserControlsChanged`].
-    UpdateBrowserControls(BrowserControlsPatch),
     /// Brings the app's main window to the front on its browser settings, starting the app first
     /// like any call (the popup's settings button, D61); answered with [`Reply::Done`].
     ShowBrowserSettings,
@@ -155,6 +145,24 @@ pub enum Call {
     /// second launch of the app handing over its command line (D103); answered with
     /// [`Reply::Done`].
     OpenLinks(OpenLinks),
+    /// Asks for the values the extension's own checks use (D279); answered with
+    /// [`Reply::ShellConfig`].
+    GetShellConfig,
+    /// Asks for the options the popup shows (D279); answered with [`Reply::Options`].
+    GetOptions,
+    /// Changes one option; answered with the new [`Reply::Options`], and every client also gets
+    /// [`Event::OptionsChanged`] and, when it moved, [`Event::ShellConfigChanged`].
+    SetOption(SetOption),
+    /// Runs an action the popup offers; answered with [`Reply::Done`].
+    InvokeAction(InvokeAction),
+    /// Asks what the popup shows about the tab's page; answered with [`Reply::PageOptions`].
+    PageOptions(PageQuery),
+    /// Asks whether the app takes a capture, before any cookie is read; answered with
+    /// [`Reply::DownloadCheck`].
+    CheckDownload(Box<DownloadCheck>),
+    /// Says the browser's last private window closed, so the app forgets that session's
+    /// downloads; answered with [`Reply::Done`].
+    PrivateSessionEnded(PrivateSessionEnded),
 }
 
 impl Call {
@@ -165,18 +173,21 @@ impl Call {
             Call::Hello(_) => CallMethod::Hello,
             Call::AddDownload(_) => CallMethod::AddDownload,
             Call::WithdrawDownload(_) => CallMethod::WithdrawDownload,
-            Call::GetExtensionSettings => CallMethod::GetExtensionSettings,
-            Call::UpdateExtensionSettings(_) => CallMethod::UpdateExtensionSettings,
             Call::ListQueues => CallMethod::ListQueues,
             Call::PauseAll => CallMethod::PauseAll,
             Call::ResumeAll => CallMethod::ResumeAll,
             Call::ShowWindow => CallMethod::ShowWindow,
-            Call::GetBrowserControls => CallMethod::GetBrowserControls,
-            Call::UpdateBrowserControls(_) => CallMethod::UpdateBrowserControls,
             Call::ShowBrowserSettings => CallMethod::ShowBrowserSettings,
             Call::NoticeShown(_) => CallMethod::NoticeShown,
             Call::NoticePressed(_) => CallMethod::NoticePressed,
             Call::OpenLinks(_) => CallMethod::OpenLinks,
+            Call::GetShellConfig => CallMethod::GetShellConfig,
+            Call::GetOptions => CallMethod::GetOptions,
+            Call::SetOption(_) => CallMethod::SetOption,
+            Call::InvokeAction(_) => CallMethod::InvokeAction,
+            Call::PageOptions(_) => CallMethod::PageOptions,
+            Call::CheckDownload(_) => CallMethod::CheckDownload,
+            Call::PrivateSessionEnded(_) => CallMethod::PrivateSessionEnded,
         }
     }
 }
@@ -193,10 +204,6 @@ pub enum CallMethod {
     AddDownload,
     /// [`Call::WithdrawDownload`].
     WithdrawDownload,
-    /// [`Call::GetExtensionSettings`].
-    GetExtensionSettings,
-    /// [`Call::UpdateExtensionSettings`].
-    UpdateExtensionSettings,
     /// [`Call::ListQueues`].
     ListQueues,
     /// [`Call::PauseAll`].
@@ -205,10 +212,6 @@ pub enum CallMethod {
     ResumeAll,
     /// [`Call::ShowWindow`].
     ShowWindow,
-    /// [`Call::GetBrowserControls`].
-    GetBrowserControls,
-    /// [`Call::UpdateBrowserControls`].
-    UpdateBrowserControls,
     /// [`Call::ShowBrowserSettings`].
     ShowBrowserSettings,
     /// [`Call::NoticeShown`].
@@ -217,6 +220,20 @@ pub enum CallMethod {
     NoticePressed,
     /// [`Call::OpenLinks`].
     OpenLinks,
+    /// [`Call::GetShellConfig`].
+    GetShellConfig,
+    /// [`Call::GetOptions`].
+    GetOptions,
+    /// [`Call::SetOption`].
+    SetOption,
+    /// [`Call::InvokeAction`].
+    InvokeAction,
+    /// [`Call::PageOptions`].
+    PageOptions,
+    /// [`Call::CheckDownload`].
+    CheckDownload,
+    /// [`Call::PrivateSessionEnded`].
+    PrivateSessionEnded,
     /// A method this build does not have, from a newer client.
     #[serde(other)]
     Unknown,
@@ -311,12 +328,14 @@ pub enum Reply {
     DownloadAdded(AddedDownload),
     /// Answers [`Call::WithdrawDownload`].
     Withdrawn(WithdrawOutcome),
-    /// Answers [`Call::GetExtensionSettings`] and [`Call::UpdateExtensionSettings`] with the
-    /// settings as they are now.
-    ExtensionSettings(ExtensionSettings),
-    /// Answers [`Call::GetBrowserControls`] and [`Call::UpdateBrowserControls`] with the
-    /// settings as they are now.
-    BrowserControls(BrowserControls),
+    /// Answers [`Call::GetShellConfig`].
+    ShellConfig(Box<ShellConfig>),
+    /// Answers [`Call::GetOptions`] and [`Call::SetOption`] with the options as they are now.
+    Options(Box<OptionList>),
+    /// Answers [`Call::PageOptions`].
+    PageOptions(PageOptions),
+    /// Answers [`Call::CheckDownload`].
+    DownloadCheck(CheckAnswer),
     /// Answers [`Call::ListQueues`], in sidebar order.
     Queues(Vec<QueueSummary>),
     /// For calls with nothing to return.
@@ -328,13 +347,9 @@ pub enum Reply {
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
 #[ts(export)]
 pub enum Event {
-    /// Sent to every connected client whenever these settings change, from any side.
-    ExtensionSettingsChanged(ExtensionSettings),
     /// Sent to every connected client whenever the queues change: the whole list, in sidebar
     /// order.
     QueuesChanged(Vec<QueueSummary>),
-    /// Sent to every connected client whenever these settings change, from any side (D61).
-    BrowserControlsChanged(BrowserControls),
     /// Sent to every connected client when the person is to be told something in the browser
     /// (D65): the browser in front shows it in the tab the person is looking at and answers with
     /// [`Call::NoticeShown`]; the others leave it.
@@ -342,6 +357,11 @@ pub enum Event {
     /// Sent to every connected client when a notice from [`Event::NoticeRequested`] no longer
     /// applies, its downloads removed or tried again (D97.4): it leaves the page wherever it shows.
     NoticeWithdrawn(NoticeId),
+    /// Sent to every connected client whenever the values the extension's checks use change,
+    /// from any side (D279).
+    ShellConfigChanged(Box<ShellConfig>),
+    /// Sent to every connected client whenever the popup's options change, from any side.
+    OptionsChanged(Box<OptionList>),
 }
 
 impl Event {
@@ -349,11 +369,11 @@ impl Event {
     #[must_use]
     pub fn kind(&self) -> EventKind {
         match self {
-            Event::ExtensionSettingsChanged(_) => EventKind::ExtensionSettingsChanged,
             Event::QueuesChanged(_) => EventKind::QueuesChanged,
-            Event::BrowserControlsChanged(_) => EventKind::BrowserControlsChanged,
             Event::NoticeRequested(_) => EventKind::NoticeRequested,
             Event::NoticeWithdrawn(_) => EventKind::NoticeWithdrawn,
+            Event::ShellConfigChanged(_) => EventKind::ShellConfigChanged,
+            Event::OptionsChanged(_) => EventKind::OptionsChanged,
         }
     }
 }
@@ -363,16 +383,16 @@ impl Event {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EventKind {
-    /// [`Event::ExtensionSettingsChanged`].
-    ExtensionSettingsChanged,
     /// [`Event::QueuesChanged`].
     QueuesChanged,
-    /// [`Event::BrowserControlsChanged`].
-    BrowserControlsChanged,
     /// [`Event::NoticeRequested`].
     NoticeRequested,
     /// [`Event::NoticeWithdrawn`].
     NoticeWithdrawn,
+    /// [`Event::ShellConfigChanged`].
+    ShellConfigChanged,
+    /// [`Event::OptionsChanged`].
+    OptionsChanged,
 }
 
 /// The first call on a connection.
@@ -389,8 +409,10 @@ pub struct Hello {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub max_protocol_version: Option<u32>,
-    /// Set by the extension; the bridge passes it through.
-    pub browser: Option<BrowserInfo>,
+    /// The extension's private session while a private window is open, `None` otherwise
+    /// (D279): the app forgets a session's private downloads once no connection names it.
+    #[serde(default)]
+    pub private_session: Option<String>,
     /// Whether the bridge may start the app when it is not running. The extension sets it only when the person did something that needs the app, such as a download from the browser; its checks on waking and its reconnects leave it off, so a Wirecatch the person closed stays closed (D25). Missing means yes, as before.
     #[serde(default = "start_app_by_default")]
     pub start_app: bool,
@@ -435,16 +457,6 @@ pub enum ClientKind {
 pub struct OpenLinks {
     /// The links, as given on the command line.
     pub links: Vec<String>,
-}
-
-/// The browser the extension runs in.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
-pub struct BrowserInfo {
-    /// For example `chrome`, `edge`, `brave`, `firefox`.
-    pub name: String,
-    /// The browser's version, when the extension can tell.
-    pub version: Option<String>,
 }
 
 /// The app's answer to [`Call::Hello`].
@@ -581,7 +593,7 @@ mod tests {
     fn sample_call(method: CallMethod) -> Option<Call> {
         Some(match method {
             CallMethod::Hello => Call::Hello(hello(1, Some(2))),
-            CallMethod::AddDownload => Call::AddDownload(NewDownload {
+            CallMethod::AddDownload => Call::AddDownload(Box::new(NewDownload {
                 handover_id: "h-1".into(),
                 url: "https://example.com/a.zip".into(),
                 referrer: None,
@@ -598,22 +610,14 @@ mod tests {
                 source: crate::extension::CaptureSource::BrowserDownload,
                 queue: None,
                 media: None,
-            }),
+            })),
             CallMethod::WithdrawDownload => Call::WithdrawDownload(WithdrawRequest {
                 handover_id: "h-1".into(),
             }),
-            CallMethod::GetExtensionSettings => Call::GetExtensionSettings,
-            CallMethod::UpdateExtensionSettings => {
-                Call::UpdateExtensionSettings(ExtensionSettingsPatch::default())
-            }
             CallMethod::ListQueues => Call::ListQueues,
             CallMethod::PauseAll => Call::PauseAll,
             CallMethod::ResumeAll => Call::ResumeAll,
             CallMethod::ShowWindow => Call::ShowWindow,
-            CallMethod::GetBrowserControls => Call::GetBrowserControls,
-            CallMethod::UpdateBrowserControls => {
-                Call::UpdateBrowserControls(crate::extension::BrowserControlsPatch::default())
-            }
             CallMethod::ShowBrowserSettings => Call::ShowBrowserSettings,
             CallMethod::NoticeShown => Call::NoticeShown(NoticeShown {
                 id: crate::extension::NoticeId(1),
@@ -625,6 +629,37 @@ mod tests {
             CallMethod::OpenLinks => Call::OpenLinks(OpenLinks {
                 links: vec!["https://example.com/a.zip".into()],
             }),
+            CallMethod::GetShellConfig => Call::GetShellConfig,
+            CallMethod::GetOptions => Call::GetOptions,
+            CallMethod::SetOption => Call::SetOption(SetOption {
+                id: "capture".into(),
+                change: crate::shell::OptionChange::Set(true.into()),
+            }),
+            CallMethod::InvokeAction => Call::InvokeAction(InvokeAction {
+                id: crate::shell::actions::IGNORE_SITE.into(),
+                site: Some("example.com".into()),
+            }),
+            CallMethod::PageOptions => Call::PageOptions(PageQuery {
+                host: "example.com".into(),
+            }),
+            CallMethod::CheckDownload => Call::CheckDownload(Box::new(DownloadCheck {
+                url: "https://example.com/a.zip".into(),
+                page_url: None,
+                file_name: Some("a.zip".into()),
+                mime: None,
+                size: None,
+                source: crate::extension::CaptureSource::BrowserDownload,
+                private_session: None,
+                cookie_request: crate::extension::CookieRequest {
+                    initiator: None,
+                    original_url: None,
+                    top_level: None,
+                    navigation: true,
+                },
+            })),
+            CallMethod::PrivateSessionEnded => {
+                Call::PrivateSessionEnded(PrivateSessionEnded { id: "s-1".into() })
+            }
             CallMethod::Unknown => return None,
         })
     }
@@ -632,15 +667,7 @@ mod tests {
     /// An event of `kind`. A match, so a new kind cannot be left out.
     fn sample_event(kind: EventKind) -> Event {
         match kind {
-            EventKind::ExtensionSettingsChanged => {
-                Event::ExtensionSettingsChanged(ExtensionSettings::default())
-            }
             EventKind::QueuesChanged => Event::QueuesChanged(Vec::new()),
-            EventKind::BrowserControlsChanged => Event::BrowserControlsChanged(BrowserControls {
-                global_speed_limit: None,
-                max_concurrent_downloads: 3,
-                media: crate::app::MediaDefaults::default(),
-            }),
             EventKind::NoticeRequested => Event::NoticeRequested(BrowserNotice {
                 id: crate::extension::NoticeId(1),
                 kind: crate::extension::NoticeKind::Finished,
@@ -650,6 +677,28 @@ mod tests {
                 stays_ms: Some(8000),
             }),
             EventKind::NoticeWithdrawn => Event::NoticeWithdrawn(NoticeId(1)),
+            EventKind::ShellConfigChanged => Event::ShellConfigChanged(Box::new(ShellConfig {
+                revision: revision(),
+                capture_enabled: true,
+                private_windows: true,
+                show_media_button: true,
+                ignored_sites: Vec::new(),
+                capture_extensions: Vec::new(),
+                min_capture_size: 0,
+                video_sites: Vec::new(),
+                media: crate::shell::MediaTables::default(),
+            })),
+            EventKind::OptionsChanged => Event::OptionsChanged(Box::new(OptionList {
+                revision: revision(),
+                groups: Vec::new(),
+            })),
+        }
+    }
+
+    fn revision() -> crate::shell::Revision {
+        crate::shell::Revision {
+            instance: "i".into(),
+            counter: 1,
         }
     }
 
@@ -659,7 +708,7 @@ mod tests {
             client_version: "1".into(),
             protocol_version,
             max_protocol_version,
-            browser: None,
+            private_session: None,
             start_app: true,
         }
     }

@@ -21,6 +21,7 @@ use wirecatch_protocol::wire::{
 };
 
 use wirecatch_core::Manager;
+use wirecatch_core::SessionClaim;
 use wirecatch_engine::units::KIB_USIZE;
 
 /// A request beyond this gets an error at once, so a client cannot pile up work.
@@ -40,6 +41,11 @@ where
     // Subscribed before the hello is answered: a client told it is connected gets every
     // change made from then on, even one made before this task runs again.
     let mut events = manager.subscribe_events();
+    // Released when this returns, however it returns: a session no connection names ends (D279).
+    let claim = PrivateClaim {
+        manager: &manager,
+        claim: Some(manager.claim_private_session(hello.private_session.as_deref())),
+    };
     send(&mut stream, ok(id, hello_reply(version)), version).await?;
     debug!(
         client = ?hello.client,
@@ -88,7 +94,22 @@ where
     while let Some(response) = responses.recv().await {
         send(&mut stream, response, version).await?;
     }
+    drop(claim);
     Ok(())
+}
+
+/// A connection's private session, released when the connection ends.
+struct PrivateClaim<'a> {
+    manager: &'a Manager,
+    claim: Option<SessionClaim>,
+}
+
+impl Drop for PrivateClaim<'_> {
+    fn drop(&mut self) {
+        if let Some(claim) = self.claim.take() {
+            self.manager.release_private_session(claim);
+        }
+    }
 }
 
 /// The error response to send instead when the connection has its most requests in flight.
@@ -180,14 +201,13 @@ async fn handle(manager: &Manager, version: u32, call: Call) -> Outcome {
     let result = match call {
         // A connection keeps the version its first hello agreed on.
         Call::Hello(_) => Ok(hello_reply(version)),
-        Call::AddDownload(capture) => manager.add_capture(capture).await.map(Reply::DownloadAdded),
+        Call::AddDownload(capture) => manager
+            .add_capture(*capture)
+            .await
+            .map(Reply::DownloadAdded),
         Call::WithdrawDownload(request) => manager
             .withdraw_capture(&request.handover_id)
             .map(Reply::Withdrawn),
-        Call::GetExtensionSettings => Ok(Reply::ExtensionSettings(manager.extension_settings())),
-        Call::UpdateExtensionSettings(patch) => manager
-            .update_extension_settings(patch)
-            .map(Reply::ExtensionSettings),
         Call::ListQueues => Ok(Reply::Queues(manager.queue_summaries())),
         Call::PauseAll => manager.pause_all().map(|()| Reply::Done),
         Call::ResumeAll => manager.resume_all().map(|()| Reply::Done),
@@ -195,10 +215,6 @@ async fn handle(manager: &Manager, version: u32, call: Call) -> Outcome {
             manager.request_window();
             Ok(Reply::Done)
         }
-        Call::GetBrowserControls => Ok(Reply::BrowserControls(manager.browser_controls())),
-        Call::UpdateBrowserControls(patch) => manager
-            .update_browser_controls(patch)
-            .map(Reply::BrowserControls),
         Call::ShowBrowserSettings => {
             manager.request_browser_settings();
             Ok(Reply::Done)
@@ -213,6 +229,18 @@ async fn handle(manager: &Manager, version: u32, call: Call) -> Outcome {
         }
         Call::OpenLinks(open) => {
             manager.request_links(open.links);
+            Ok(Reply::Done)
+        }
+        Call::GetShellConfig => Ok(Reply::ShellConfig(Box::new(manager.shell_config()))),
+        Call::GetOptions => Ok(Reply::Options(Box::new(manager.options()))),
+        Call::SetOption(set) => manager
+            .set_option(set)
+            .map(|options| Reply::Options(Box::new(options))),
+        Call::InvokeAction(action) => manager.invoke_action(&action).map(|()| Reply::Done),
+        Call::PageOptions(query) => manager.page_options(&query).map(Reply::PageOptions),
+        Call::CheckDownload(check) => Ok(Reply::DownloadCheck(manager.check_download(&check))),
+        Call::PrivateSessionEnded(ended) => {
+            manager.end_private_session(&ended.id);
             Ok(Reply::Done)
         }
     };
@@ -295,9 +323,9 @@ fn unsupported_call(id: u64, method: CallMethod) -> Message {
 
 fn snapshot(manager: &Manager) -> [Event; 3] {
     [
-        Event::ExtensionSettingsChanged(manager.extension_settings()),
+        Event::ShellConfigChanged(Box::new(manager.shell_config())),
         Event::QueuesChanged(manager.queue_summaries()),
-        Event::BrowserControlsChanged(manager.browser_controls()),
+        Event::OptionsChanged(Box::new(manager.options())),
     ]
 }
 
@@ -585,7 +613,7 @@ mod tests {
             client_version: "0.1.0".into(),
             protocol_version: 0,
             max_protocol_version: None,
-            browser: None,
+            private_session: None,
             start_app: true,
         };
         let refusal = |oldest, newest| {

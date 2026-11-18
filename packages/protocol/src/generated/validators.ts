@@ -14,7 +14,6 @@ import type { AppSettings } from './AppSettings';
 import type { AppSettingsPatch } from './AppSettingsPatch';
 import type { BrowserControls } from './BrowserControls';
 import type { BrowserControlsPatch } from './BrowserControlsPatch';
-import type { BrowserInfo } from './BrowserInfo';
 import type { BrowserNotice } from './BrowserNotice';
 import type { BrowserRoute } from './BrowserRoute';
 import type { Call } from './Call';
@@ -22,10 +21,13 @@ import type { CaptureConfirmation } from './CaptureConfirmation';
 import type { CaptureSource } from './CaptureSource';
 import type { Category } from './Category';
 import type { CategoryRule } from './CategoryRule';
+import type { CheckAnswer } from './CheckAnswer';
 import type { ClientKind } from './ClientKind';
 import type { ClockFormat } from './ClockFormat';
 import type { CookieJar } from './CookieJar';
+import type { CookiePlan } from './CookiePlan';
 import type { CookieRequest } from './CookieRequest';
+import type { DownloadCheck } from './DownloadCheck';
 import type { DownloadId } from './DownloadId';
 import type { DownloadStatus } from './DownloadStatus';
 import type { DownloadSummary } from './DownloadSummary';
@@ -49,6 +51,7 @@ import type { Hello } from './Hello';
 import type { HelloReply } from './HelloReply';
 import type { ImportPreview } from './ImportPreview';
 import type { ImportedFolder } from './ImportedFolder';
+import type { InvokeAction } from './InvokeAction';
 import type { JarCookie } from './JarCookie';
 import type { LanguageSource } from './LanguageSource';
 import type { Link } from './Link';
@@ -66,6 +69,7 @@ import type { MediaReading } from './MediaReading';
 import type { MediaSelection } from './MediaSelection';
 import type { MediaSubtitle } from './MediaSubtitle';
 import type { MediaSummary } from './MediaSummary';
+import type { MediaTables } from './MediaTables';
 import type { Message } from './Message';
 import type { NameSyntax } from './NameSyntax';
 import type { NewDownload } from './NewDownload';
@@ -76,13 +80,19 @@ import type { NoticeShown } from './NoticeShown';
 import type { NotifyOnFinish } from './NotifyOnFinish';
 import type { NotifyOnStart } from './NotifyOnStart';
 import type { OpenLinks } from './OpenLinks';
+import type { OptionChange } from './OptionChange';
+import type { OptionGroup } from './OptionGroup';
+import type { OptionList } from './OptionList';
 import type { Outcome } from './Outcome';
 import type { OutputDefaults } from './OutputDefaults';
 import type { OutputDefaultsPatch } from './OutputDefaultsPatch';
 import type { OutputFit } from './OutputFit';
 import type { OutputFormat } from './OutputFormat';
+import type { PageOptions } from './PageOptions';
+import type { PageQuery } from './PageQuery';
 import type { PendingCapture } from './PendingCapture';
 import type { PortablePath } from './PortablePath';
+import type { PrivateSessionEnded } from './PrivateSessionEnded';
 import type { ProcessingProgress } from './ProcessingProgress';
 import type { ProcessingStep } from './ProcessingStep';
 import type { ProtocolError } from './ProtocolError';
@@ -111,13 +121,16 @@ import type { QueueSummary } from './QueueSummary';
 import type { Repeated } from './Repeated';
 import type { Reply } from './Reply';
 import type { Reveal } from './Reveal';
+import type { Revision } from './Revision';
 import type { Rule } from './Rule';
 import type { RuleMatch } from './RuleMatch';
 import type { SameSite } from './SameSite';
 import type { Schedule } from './Schedule';
+import type { SetOption } from './SetOption';
 import type { SettingsFile } from './SettingsFile';
 import type { SettingsFileProxy } from './SettingsFileProxy';
 import type { SettingsFileQueue } from './SettingsFileQueue';
+import type { ShellConfig } from './ShellConfig';
 import type { StartNoticeTime } from './StartNoticeTime';
 import type { StartupNotice } from './StartupNotice';
 import type { StreamAction } from './StreamAction';
@@ -353,14 +366,6 @@ export function isBrowserControlsPatch(value: unknown): value is BrowserControls
     (value1['media'] === undefined || isMediaDefaultsPatch(value1['media'])))(value);
 }
 
-/** Whether `value` has the shape of a {@link BrowserInfo}; fields it does not name are not checked. */
-export function isBrowserInfo(value: unknown): value is BrowserInfo {
-  return ((value1: unknown): boolean =>
-    isRecord(value1) &&
-    typeof value1['name'] === 'string' &&
-    (typeof value1['version'] === 'string' || value1['version'] === null))(value);
-}
-
 /** Whether `value` has the shape of a {@link BrowserNotice}; fields it does not name are not checked. */
 export function isBrowserNotice(value: unknown): value is BrowserNotice {
   return ((value1: unknown): boolean =>
@@ -378,6 +383,7 @@ export function isBrowserRoute(value: unknown): value is BrowserRoute {
   return ((value1: unknown): boolean =>
     isRecord(value1) &&
     typeof value1['private_window'] === 'boolean' &&
+    (value1['private_session'] === undefined || typeof value1['private_session'] === 'string') &&
     (typeof value1['observed_page'] === 'string' || value1['observed_page'] === null) &&
     (value1['page_redirect_urls'] === undefined ||
       isArrayOf(value1['page_redirect_urls'], (value2: unknown) => typeof value2 === 'string')) &&
@@ -397,23 +403,10 @@ export function isCall(value: unknown): value is Call {
       isRecord(value1) &&
       value1['method'] === 'withdraw_download' &&
       isWithdrawRequest(value1['params']))(value) ||
-    ((value1: unknown): boolean =>
-      isRecord(value1) && value1['method'] === 'get_extension_settings')(value) ||
-    ((value1: unknown): boolean =>
-      isRecord(value1) &&
-      value1['method'] === 'update_extension_settings' &&
-      isExtensionSettingsPatch(value1['params']))(value) ||
     ((value1: unknown): boolean => isRecord(value1) && value1['method'] === 'list_queues')(value) ||
     ((value1: unknown): boolean => isRecord(value1) && value1['method'] === 'pause_all')(value) ||
     ((value1: unknown): boolean => isRecord(value1) && value1['method'] === 'resume_all')(value) ||
     ((value1: unknown): boolean => isRecord(value1) && value1['method'] === 'show_window')(value) ||
-    ((value1: unknown): boolean => isRecord(value1) && value1['method'] === 'get_browser_controls')(
-      value,
-    ) ||
-    ((value1: unknown): boolean =>
-      isRecord(value1) &&
-      value1['method'] === 'update_browser_controls' &&
-      isBrowserControlsPatch(value1['params']))(value) ||
     ((value1: unknown): boolean =>
       isRecord(value1) && value1['method'] === 'show_browser_settings')(value) ||
     ((value1: unknown): boolean =>
@@ -425,7 +418,33 @@ export function isCall(value: unknown): value is Call {
       value1['method'] === 'notice_pressed' &&
       isNoticePressed(value1['params']))(value) ||
     ((value1: unknown): boolean =>
-      isRecord(value1) && value1['method'] === 'open_links' && isOpenLinks(value1['params']))(value)
+      isRecord(value1) && value1['method'] === 'open_links' && isOpenLinks(value1['params']))(
+      value,
+    ) ||
+    ((value1: unknown): boolean => isRecord(value1) && value1['method'] === 'get_shell_config')(
+      value,
+    ) ||
+    ((value1: unknown): boolean => isRecord(value1) && value1['method'] === 'get_options')(value) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['method'] === 'set_option' && isSetOption(value1['params']))(
+      value,
+    ) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['method'] === 'invoke_action' && isInvokeAction(value1['params']))(
+      value,
+    ) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['method'] === 'page_options' && isPageQuery(value1['params']))(
+      value,
+    ) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) &&
+      value1['method'] === 'check_download' &&
+      isDownloadCheck(value1['params']))(value) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) &&
+      value1['method'] === 'private_session_ended' &&
+      isPrivateSessionEnded(value1['params']))(value)
   );
 }
 
@@ -466,6 +485,20 @@ export function isCategoryRule(value: unknown): value is CategoryRule {
     isPortablePath(value1['folder']))(value);
 }
 
+/** Whether `value` has the shape of a {@link CheckAnswer}; fields it does not name are not checked. */
+export function isCheckAnswer(value: unknown): value is CheckAnswer {
+  return (
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['decision'] === 'take' && isCookiePlan(value1['cookies']))(
+      value,
+    ) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['decision'] === 'leave' && typeof value1['reason'] === 'string')(
+      value,
+    )
+  );
+}
+
 /** Whether `value` has the shape of a {@link ClientKind}; fields it does not name are not checked. */
 export function isClientKind(value: unknown): value is ClientKind {
   return value === 'extension' || value === 'bridge' || value === 'cli' || value === 'app';
@@ -484,6 +517,15 @@ export function isCookieJar(value: unknown): value is CookieJar {
     isCookieRequest(value1['request']))(value);
 }
 
+/** Whether `value` has the shape of a {@link CookiePlan}; fields it does not name are not checked. */
+export function isCookiePlan(value: unknown): value is CookiePlan {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    (typeof value1['site'] === 'string' || value1['site'] === null) &&
+    (typeof value1['top_level_site'] === 'string' || value1['top_level_site'] === null) &&
+    typeof value1['cross_site'] === 'boolean')(value);
+}
+
 /** Whether `value` has the shape of a {@link CookieRequest}; fields it does not name are not checked. */
 export function isCookieRequest(value: unknown): value is CookieRequest {
   return ((value1: unknown): boolean =>
@@ -496,6 +538,20 @@ export function isCookieRequest(value: unknown): value is CookieRequest {
       typeof value1['top_level'] === 'string' ||
       value1['top_level'] === null) &&
     typeof value1['navigation'] === 'boolean')(value);
+}
+
+/** Whether `value` has the shape of a {@link DownloadCheck}; fields it does not name are not checked. */
+export function isDownloadCheck(value: unknown): value is DownloadCheck {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    typeof value1['url'] === 'string' &&
+    (typeof value1['page_url'] === 'string' || value1['page_url'] === null) &&
+    (typeof value1['file_name'] === 'string' || value1['file_name'] === null) &&
+    (typeof value1['mime'] === 'string' || value1['mime'] === null) &&
+    (typeof value1['size'] === 'number' || value1['size'] === null) &&
+    isCaptureSource(value1['source']) &&
+    (typeof value1['private_session'] === 'string' || value1['private_session'] === null) &&
+    isCookieRequest(value1['cookie_request']))(value);
 }
 
 /** Whether `value` has the shape of a {@link DownloadId}; fields it does not name are not checked. */
@@ -540,7 +596,8 @@ export function isDownloadSummary(value: unknown): value is DownloadSummary {
     isUnixMillis(value1['added_at']) &&
     (isUnixMillis(value1['completed_at']) || value1['completed_at'] === null) &&
     (isProcessingProgress(value1['processing']) || value1['processing'] === null) &&
-    (typeof value1['proxy'] === 'string' || value1['proxy'] === null))(value);
+    (typeof value1['proxy'] === 'string' || value1['proxy'] === null) &&
+    typeof value1['private'] === 'boolean')(value);
 }
 
 /** Whether `value` has the shape of a {@link DraftRules}; fields it does not name are not checked. */
@@ -575,22 +632,22 @@ export function isEvent(value: unknown): value is Event {
   return (
     ((value1: unknown): boolean =>
       isRecord(value1) &&
-      value1['type'] === 'extension_settings_changed' &&
-      isExtensionSettings(value1['data']))(value) ||
-    ((value1: unknown): boolean =>
-      isRecord(value1) &&
       value1['type'] === 'queues_changed' &&
       isArrayOf(value1['data'], isQueueSummary))(value) ||
-    ((value1: unknown): boolean =>
-      isRecord(value1) &&
-      value1['type'] === 'browser_controls_changed' &&
-      isBrowserControls(value1['data']))(value) ||
     ((value1: unknown): boolean =>
       isRecord(value1) && value1['type'] === 'notice_requested' && isBrowserNotice(value1['data']))(
       value,
     ) ||
     ((value1: unknown): boolean =>
       isRecord(value1) && value1['type'] === 'notice_withdrawn' && isNoticeId(value1['data']))(
+      value,
+    ) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) &&
+      value1['type'] === 'shell_config_changed' &&
+      isShellConfig(value1['data']))(value) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['type'] === 'options_changed' && isOptionList(value1['data']))(
       value,
     )
   );
@@ -760,7 +817,7 @@ export function isHello(value: unknown): value is Hello {
     typeof value1['protocol_version'] === 'number' &&
     (value1['max_protocol_version'] === undefined ||
       typeof value1['max_protocol_version'] === 'number') &&
-    (isBrowserInfo(value1['browser']) || value1['browser'] === null) &&
+    (typeof value1['private_session'] === 'string' || value1['private_session'] === null) &&
     typeof value1['start_app'] === 'boolean')(value);
 }
 
@@ -797,6 +854,14 @@ export function isImportedFolder(value: unknown): value is ImportedFolder {
     typeof value1['resolved'] === 'string' &&
     (typeof value1['reason'] === 'string' || value1['reason'] === null) &&
     typeof value1['outside_user_folders'] === 'boolean')(value);
+}
+
+/** Whether `value` has the shape of a {@link InvokeAction}; fields it does not name are not checked. */
+export function isInvokeAction(value: unknown): value is InvokeAction {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    typeof value1['id'] === 'string' &&
+    (typeof value1['site'] === 'string' || value1['site'] === null))(value);
 }
 
 /** Whether `value` has the shape of a {@link JarCookie}; fields it does not name are not checked. */
@@ -962,6 +1027,21 @@ export function isMediaSummary(value: unknown): value is MediaSummary {
     (typeof value1['instead_of'] === 'string' || value1['instead_of'] === null))(value);
 }
 
+/** Whether `value` has the shape of a {@link MediaTables}; fields it does not name are not checked. */
+export function isMediaTables(value: unknown): value is MediaTables {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    isArrayOf(value1['hls_extensions'], (value2: unknown) => typeof value2 === 'string') &&
+    isArrayOf(value1['hls_types'], (value2: unknown) => typeof value2 === 'string') &&
+    isArrayOf(value1['dash_extensions'], (value2: unknown) => typeof value2 === 'string') &&
+    isArrayOf(value1['dash_types'], (value2: unknown) => typeof value2 === 'string') &&
+    isArrayOf(value1['video_extensions'], (value2: unknown) => typeof value2 === 'string') &&
+    isArrayOf(value1['audio_extensions'], (value2: unknown) => typeof value2 === 'string') &&
+    isArrayOf(value1['segment_extensions'], (value2: unknown) => typeof value2 === 'string') &&
+    isArrayOf(value1['segment_types'], (value2: unknown) => typeof value2 === 'string') &&
+    typeof value1['min_direct_bytes'] === 'number')(value);
+}
+
 /** Whether `value` has the shape of a {@link Message}; fields it does not name are not checked. */
 export function isMessage(value: unknown): value is Message {
   return (
@@ -1049,6 +1129,38 @@ export function isOpenLinks(value: unknown): value is OpenLinks {
     isArrayOf(value1['links'], (value2: unknown) => typeof value2 === 'string'))(value);
 }
 
+/** Whether `value` has the shape of a {@link OptionChange}; fields it does not name are not checked. */
+export function isOptionChange(value: unknown): value is OptionChange {
+  return (
+    ((value1: unknown): boolean => isRecord(value1) && true)(value) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) &&
+      ((value2: unknown): boolean =>
+        isRecord(value2) &&
+        isArrayOf(value2['add'], (value3: unknown) => true) &&
+        isArrayOf(value2['remove'], (value3: unknown) => true))(value1['edit']))(value)
+  );
+}
+
+/** Whether `value` has the shape of a {@link OptionGroup}; fields it does not name are not checked. */
+export function isOptionGroup(value: unknown): value is OptionGroup {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    typeof value1['id'] === 'string' &&
+    (typeof value1['title'] === 'string' || value1['title'] === null) &&
+    (typeof value1['summary'] === 'string' || value1['summary'] === null) &&
+    typeof value1['folded'] === 'boolean' &&
+    isArrayOf(value1['options'], (value2: unknown) => true))(value);
+}
+
+/** Whether `value` has the shape of a {@link OptionList}; fields it does not name are not checked. */
+export function isOptionList(value: unknown): value is OptionList {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    isRevision(value1['revision']) &&
+    isArrayOf(value1['groups'], isOptionGroup))(value);
+}
+
 /** Whether `value` has the shape of a {@link Outcome}; fields it does not name are not checked. */
 export function isOutcome(value: unknown): value is Outcome {
   return (
@@ -1121,6 +1233,21 @@ export function isOutputFormat(value: unknown): value is OutputFormat {
   );
 }
 
+/** Whether `value` has the shape of a {@link PageOptions}; fields it does not name are not checked. */
+export function isPageOptions(value: unknown): value is PageOptions {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    typeof value1['site'] === 'string' &&
+    typeof value1['ignored'] === 'boolean')(value);
+}
+
+/** Whether `value` has the shape of a {@link PageQuery}; fields it does not name are not checked. */
+export function isPageQuery(value: unknown): value is PageQuery {
+  return ((value1: unknown): boolean => isRecord(value1) && typeof value1['host'] === 'string')(
+    value,
+  );
+}
+
 /** Whether `value` has the shape of a {@link PendingCapture}; fields it does not name are not checked. */
 export function isPendingCapture(value: unknown): value is PendingCapture {
   return ((value1: unknown): boolean =>
@@ -1140,6 +1267,13 @@ export function isPendingCapture(value: unknown): value is PendingCapture {
 /** Whether `value` has the shape of a {@link PortablePath}; fields it does not name are not checked. */
 export function isPortablePath(value: unknown): value is PortablePath {
   return typeof value === 'string';
+}
+
+/** Whether `value` has the shape of a {@link PrivateSessionEnded}; fields it does not name are not checked. */
+export function isPrivateSessionEnded(value: unknown): value is PrivateSessionEnded {
+  return ((value1: unknown): boolean => isRecord(value1) && typeof value1['id'] === 'string')(
+    value,
+  );
 }
 
 /** Whether `value` has the shape of a {@link ProcessingProgress}; fields it does not name are not checked. */
@@ -1439,13 +1573,19 @@ export function isReply(value: unknown): value is Reply {
       value,
     ) ||
     ((value1: unknown): boolean =>
-      isRecord(value1) &&
-      value1['type'] === 'extension_settings' &&
-      isExtensionSettings(value1['data']))(value) ||
+      isRecord(value1) && value1['type'] === 'shell_config' && isShellConfig(value1['data']))(
+      value,
+    ) ||
     ((value1: unknown): boolean =>
-      isRecord(value1) &&
-      value1['type'] === 'browser_controls' &&
-      isBrowserControls(value1['data']))(value) ||
+      isRecord(value1) && value1['type'] === 'options' && isOptionList(value1['data']))(value) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['type'] === 'page_options' && isPageOptions(value1['data']))(
+      value,
+    ) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['type'] === 'download_check' && isCheckAnswer(value1['data']))(
+      value,
+    ) ||
     ((value1: unknown): boolean =>
       isRecord(value1) && value1['type'] === 'queues' && isArrayOf(value1['data'], isQueueSummary))(
       value,
@@ -1463,6 +1603,14 @@ export function isReveal(value: unknown): value is Reveal {
     (value1['browser_settings'] === undefined || typeof value1['browser_settings'] === 'boolean') &&
     (value1['proxy_settings'] === undefined || typeof value1['proxy_settings'] === 'boolean') &&
     (value1['details'] === undefined || typeof value1['details'] === 'boolean'))(value);
+}
+
+/** Whether `value` has the shape of a {@link Revision}; fields it does not name are not checked. */
+export function isRevision(value: unknown): value is Revision {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    typeof value1['instance'] === 'string' &&
+    typeof value1['counter'] === 'number')(value);
 }
 
 /** Whether `value` has the shape of a {@link Rule}; fields it does not name are not checked. */
@@ -1511,6 +1659,14 @@ export function isSchedule(value: unknown): value is Schedule {
     isArrayOf(value1['days'], isWeekday))(value);
 }
 
+/** Whether `value` has the shape of a {@link SetOption}; fields it does not name are not checked. */
+export function isSetOption(value: unknown): value is SetOption {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) && typeof value1['id'] === 'string' && isOptionChange(value1['change']))(
+    value,
+  );
+}
+
 /** Whether `value` has the shape of a {@link SettingsFile}; fields it does not name are not checked. */
 export function isSettingsFile(value: unknown): value is SettingsFile {
   return ((value1: unknown): boolean =>
@@ -1539,6 +1695,21 @@ export function isSettingsFileQueue(value: unknown): value is SettingsFileQueue 
     isQueueId(value1['id']) &&
     typeof value1['is_default'] === 'boolean' &&
     isQueueSettings(value1['settings']))(value);
+}
+
+/** Whether `value` has the shape of a {@link ShellConfig}; fields it does not name are not checked. */
+export function isShellConfig(value: unknown): value is ShellConfig {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    isRevision(value1['revision']) &&
+    typeof value1['capture_enabled'] === 'boolean' &&
+    typeof value1['private_windows'] === 'boolean' &&
+    typeof value1['show_media_button'] === 'boolean' &&
+    isArrayOf(value1['ignored_sites'], (value2: unknown) => typeof value2 === 'string') &&
+    isArrayOf(value1['capture_extensions'], (value2: unknown) => typeof value2 === 'string') &&
+    typeof value1['min_capture_size'] === 'number' &&
+    isArrayOf(value1['video_sites'], (value2: unknown) => typeof value2 === 'string') &&
+    isMediaTables(value1['media']))(value);
 }
 
 /** Whether `value` has the shape of a {@link StartNoticeTime}; fields it does not name are not checked. */

@@ -140,6 +140,11 @@ impl fmt::Debug for NewDownload {
 pub struct BrowserRoute {
     /// A private page must never be reopened in the regular browser profile.
     pub private_window: bool,
+    /// The private session the download comes from (D279): the app keeps such a download in
+    /// memory only and forgets it when the session ends.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub private_session: Option<String>,
     /// The full page observed in the browser, used to return there. The HTTP
     /// referrer alone is insufficient to identify that page.
     #[ts(as = "Option<String>")]
@@ -1055,7 +1060,7 @@ mod tests {
     #[test]
     fn printing_a_capture_never_shows_its_secrets() {
         let capture = capture_with_secrets();
-        let call = Call::AddDownload(capture.clone());
+        let call = Call::AddDownload(Box::new(capture.clone()));
         let message = Message::Request {
             id: 1,
             call: call.clone(),

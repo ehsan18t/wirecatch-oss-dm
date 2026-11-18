@@ -4,8 +4,8 @@ import type { Accent } from './Accent';
 import type { Call } from './Call';
 import type { ErrorCode } from './ErrorCode';
 import type { Event } from './Event';
-import type { ExtensionSettings } from './ExtensionSettings';
 import type { FixAction } from './FixAction';
+import type { MediaTables } from './MediaTables';
 import type { OutputFormat } from './OutputFormat';
 import type { QueueId } from './QueueId';
 import type { Theme } from './Theme';
@@ -21,7 +21,7 @@ export const PROTOCOL_VERSION = 2;
  * The oldest protocol version this build still speaks. Raised only by a change an older
  * peer cannot read, which then cannot connect at all and is told to update (D32).
  */
-export const MIN_PROTOCOL_VERSION = 1;
+export const MIN_PROTOCOL_VERSION = 2;
 
 /**
  * The default queue, which always exists and cannot be deleted: downloads go to it when
@@ -433,19 +433,22 @@ export const KEY_MIN_REST = 16;
  */
 export const CALL_SINCE: Readonly<Record<Call['method'], number>> = {
   add_download: 1,
-  get_browser_controls: 2,
-  get_extension_settings: 1,
+  check_download: 2,
+  get_options: 2,
+  get_shell_config: 2,
   hello: 1,
+  invoke_action: 2,
   list_queues: 1,
   notice_pressed: 2,
   notice_shown: 2,
   open_links: 2,
+  page_options: 2,
   pause_all: 1,
+  private_session_ended: 2,
   resume_all: 1,
+  set_option: 2,
   show_browser_settings: 2,
   show_window: 1,
-  update_browser_controls: 2,
-  update_extension_settings: 1,
   withdraw_download: 1,
 };
 
@@ -453,11 +456,11 @@ export const CALL_SINCE: Readonly<Record<Call['method'], number>> = {
  * The protocol version that added each event (D32): the app sends an event only on a connection whose version has it.
  */
 export const EVENT_SINCE: Readonly<Record<Event['type'], number>> = {
-  browser_controls_changed: 2,
-  extension_settings_changed: 1,
   notice_requested: 2,
   notice_withdrawn: 2,
+  options_changed: 2,
   queues_changed: 1,
+  shell_config_changed: 2,
 };
 
 /**
@@ -1436,17 +1439,76 @@ export const SUBTITLE_LANGUAGES: readonly {
 ];
 
 /**
- * The extension's settings on a fresh install (`ExtensionSettings::default`), which
- * the extension judges browser downloads by until it first hears from the app.
+ * The tables the extension finds media with before the app first sends its own
+ * (`MediaTables::default`, D279).
  */
-export const DEFAULT_EXTENSION_SETTINGS: ExtensionSettings = {
-  ask_before_download: true,
-  capture_enabled: true,
-  capture_extensions: [],
-  default_queue: DEFAULT_QUEUE_ID,
-  ignored_sites: [],
-  min_capture_size: 0,
-  private_windows: true,
-  show_media_button: true,
-  video_sites: [],
+export const DEFAULT_MEDIA_TABLES: MediaTables = {
+  audio_extensions: ['mp3', 'm4a', 'ogg', 'oga', 'opus', 'wav', 'flac', 'aac', 'weba'],
+  dash_extensions: ['mpd'],
+  dash_types: ['application/dash+xml', 'video/vnd.mpeg.dash.mpd'],
+  hls_extensions: ['m3u8'],
+  hls_types: [
+    'application/vnd.apple.mpegurl',
+    'application/x-mpegurl',
+    'audio/mpegurl',
+    'audio/x-mpegurl',
+  ],
+  min_direct_bytes: 102400,
+  segment_extensions: ['ts', 'm4s', 'm4f', 'm4v-seg', 'cmfv', 'cmfa', 'aac-seg'],
+  segment_types: ['video/mp2t', 'video/iso.segment', 'audio/iso.segment'],
+  video_extensions: ['mp4', 'm4v', 'webm', 'mkv', 'mov', 'ogv', 'avi', 'flv', '3gp'],
+};
+
+/**
+ * Most groups an option list holds; the extension leaves out any past it.
+ */
+export const MAX_OPTION_GROUPS = 32;
+
+/**
+ * Most options one group holds; the extension leaves out any past it.
+ */
+export const MAX_OPTIONS_PER_GROUP = 64;
+
+/**
+ * Most choices one option offers; the extension leaves out any past it.
+ */
+export const MAX_OPTION_CHOICES = 500;
+
+/**
+ * Longest text of an option the extension shows, in characters; it cuts anything longer.
+ */
+export const MAX_OPTION_TEXT_CHARS = 500;
+
+/**
+ * How long a capture may wait for the app, in milliseconds, from the browser's event to the
+ * app's answer to `check_download`, starting the app included. Past it the download goes on
+ * in the browser, and a later acceptance starts nothing.
+ */
+export const CAPTURE_DEADLINE_MS = 12000;
+
+/**
+ * The control kinds an option may name (`shell::kinds`, D279).
+ */
+export const OPTION_KINDS: Readonly<Record<string, string>> = {
+  action: 'action',
+  browser: 'browser',
+  choice: 'choice',
+  choices: 'choices',
+  limit: 'limit',
+  note: 'note',
+  number: 'number',
+  toggle: 'toggle',
+};
+
+/**
+ * The rows a `browser` option may name (`shell::BROWSER_ROWS`).
+ */
+export const BROWSER_ROWS: readonly string[] = ['shortcut', 'page_site'];
+
+/**
+ * The actions the extension's own design runs (`shell::actions`).
+ */
+export const SHELL_ACTIONS: Readonly<Record<string, string>> = {
+  ignore_site: 'ignore_site',
+  take_site: 'take_site',
 };

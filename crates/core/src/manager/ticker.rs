@@ -86,6 +86,7 @@ impl Manager {
                 .running
                 .iter()
                 .filter_map(|id| state.downloads.get(id))
+                .filter(|entry| !entry.row.private)
                 .map(|entry| Progress {
                     id: entry.row.id,
                     done: entry.row.done,

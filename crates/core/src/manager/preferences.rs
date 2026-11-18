@@ -8,10 +8,6 @@ use wirecatch_protocol::ProxyServerId;
 use wirecatch_protocol::app::{
     AddonId, AppSettings, AppSettingsPatch, Category, ImportPreview, UiEvent,
 };
-use wirecatch_protocol::extension::{
-    BrowserControls, BrowserControlsPatch, ExtensionSettings, ExtensionSettingsPatch,
-};
-use wirecatch_protocol::wire::Event;
 
 use wirecatch_settings::proxy::SavedProxyServer;
 use wirecatch_settings::settings_file::{Current, NewIds};
@@ -99,52 +95,6 @@ impl Manager {
         )?;
         self.apply_settings(&mut state, new);
         Ok(())
-    }
-
-    /// The settings the extension shows.
-    #[must_use]
-    pub fn extension_settings(&self) -> ExtensionSettings {
-        self.lock().settings.extension.clone()
-    }
-
-    /// The app settings the extension's popup shows besides its own (D61).
-    #[must_use]
-    pub fn browser_controls(&self) -> BrowserControls {
-        self.lock().settings.browser_controls()
-    }
-
-    /// Changes some of [`browser_controls`](Self::browser_controls), as asked by a socket client, checked like any other change, and returns them as they are now.
-    ///
-    /// # Errors
-    ///
-    /// The errors of [`change_settings`](Self::change_settings).
-    pub fn update_browser_controls(&self, patch: BrowserControlsPatch) -> Result<BrowserControls> {
-        self.change_settings(patch.into())?;
-        Ok(self.browser_controls())
-    }
-
-    /// Changes some of the extension's settings, as asked by a socket client. Sites to add or remove are matched the way the list stores them ([`normalize_site`](wirecatch_protocol::extension::normalize_site)); the lists are checked before the manager's lock is taken, so a client sending a huge one holds nobody up.
-    ///
-    /// # Errors
-    ///
-    /// The errors of [`change_settings`](Self::change_settings), and [`CoreError::Invalid`] for a site to keep that names no host.
-    pub fn update_extension_settings(
-        &self,
-        patch: ExtensionSettingsPatch,
-    ) -> Result<ExtensionSettings> {
-        wirecatch_settings::check_site_patch(&patch)?;
-        let mut state = self.lock_open()?;
-        let mut new = state.settings.clone();
-        new.extension.apply(patch);
-        let new = wirecatch_settings::validate(
-            new,
-            &state.queue_list(),
-            &self.inner.folders,
-            &state.suffixes,
-        )?;
-        let extension = new.extension.clone();
-        self.apply_settings(&mut state, new);
-        Ok(extension)
     }
 
     /// Writes every setting and queue to `path` as a settings profile (D6). Folders
@@ -353,14 +303,8 @@ impl Manager {
             self.inner.global_limiter.set_limit(new.global_speed_limit);
         }
         self.inner.store.save_settings(new.clone());
-        if old.extension != new.extension {
-            self.emit_wire(Event::ExtensionSettingsChanged(new.extension.clone()));
-        }
-        let controls = new.browser_controls();
-        if old.browser_controls() != controls {
-            self.emit_wire(Event::BrowserControlsChanged(controls));
-        }
-        self.emit(UiEvent::SettingsChanged(Box::new(new.clone())));
+        self.publish_shell(state);
+        self.emit(UiEvent::SettingsChanged(Box::new(state.settings.clone())));
         self.reconcile(state);
     }
 }

@@ -5,6 +5,7 @@ mod added_pages;
 mod addons;
 pub mod app_update;
 mod arrival;
+mod browser;
 mod captures;
 mod downloads;
 #[cfg(test)]
@@ -15,10 +16,12 @@ mod handovers;
 mod media;
 
 mod media_run;
+mod options;
 mod page_readings;
 mod placement;
 mod policy;
 mod preferences;
+pub(crate) mod private_sessions;
 mod proxy;
 mod questions;
 mod queues;
@@ -337,6 +340,12 @@ struct Inner {
     global_limiter: Arc<RateLimiter>,
     ui_events: broadcast::Sender<UiEvent>,
     wire_events: broadcast::Sender<Event>,
+    /// New at every start, so the extension tells this run's answers from an earlier run's.
+    instance: String,
+    /// Raised by every change sent to the extension (D279).
+    revision: std::sync::atomic::AtomicU64,
+    /// The browsers' private sessions.
+    private: Mutex<private_sessions::PrivateSessions>,
     /// Wakes the ticker when a row changes or a download starts.
     rows_changed: Arc<Notify>,
     /// Wakes the scheduler when queues change.
@@ -455,6 +464,9 @@ impl Manager {
             global_limiter,
             ui_events,
             wire_events: broadcast::Sender::new(WIRE_EVENT_BUFFER),
+            instance: format!("{:x}-{:x}", std::process::id(), now_millis.0),
+            revision: std::sync::atomic::AtomicU64::new(0),
+            private: Mutex::default(),
             rows_changed: Arc::new(Notify::new()),
             queues_changed: Arc::new(Notify::new()),
             stopped: CancellationToken::new(),
@@ -732,19 +744,32 @@ impl Manager {
     fn save(&self, state: &mut State, id: DownloadId) {
         // One being removed is already off the saved list and must stay off it.
         let now = self.inner.clock.unix_millis();
-        if let Some(entry) = state
+        let Some(entry) = state
             .downloads
             .get_mut(&id)
             .filter(|e| !e.hold.is_removing())
-        {
-            entry.note_changes(now);
+        else {
+            return;
+        };
+        entry.note_changes(now);
+        let completed = entry.row.status == wirecatch_protocol::app::DownloadStatus::Completed;
+        if entry.row.private {
+            // A private download lives in memory only (D279); its partial files are listed by
+            // path alone, so the next start deletes what a crash left of them.
+            let deletion = (!completed).then(|| entry.pending_deletion());
+            match deletion {
+                Some(deletion) => state.pending_deletions.insert(id, deletion),
+                None => state.pending_deletions.remove(&id),
+            };
+            self.save_pending_deletions(state);
+        } else {
             self.inner.store.save_downloads(vec![entry.stored()]);
-            if entry.row.status == wirecatch_protocol::app::DownloadStatus::Completed {
-                state.stop_watching_link(id);
-            }
-            state.touch(id);
-            self.inner.rows_changed.notify_one();
         }
+        if completed {
+            state.stop_watching_link(id);
+        }
+        state.touch(id);
+        self.inner.rows_changed.notify_one();
     }
 
     fn emit(&self, event: UiEvent) {

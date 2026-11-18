@@ -29,6 +29,7 @@ pub fn download(id: i64) -> DownloadSummary {
         completed_at: None,
         processing: None,
         proxy: None,
+        private: false,
     }
 }
 

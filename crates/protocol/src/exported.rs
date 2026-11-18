@@ -301,7 +301,6 @@ mod tests {
 
     use super::Constant;
     use crate::app::OutputFormat;
-    use crate::extension::ExtensionSettings;
 
     /// The file written into the generated folder. `packages/protocol/scripts/index-source.mjs`
     /// re-exports it from the package by this name.
@@ -573,21 +572,18 @@ mod tests {
                 &[],
                 &crate::languages::LANGUAGES,
             )],
-            vec![Constant::json_naming(
-                "DEFAULT_EXTENSION_SETTINGS",
+            vec![Constant::json(
+                "DEFAULT_MEDIA_TABLES",
                 &[
-                    " The extension's settings on a fresh install (`ExtensionSettings::default`), which",
-                    " the extension judges browser downloads by until it first hears from the app.",
+                    " The tables the extension finds media with before the app first sends its own",
+                    " (`MediaTables::default`, D279).",
                 ],
-                "ExtensionSettings",
-                &["ExtensionSettings"],
-                &ExtensionSettings::default(),
-                &[(
-                    "default_queue",
-                    "DEFAULT_QUEUE_ID",
-                    serde_json::to_value(crate::DEFAULT_QUEUE_ID).unwrap(),
-                )],
+                "MediaTables",
+                &["MediaTables"],
+                &crate::shell::MediaTables::default(),
             )],
+            crate::shell::exported_consts(),
+            crate::shell::name_tables(),
         ];
         let constants: Vec<&Constant> = constants.iter().flatten().collect();
         let mut out = String::from(

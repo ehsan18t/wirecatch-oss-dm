@@ -62,6 +62,10 @@ pub struct DownloadSummary {
     /// computer's proxy, or no proxy (D73.3). `None` before its first run.
     #[serde(default)]
     pub proxy: Option<String>,
+    /// From a private window (D279): kept in memory only, and forgotten when its private
+    /// session ends.
+    #[serde(default)]
+    pub private: bool,
 }
 
 /// What ffmpeg is doing to a downloaded video or audio, and how far it is (D24).
