@@ -700,6 +700,7 @@ fn languages(
             .w(px(280.))
             .placeholder("The video's language")
             .search_placeholder("Search languages")
+            .highlight_matches(true)
             .into_any_element()
     })
 }

@@ -14,7 +14,7 @@ name = "wirecatch-app"
 path = "src/main.rs"
 
 [dependencies]
-gpui-kit = "=0.9.1"
+gpui-kit = "=0.10.0"
 wirecatch-core.workspace = true
 wirecatch-engine.workspace = true
 wirecatch-media.workspace = true
