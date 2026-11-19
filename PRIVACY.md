@@ -19,7 +19,7 @@ While the browser is open, the extension keeps some of this in the browser's ses
 The app downloads what you asked for from the sites it comes from, with the cookies and the referring page the extension handed it, as your browser would.
 
 - **Your downloads** (addresses, file names, folders, and the cookies a download needs to resume) are kept in the app's database in your user folder, readable only by your account. A download that has not finished within a week forgets its cookies, and removing a download removes them.
-- **Downloads from private windows** are never written to that database or to the log. The app keeps them in memory, and forgets them, with their partial files, when your last private window closes or the app quits; the file you saved stays where you saved it. Their notifications are not kept in the system's list.
+- **Downloads from private windows** are never written to that database or to the log. The app keeps them in memory, and forgets them, with their partial files, when your last private window closes or the app quits; the file you saved stays where you saved it. Their notifications are not kept in the system's list and never show in a browser. A video page read for a private download is not reused for any other download.
 - **Logs** stay on your computer and leave out cookies, passwords and tokens.
 - **Settings** stay on your computer, unless you export them to a file.
 

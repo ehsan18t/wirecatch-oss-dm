@@ -67,7 +67,7 @@ Self-distributed copies do not update by themselves unless the manifest gets an 
 
 ### Listing on addons.mozilla.org
 
-Wirecatch is listed on addons.mozilla.org, so every copy updates by itself (D279); unlisted signing stays for test builds. Submit a version on the listed channel from the add-on's page in the Developer Hub, or with `web-ext sign --channel=listed` and an `--amo-metadata` file that has the listing details (name, summary, categories, license). Listed versions are reviewed by Mozilla and then hosted and updated by addons.mozilla.org. The add-on keeps the same id, so the bridge needs no change.
+Wirecatch is to be listed on addons.mozilla.org, so every copy updates by itself (D279); until the maintainer creates the listing, copies are self-distributed as above, and unlisted signing stays for test builds afterwards. Submit a version on the listed channel from the add-on's page in the Developer Hub, or with `web-ext sign --channel=listed` and an `--amo-metadata` file that has the listing details (name, summary, categories, license). Listed versions are reviewed by Mozilla and then hosted and updated by addons.mozilla.org. The add-on keeps the same id, so the bridge needs no change.
 
 **Data collection.** The manifest declares, under `required`, what reaches the app over native messaging: `browsingActivity` (the addresses of downloads, pages and media), `websiteContent` (their cookies and request headers) and `websiteActivity` (that something was downloaded). Firefox shows them at install. Implicit consent does not cover Wirecatch: it is for add-ons that send data only on a deliberate click, and never cookies (policy 6.2.2.2).
 
