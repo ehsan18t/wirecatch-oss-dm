@@ -5,6 +5,7 @@
 use std::path::Path;
 use std::time::Duration;
 
+use jiff::ToSpan as _;
 use wirecatch_core::{CoreError, DEFAULT_QUEUE_ID};
 use wirecatch_protocol::app::{
     AddRequest, AddonId, AddonState, Category, DownloadStatus, DownloadSummary, FileExistsAnswer,
@@ -2217,7 +2218,7 @@ async fn a_stale_wait_never_pops_a_question_later() -> TestResult {
         .add_capture(media_capture(server.url("watch/13"), MediaKind::Page, None))
         .await
         .unwrap();
-    h.clock.advance(chrono::TimeDelta::minutes(31));
+    h.clock.advance(31.minutes());
     let mut ui = h.manager.subscribe();
     assert_eq!(install(&h).await?.state, AddonState::Installed);
     let row = wait_until("the failed row", || h.manager.list_downloads().pop()).await;
@@ -2486,7 +2487,7 @@ async fn failed_then_page_changes(
         .await?;
     let choice = choice_requested(&mut ui).await;
     // Chosen once the choice's reading is too old to serve the start.
-    h.clock.advance(chrono::TimeDelta::minutes(31));
+    h.clock.advance(31.minutes());
     tell_tool(h, "fail.txt", "this page cannot be read right now")?;
     let id = h.manager.choose_media(choice.id, select("137+140")).await?;
     h.wait_status(id, DownloadStatus::Failed).await;

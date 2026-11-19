@@ -8,6 +8,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll, ready};
 use std::time::Duration;
 
+use jiff::ToSpan as _;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, DuplexStream, ReadBuf};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
@@ -1594,7 +1595,7 @@ async fn a_browser_capture_refreshes_the_watched_row_after_a_mirror_change() -> 
     }));
     let id = h.manager.add_capture(old.clone()).await?.id.unwrap();
     let added_at = h.row(id).added_at;
-    h.clock.advance(chrono::TimeDelta::days(8));
+    h.clock.advance(8.days());
     h.restart().await?;
     let (saved, result) = oneshot::channel();
     assert_eq!(
@@ -1891,13 +1892,12 @@ async fn a_download_unfinished_after_a_week_forgets_its_sign_in() -> TestResult 
     assert!(stored.contains("Bearer secret"), "{stored}");
 
     // Six days on, it is all still there.
-    h.clock.advance(chrono::TimeDelta::days(6));
+    h.clock.advance(6.days());
     tokio::time::sleep(QUIET).await;
     wait_until_stored(&h, old, |o| o.contains("session=abc")).await;
 
     // A week on, the sign-in is gone; harmless headers stay.
-    h.clock
-        .advance(chrono::TimeDelta::days(1) + chrono::TimeDelta::minutes(1));
+    h.clock.advance(1.day().minutes(1));
     let stored = wait_until_stored(&h, old, |o| !o.contains("session=abc")).await;
     for secret in ["Bearer secret", "t0k3n", "Cookie"] {
         assert!(!stored.contains(secret), "{secret} kept: {stored}");

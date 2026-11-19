@@ -4,6 +4,7 @@
 
 use std::sync::Arc;
 
+use jiff::ToSpan as _;
 use wirecatch_core::ComputerProxy;
 use wirecatch_engine::units::KIB;
 use wirecatch_protocol::app::{AppSettingsPatch, DownloadStatus, QueueSettings, Setting, Update};
@@ -418,7 +419,7 @@ async fn a_test_uses_the_draft_and_the_saved_password_and_is_kept_when_saved() -
     assert_eq!(tested.result, ProxyTestResult::Works);
 
     // A saved profile's draft keeps its password, and its result is kept as its last test.
-    h.clock.advance(chrono::TimeDelta::hours(1));
+    h.clock.advance(1.hour());
     assert_eq!(
         h.manager
             .test_proxy_server(Some(id), draft(settings, None))

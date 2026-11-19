@@ -1811,3 +1811,11 @@ Recorded on 2026-11-13. Narrows D156 for one case.
 2. Core keeps this as the download's next run (`NextRun::Finishes`), saved with it, so a quit before that run changes nothing. A run that fails with the data still whole, such as a scanner holding the file at the rename, keeps it; any other run replaces it.
 3. D156 still holds for a complete part file found at the start of any other run.
 4. Release notes for the next release of `wirecatch-engine`. Added: `DownloadRequest::data_complete`, which finishes a complete part file at `exact_path` without asking the server.
+
+### D279. Dates and times use jiff
+
+Recorded on 2026-11-19. chrono is unmaintained (RUSTSEC-2026-0543), which fails the supply-chain check for any crate of this workspace that depends on it.
+
+1. Wirecatch's own dates and times use jiff: schedules and the clock in `crates/queues` and `crates/core` work in civil date and time (`jiff::civil`), the Public Suffix List's date is read with it in `crates/sites`, and the desktop app shows dates and times with it. `time` was the other choice the advisory names; jiff was taken because it reads the system time zone on Windows and Linux alike, which `time` refuses on Linux once a process runs more than one thread.
+2. The workspace dependency turns on only `std`. The crates that read the local clock (`crates/core`, `crates/desktop`) add the system time zone and its data.
+3. The desktop app still names `chrono::NaiveTime`, only where it fills and reads gpui-kit's time field, whose API takes and returns that type. `deny.toml` ignores the advisory for that reason and bans chrono from every other crate of the workspace, so a new use fails the check. Revisit when gpui-kit moves off chrono.

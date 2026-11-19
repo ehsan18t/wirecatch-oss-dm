@@ -2,8 +2,10 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use chrono::{Datelike as _, Local, NaiveDate, NaiveTime, TimeZone as _};
 use gpui_kit::component::time_field::HourCycle;
+use jiff::civil::{Date, Time};
+use jiff::tz::TimeZone;
+use jiff::{Timestamp, Zoned};
 use wirecatch_protocol::UnixMillis;
 use wirecatch_protocol::app::{
     Category, ClockFormat, DownloadStatus, DownloadSummary, FileExistsQuestion, FileTypeQuestion,
@@ -53,14 +55,25 @@ fn hour_cycle_of(format: ClockFormat) -> HourCycle {
 }
 
 /// `time` in `format`: `3:42 PM` or `15:42`, with the seconds when `seconds`.
-fn format_time(time: NaiveTime, seconds: bool, format: ClockFormat) -> String {
+fn format_time(time: Time, seconds: bool, format: ClockFormat) -> String {
     let pattern = match (format, seconds) {
         (ClockFormat::TwelveHour, false) => "%-I:%M %p",
         (ClockFormat::TwelveHour, true) => "%-I:%M:%S %p",
         (ClockFormat::TwentyFourHour, false) => "%H:%M",
         (ClockFormat::TwentyFourHour, true) => "%H:%M:%S",
     };
-    time.format(pattern).to_string()
+    time.strftime(pattern).to_string()
+}
+
+/// A moment on the local clock.
+fn local(at: UnixMillis) -> Option<Zoned> {
+    Timestamp::from_millisecond(at.0)
+        .ok()
+        .map(|at| at.to_zoned(TimeZone::system()))
+}
+
+fn today() -> Date {
+    Zoned::now().date()
 }
 
 /// Seconds left as a compact duration: `45 s`, `3 min`, `1 h 20 min`, `2 days`.
@@ -538,18 +551,18 @@ pub fn folder(path: &str) -> String {
 /// A moment for the details: `Today, 2:05:31 PM`, `Yesterday, 9:12:44 AM` or
 /// `3 Oct 2026, 9:12:44 AM`, in the chosen clock format.
 pub fn date(at: UnixMillis) -> String {
-    let Some(at) = Local.timestamp_millis_opt(at.0).single() else {
+    let Some(at) = local(at) else {
         return String::new();
     };
-    let today = Local::now().date_naive();
-    let day = at.date_naive();
+    let today = today();
+    let day = at.date();
     let time = format_time(at.time(), true, clock_format());
     if day == today {
         format!("Today, {time}")
-    } else if today.pred_opt() == Some(day) {
+    } else if today.yesterday().ok() == Some(day) {
         format!("Yesterday, {time}")
     } else {
-        format!("{}, {time}", at.format("%-d %b %Y"))
+        format!("{}, {time}", at.strftime("%-d %b %Y"))
     }
 }
 
@@ -567,50 +580,44 @@ pub fn suffix_list_said(list: &SuffixListInfo) -> String {
 
 /// A moment's local day, year included: `3 Nov 2026`.
 fn whole_day(at: UnixMillis) -> String {
-    Local
-        .timestamp_millis_opt(at.0)
-        .single()
-        .map_or_else(String::new, |at| at.format("%-d %b %Y").to_string())
+    local(at).map_or_else(String::new, |at| at.strftime("%-d %b %Y").to_string())
 }
 
 /// The local day of a moment.
-pub fn local_day(at: UnixMillis) -> Option<NaiveDate> {
-    Local
-        .timestamp_millis_opt(at.0)
-        .single()
-        .map(|at| at.date_naive())
+pub fn local_day(at: UnixMillis) -> Option<Date> {
+    local(at).map(|at| at.date())
 }
 
 /// A day over the downloads that finished on it: `Today`, `Yesterday`, `Thursday, 29 October`,
 /// or `Thursday, 29 October 2025` in another year.
-pub fn day_heading(day: NaiveDate) -> String {
-    day_name(day, Local::now().date_naive(), "%A, %-d %B")
+pub fn day_heading(day: Date) -> String {
+    day_name(day, today(), "%A, %-d %B")
 }
 
 /// A day under a time, where it fits a narrow column: `Today`, `Yesterday`, `29 Oct`.
-pub fn day_brief(day: NaiveDate) -> String {
-    day_name(day, Local::now().date_naive(), "%-d %b")
+pub fn day_brief(day: Date) -> String {
+    day_name(day, today(), "%-d %b")
 }
 
-fn day_name(day: NaiveDate, today: NaiveDate, format: &str) -> String {
+fn day_name(day: Date, today: Date, format: &str) -> String {
     if day == today {
         "Today".to_owned()
-    } else if today.pred_opt() == Some(day) {
+    } else if today.yesterday().ok() == Some(day) {
         "Yesterday".to_owned()
     } else if day.year() == today.year() {
-        day.format(format).to_string()
+        day.strftime(format).to_string()
     } else {
-        format!("{} {}", day.format(format), day.year())
+        format!("{} {}", day.strftime(format), day.year())
     }
 }
 
 /// What a question's window says of the download already in the list for its link (D23):
 /// `Already downloaded yesterday at 7:05 AM`, `Already in your list, paused`.
 pub fn earlier_notice(row: &DownloadSummary) -> String {
-    earlier_notice_on(row, Local::now().date_naive(), clock_format())
+    earlier_notice_on(row, today(), clock_format())
 }
 
-fn earlier_notice_on(row: &DownloadSummary, today: NaiveDate, clock: ClockFormat) -> String {
+fn earlier_notice_on(row: &DownloadSummary, today: Date, clock: ClockFormat) -> String {
     let when = |at| when_said(at, today, clock);
     match row.status {
         DownloadStatus::Completed => format!(
@@ -634,14 +641,10 @@ pub fn paused_at(row: &DownloadSummary) -> Option<String> {
 
 /// What the question about a file already in the folder says of that file (D96).
 pub fn file_exists_said(question: &FileExistsQuestion) -> String {
-    file_exists_said_on(question, Local::now().date_naive(), clock_format())
+    file_exists_said_on(question, today(), clock_format())
 }
 
-fn file_exists_said_on(
-    question: &FileExistsQuestion,
-    today: NaiveDate,
-    clock: ClockFormat,
-) -> String {
+fn file_exists_said_on(question: &FileExistsQuestion, today: Date, clock: ClockFormat) -> String {
     let which = if question.same_file {
         "A file that looks like the same one"
     } else {
@@ -667,24 +670,24 @@ pub fn file_type_said(question: &FileTypeQuestion) -> String {
 }
 
 /// A moment in a sentence: `today at 6:38 PM`, `yesterday at 7:05 AM` or `on 3 Sep 2026`.
-fn when_said(at: UnixMillis, today: NaiveDate, clock: ClockFormat) -> String {
-    let Some(at) = Local.timestamp_millis_opt(at.0).single() else {
+fn when_said(at: UnixMillis, today: Date, clock: ClockFormat) -> String {
+    let Some(at) = local(at) else {
         return "earlier".to_owned();
     };
-    let day = at.date_naive();
+    let day = at.date();
     let time = format_time(at.time(), false, clock);
     if day == today {
         format!("today at {time}")
-    } else if today.pred_opt() == Some(day) {
+    } else if today.yesterday().ok() == Some(day) {
         format!("yesterday at {time}")
     } else {
-        at.format("on %-d %b %Y").to_string()
+        at.strftime("on %-d %b %Y").to_string()
     }
 }
 
 /// A moment's clock time to the second, split for a row: `3:42` and `:07 PM`.
 pub fn clock_parts(at: UnixMillis) -> (String, String) {
-    let Some(at) = Local.timestamp_millis_opt(at.0).single() else {
+    let Some(at) = local(at) else {
         return (String::new(), String::new());
     };
     split_seconds(&format_time(at.time(), true, clock_format()))
@@ -856,7 +859,7 @@ fn day_short(day: Weekday) -> &'static str {
 
 /// A time of day in the chosen clock format: `1:00 AM` or `01:00`.
 pub fn time(at: TimeOfDay) -> String {
-    NaiveTime::from_hms_opt(u32::from(at.hour), u32::from(at.minute), 0)
+    wirecatch_queues::schedule::to_time(at)
         .map_or_else(String::new, |time| format_time(time, false, clock_format()))
 }
 
@@ -881,10 +884,7 @@ pub fn clock_to_second(at: UnixMillis) -> String {
 }
 
 fn clock_in(at: UnixMillis, seconds: bool, format: ClockFormat) -> String {
-    Local
-        .timestamp_millis_opt(at.0)
-        .single()
-        .map_or_else(String::new, |at| format_time(at.time(), seconds, format))
+    local(at).map_or_else(String::new, |at| format_time(at.time(), seconds, format))
 }
 
 fn ordinal(n: u32) -> String {
@@ -901,6 +901,14 @@ fn ordinal(n: u32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use jiff::civil::date;
+
+    /// A local clock time on a day of 2026 as a moment.
+    fn local_at(month: i8, day: i8, hour: i8, minute: i8) -> UnixMillis {
+        let at = date(2026, month, day).at(hour, minute, 0, 0);
+        let at = at.to_zoned(TimeZone::system()).expect("a local time");
+        UnixMillis(at.timestamp().as_millisecond())
+    }
 
     #[test]
     fn an_auto_queue_names_its_first_rule_and_counts_the_rest() {
@@ -940,15 +948,7 @@ mod tests {
 
     #[test]
     fn the_suffix_list_says_its_days_or_that_it_was_never_checked() {
-        let noon = |day| {
-            UnixMillis(
-                Local
-                    .with_ymd_and_hms(2026, 11, day, 12, 0, 0)
-                    .single()
-                    .expect("noon exists")
-                    .timestamp_millis(),
-            )
-        };
+        let noon = |day| local_at(11, day, 12, 0);
         let list = |checked| SuffixListInfo {
             published: noon(3),
             checked,
@@ -1013,15 +1013,15 @@ mod tests {
 
     #[test]
     fn a_day_reads_by_its_name_near_today() {
-        let today = NaiveDate::from_ymd_opt(2026, 10, 31).unwrap();
-        let day = |m, d| NaiveDate::from_ymd_opt(2026, m, d).unwrap();
+        let today = date(2026, 10, 31);
+        let day = |m, d| date(2026, m, d);
         assert_eq!(day_name(today, today, "%A, %-d %B"), "Today");
         assert_eq!(day_name(day(10, 30), today, "%A, %-d %B"), "Yesterday");
         assert_eq!(
             day_name(day(10, 29), today, "%A, %-d %B"),
             "Thursday, 29 October"
         );
-        let last_year = NaiveDate::from_ymd_opt(2025, 12, 31).unwrap();
+        let last_year = date(2025, 12, 31);
         assert_eq!(day_name(last_year, today, "%-d %b"), "31 Dec 2025");
     }
 
@@ -1131,8 +1131,8 @@ mod tests {
 
     #[test]
     fn a_time_reads_in_the_chosen_clock() {
-        let time = NaiveTime::from_hms_opt(15, 42, 7).unwrap();
-        let morning = NaiveTime::from_hms_opt(7, 5, 0).unwrap();
+        let time = jiff::civil::time(15, 42, 7, 0);
+        let morning = jiff::civil::time(7, 5, 0, 0);
         assert_eq!(
             format_time(time, true, ClockFormat::TwelveHour),
             "3:42:07 PM"
@@ -1170,11 +1170,8 @@ mod tests {
 
     #[test]
     fn the_file_exists_question_says_which_case_it_is() {
-        let today = NaiveDate::from_ymd_opt(2026, 10, 10).unwrap();
-        let saved = Local
-            .with_ymd_and_hms(2026, 10, 10, 18, 38, 0)
-            .unwrap()
-            .timestamp_millis();
+        let today = date(2026, 10, 10);
+        let saved = local_at(10, 10, 18, 38);
         let question = |same_file, saved_at| FileExistsQuestion {
             id: wirecatch_protocol::QuestionId(1),
             download: wirecatch_protocol::DownloadId(1),
@@ -1194,7 +1191,7 @@ mod tests {
         };
         let folder = folder("Downloads");
         assert_eq!(
-            said(true, Some(UnixMillis(saved))),
+            said(true, Some(saved)),
             format!(
                 "A file that looks like the same one is already in {folder} (2.00 KB, saved today at 18:38)."
             )
@@ -1207,15 +1204,8 @@ mod tests {
 
     #[test]
     fn an_earlier_download_says_when_it_finished_or_what_it_is_doing() {
-        let today = NaiveDate::from_ymd_opt(2026, 10, 10).unwrap();
-        let moment = |month, day, hour, minute| {
-            UnixMillis(
-                Local
-                    .with_ymd_and_hms(2026, month, day, hour, minute, 0)
-                    .unwrap()
-                    .timestamp_millis(),
-            )
-        };
+        let today = date(2026, 10, 10);
+        let moment = local_at;
         let said = |status, clock| {
             let mut row = wirecatch_test_support::downloads::download(1);
             row.status = status;

@@ -5,7 +5,6 @@
 
 use std::rc::Rc;
 
-use chrono::NaiveDate;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::menu::ContextMenuExt as _;
 use gpui_kit::component::tooltip::Tooltip;
@@ -16,6 +15,7 @@ use gpui_kit::{
     ListOffset, ListState, MouseButton, ParentElement as _, Pixels, SharedString,
     StatefulInteractiveElement as _, Styled as _, Window, canvas, div, list, px, relative,
 };
+use jiff::civil::Date;
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{
     DownloadStatus, DownloadSummary, FixAction, ListLines, PER_MILLE_DONE,
@@ -137,7 +137,7 @@ fn command_for(group: Group, tally: &Tally) -> Option<(&'static str, GroupComman
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum LineKey {
     Heading(Group),
-    Day(NaiveDate),
+    Day(Date),
     Row(Option<DownloadId>),
 }
 
@@ -442,7 +442,7 @@ impl MainWindow {
     }
 
     /// A day over the downloads that finished on it, with how many and how much.
-    fn day_heading(&self, day: NaiveDate, facts: &Day, cx: &mut Context<'_, Self>) -> AnyElement {
+    fn day_heading(&self, day: Date, facts: &Day, cx: &mut Context<'_, Self>) -> AnyElement {
         let files = match facts.ids.len() {
             1 => "1 file".to_owned(),
             n => format!("{n} files"),

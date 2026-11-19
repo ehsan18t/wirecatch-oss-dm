@@ -6,7 +6,7 @@
 use std::sync::{Arc, Weak};
 use wirecatch_product::PRODUCT_NAME;
 
-use chrono::TimeDelta;
+use jiff::SignedDuration;
 use std::time::Duration;
 use tracing::info;
 use wirecatch_engine::CancellationToken;
@@ -24,7 +24,7 @@ use crate::headers::Origin;
 const FORGET_AFTER_DAYS: u64 = 7;
 const FORGET_AFTER: Duration = Duration::from_hours(FORGET_AFTER_DAYS * 24);
 /// How often downloads are looked at.
-const LOOK_EVERY: TimeDelta = TimeDelta::hours(1);
+const LOOK_EVERY: SignedDuration = SignedDuration::from_hours(1);
 
 /// What a download whose sign-in was forgotten says when it needs a fresh link.
 pub(super) fn forgot_sign_in() -> String {

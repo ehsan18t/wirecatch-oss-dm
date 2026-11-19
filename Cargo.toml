@@ -49,7 +49,9 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = "2"
 regex = "1"
-# Only the naive date and time types; core turns on the clock.
+# Civil dates and times only; crates that read the local clock add the system time zone.
+jiff = { version = "0.2.38", default-features = false, features = ["std"] }
+# Only for the desktop's time field, whose gpui-kit API takes `chrono::NaiveTime` (D279).
 chrono = { version = "0.4.45", default-features = false, features = ["std"] }
 tempfile = "3.27.0"
 trash = "5.3.0"

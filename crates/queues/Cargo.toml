@@ -12,7 +12,7 @@ publish = false
 [dependencies]
 wirecatch-product.workspace = true
 wirecatch-protocol.workspace = true
-chrono.workspace = true
+jiff.workspace = true
 regex.workspace = true
 url.workspace = true
 

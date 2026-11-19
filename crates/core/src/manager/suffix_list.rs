@@ -304,6 +304,7 @@ mod tests {
     use super::*;
     use crate::ManagerConfig;
     use crate::clock::{Clock, ManualClock};
+    use jiff::ToSpan as _;
     use wirecatch_settings::folders::KnownFolders;
     use wirecatch_sites::public_suffix::testing;
     use wirecatch_test_support::files::FileServer;
@@ -369,9 +370,10 @@ mod tests {
         async fn new() -> Self {
             let server = FileServer::start().await;
             let dir = tempfile::tempdir().unwrap();
-            let now = chrono::DateTime::from_timestamp_millis(testing::NEWER_AT.0)
+            let now = jiff::Timestamp::from_millisecond(testing::NEWER_AT.0)
                 .unwrap()
-                .naive_utc();
+                .to_zoned(jiff::tz::TimeZone::UTC)
+                .datetime();
             let clock = Arc::new(ManualClock::new(now));
             let manager = Self::open(dir.path(), &server, &clock).await;
             Self {
@@ -423,7 +425,7 @@ mod tests {
         assert_eq!(checked.published, testing::NEWER_AT);
 
         h.set_updates(true);
-        h.clock.advance(chrono::TimeDelta::days(7));
+        h.clock.advance(7.days());
         assert!(h.manager.update_suffix_list_if_due().await);
         assert_eq!(h.server.requests(LIST), 2);
         // Weekly: not again the same week.

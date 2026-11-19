@@ -16,7 +16,7 @@ testing = []
 [dependencies]
 wirecatch-engine.workspace = true
 wirecatch-protocol.workspace = true
-chrono.workspace = true
+jiff.workspace = true
 # Reading the Public Suffix List, the snapshot built in and the newer ones the
 # app downloads, both its sections: which names are open to anyone's
 # registration (D39, D44). Its default feature adds each rule's ASCII form.
