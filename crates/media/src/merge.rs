@@ -16,7 +16,7 @@ use crate::MediaTools;
 /// The format ffmpeg may read the downloaded `role` as, recognized from its first bytes. A file that is none of the expected formats is refused before ffmpeg starts, and deleted.
 pub(crate) async fn input_format(path: &Path, role: Role) -> Result<InputFormat, FfmpegError> {
     let owned = path.to_path_buf();
-    let detected = tokio::task::spawn_blocking(move || InputFormat::detect(&owned))
+    let detected = wirecatch_engine::task::spawn_blocking(move || InputFormat::detect(&owned))
         .await
         .map_err(|error| FfmpegError::Task { role, error })?;
     match detected {

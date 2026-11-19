@@ -12,7 +12,6 @@ import {
   toolbarBadge,
 } from '../src/lib/browser/adapters';
 import { asCachedSettings, CACHE_KEY, memoryArea, storageCache } from '../src/lib/cache';
-import { cookieHeader } from '../src/lib/cookies';
 import { baseName, fileNameFromUrl } from '../src/lib/file-types';
 import { asPopupRequest, isAlert, type Alert } from '../src/lib/popup-port';
 import {
@@ -21,19 +20,18 @@ import {
   disconnectMessage,
   type ProblemKind,
 } from '../src/lib/native/status';
-import { patchOf } from '../src/lib/settings-patch';
 import { BADGE_TOKEN, cssColor } from '../src/lib/theme';
 import { originPattern } from '../src/lib/site-access';
-import { matchingSite, siteForPage } from '../src/lib/sites';
+import { matchingSite, pageHost } from '../src/lib/sites';
 import { TOKENS_CSS } from '../build-values';
 import { DEFAULT_SETTINGS } from './fakes';
 
 describe('sites', () => {
-  it('gives the site for "Ignore this site" without www', () => {
-    expect(siteForPage('https://www.example.com/a')).toBe('example.com');
-    expect(siteForPage('http://sub.example.com/')).toBe('sub.example.com');
-    expect(siteForPage('chrome://newtab/')).toBeNull();
-    expect(siteForPage(null)).toBeNull();
+  it('gives the page host the app is asked about, www included', () => {
+    expect(pageHost('https://www.example.com/a')).toBe('www.example.com');
+    expect(pageHost('http://sub.example.com/')).toBe('sub.example.com');
+    expect(pageHost('chrome://newtab/')).toBeNull();
+    expect(pageHost(null)).toBeNull();
   });
 
   it('matches a host and its subdomains only', () => {
@@ -85,24 +83,6 @@ describe('protocol helpers', () => {
     for (const code of Object.keys(codes)) {
       expect(isOutcome({ status: 'err', value: { code, message: 'No.' } }), code).toBe(true);
     }
-  });
-
-  it('builds a patch that changes only the given fields', () => {
-    expect(patchOf({ ask_before_download: true })).toEqual({
-      capture_enabled: null,
-      ask_before_download: true,
-      show_media_button: null,
-      ignored_sites: null,
-      add_ignored_sites: null,
-      remove_ignored_sites: null,
-      capture_extensions: null,
-      min_capture_size: null,
-      default_queue: null,
-      private_windows: null,
-    });
-    expect(patchOf({ capture_enabled: false, min_capture_size: 0 }).capture_enabled).toBe(false);
-    expect(patchOf({ min_capture_size: 0 }).min_capture_size).toBe(0);
-    expect(patchOf({ add_ignored_sites: ['a.com'] }).add_ignored_sites).toEqual(['a.com']);
   });
 
   it('turns an address into the site permission pattern', () => {
@@ -262,19 +242,6 @@ describe('browser detection', () => {
   });
 });
 
-describe('cookies', () => {
-  it('builds a Cookie header value', () => {
-    expect(
-      cookieHeader([
-        { name: 'session', value: 'abc' },
-        { name: 'theme', value: 'dark' },
-      ]),
-    ).toBe('session=abc; theme=dark');
-    expect(cookieHeader([{ name: '', value: 'bare' }])).toBe('bare');
-    expect(cookieHeader([])).toBeNull();
-  });
-});
-
 describe('session copy of the settings', () => {
   it('reads back what it saved and rejects anything else', async () => {
     const store: Record<string, unknown> = {};
@@ -312,23 +279,32 @@ describe('popup messages', () => {
   it('accepts only well-formed requests', () => {
     expect(asPopupRequest({ id: 1, command: { type: 'pause_all' } })).not.toBeNull();
     expect(
-      asPopupRequest({ id: 1, command: { type: 'update_settings', patch: patchOf({}) } }),
+      asPopupRequest({
+        id: 1,
+        command: { type: 'set_option', id: 'capture_enabled', change: { set: true } },
+      }),
     ).not.toBeNull();
-    expect(asPopupRequest({ id: 1, command: { type: 'update_settings' } })).toBeNull();
+    expect(asPopupRequest({ id: 1, command: { type: 'set_option', id: 'x' } })).toBeNull();
     expect(asPopupRequest({ id: '1', command: { type: 'pause_all' } })).toBeNull();
     expect(asPopupRequest({ id: 1, command: { type: 'delete_everything' } })).toBeNull();
     expect(asPopupRequest(null)).toBeNull();
   });
 
-  it("checks the fields of a settings change and the media commands' tab", () => {
-    const update = (patch: unknown): unknown => ({
+  it("checks the fields of an option change, an action and the media commands' tab", () => {
+    const set = (change: unknown): unknown => ({
       id: 1,
-      command: { type: 'update_settings', patch },
+      command: { type: 'set_option', id: 'subtitle_languages', change },
     });
-    expect(asPopupRequest(update({ add_ignored_sites: ['example.com'] }))).not.toBeNull();
-    expect(asPopupRequest(update({ capture_enabled: null }))).not.toBeNull();
-    expect(asPopupRequest(update({ capture_enabled: 'yes' }))).toBeNull();
-    expect(asPopupRequest(update({ add_ignored_sites: [1] }))).toBeNull();
+    expect(asPopupRequest(set({ edit: { add: ['de'], remove: [] } }))).not.toBeNull();
+    expect(asPopupRequest(set({ set: null }))).not.toBeNull();
+    expect(asPopupRequest(set('everything'))).toBeNull();
+    const act = (site: unknown): unknown => ({
+      id: 1,
+      command: { type: 'invoke_action', id: 'ignore_site', site },
+    });
+    expect(asPopupRequest(act('example.com'))).not.toBeNull();
+    expect(asPopupRequest(act(null))).not.toBeNull();
+    expect(asPopupRequest(act(1))).toBeNull();
     expect(asPopupRequest({ id: 1, command: { type: 'watch_media', tabId: 3 } })).not.toBeNull();
     expect(asPopupRequest({ id: 1, command: { type: 'watch_media', tabId: -1 } })).toBeNull();
     expect(asPopupRequest({ id: 1, command: { type: 'download_media', tabId: 3 } })).toBeNull();

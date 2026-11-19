@@ -739,6 +739,15 @@ fn text_column(
                         .text_role(Role::Strong, cx)
                         .child(row.file_name.clone()),
                 )
+                // Kept in memory only, and forgotten when its private window closes (D280).
+                .when(row.private, |line| {
+                    line.child(
+                        div()
+                            .flex_shrink_0()
+                            .text_role(Role::Meta, cx)
+                            .child("Private"),
+                    )
+                })
                 .when(failed && !metadata, |line| {
                     line.child(
                         div()

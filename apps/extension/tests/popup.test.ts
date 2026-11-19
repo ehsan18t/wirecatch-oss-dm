@@ -2,15 +2,13 @@
  * The toolbar popup, rendered in jsdom and wired to the real background hub and native client,
  * which talk to a fake app through a fake native port.
  */
-import { queueId } from '@wirecatch/protocol';
+import { LONG_OPTIONS } from '@wirecatch/protocol/testing/options';
 import { PRODUCT_NAME } from '@wirecatch/product';
-import { FIRST_TOTAL_SPEED_LIMIT } from '@wirecatch/units';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BackgroundMessage, PopupRequest } from '../src/lib/popup-port';
 import { PopupModel } from '../src/lib/popup/model.svelte';
-import { patchOf } from '../src/lib/settings-patch';
 import Popup from '../src/ui/popup/Popup.svelte';
 import { channelPair, downloadItem, flush, type FakeApp, type MemoryCache } from './fakes';
 import {
@@ -66,6 +64,13 @@ async function unfold(label: 'Downloads' | 'Video and audio'): Promise<void> {
 const captureSwitch = (): HTMLElement => screen.getByRole('switch', { name: 'Capture downloads' });
 const siteSwitch = (): HTMLElement => screen.getByRole('switch', { name: /^Ignore / });
 
+/** The page's own row, once the app named its site (D280). */
+async function siteRow(name: string | RegExp = /^Ignore .+\./): Promise<HTMLElement> {
+  const row = await screen.findByRole('switch', { name });
+  await waitFor(() => expect(isUnavailable(row)).toBe(false));
+  return row;
+}
+
 afterEach(() => {
   cleanup();
   unwireAll();
@@ -81,7 +86,7 @@ describe('popup', () => {
       description: 'Send downloads from this browser to Wirecatch.',
     });
     expect(capture.getAttribute('aria-checked')).toBe('true');
-    const site = siteSwitch();
+    const site = await siteRow();
     expect(site.getAttribute('aria-checked')).toBe('false');
     expect(
       screen.getByRole('switch', {
@@ -92,9 +97,10 @@ describe('popup', () => {
     expect(isUnavailable(screen.getByRole('button', { name: 'Pause all' }))).toBe(false);
     // D4: whether a window asks first, for files and for videos, shows at once; the rest is folded (D61).
     expect(screen.getAllByRole('switch').map((s) => s.id)).toEqual([
-      'capture-enabled',
-      'ask-before',
-      'ask-each-video',
+      'option-capture_enabled',
+      'option-ask_before_download',
+      'option-ask_each_video',
+      'option-private_windows',
       'ignore-site',
     ]);
     expect(screen.queryByRole('combobox')).toBeNull();
@@ -107,13 +113,12 @@ describe('popup', () => {
       name: 'Ask before each download',
       description: 'Choose where each file goes before it starts.',
     });
-    expect(ask.getAttribute('aria-checked')).toBe('false');
-    await userEvent.setup().click(ask);
-    await waitFor(() => expect(app.settings.ask_before_download).toBe(true));
-    expect(app.calls('update_extension_settings')).toEqual([
-      { method: 'update_extension_settings', params: patchOf({ ask_before_download: true }) },
-    ]);
     expect(ask.getAttribute('aria-checked')).toBe('true');
+    await userEvent.setup().click(ask);
+    await waitFor(() => expect(ask.getAttribute('aria-checked')).toBe('false'));
+    expect(app.calls('set_option')).toEqual([
+      { method: 'set_option', params: { id: 'ask_before_download', change: { set: false } } },
+    ]);
   });
 
   it('is titled with the product name', async () => {
@@ -128,8 +133,8 @@ describe('popup', () => {
     await user.click(captureSwitch());
     await waitFor(() => expect(app.settings.capture_enabled).toBe(false));
     expect(captureSwitch().getAttribute('aria-checked')).toBe('false');
-    expect(app.calls('update_extension_settings')).toEqual([
-      { method: 'update_extension_settings', params: patchOf({ capture_enabled: false }) },
+    expect(app.calls('set_option')).toEqual([
+      { method: 'set_option', params: { id: 'capture_enabled', change: { set: false } } },
     ]);
     await user.click(captureSwitch());
     await waitFor(() => expect(app.settings.capture_enabled).toBe(true));
@@ -142,15 +147,16 @@ describe('popup', () => {
       },
     });
     expect(captureSwitch().getAttribute('aria-checked')).toBe('false');
-    expect(isUnavailable(siteSwitch())).toBe(false);
+    expect(isUnavailable(await siteRow())).toBe(false);
   });
 
   it('updates in place when the setting changes in the app', async () => {
     const { app } = await openPopup();
     const capture = captureSwitch();
+    await siteRow();
     app.changeSettings({ capture_enabled: false, ignored_sites: ['example.com'] });
     await waitFor(() => expect(capture.getAttribute('aria-checked')).toBe('false'));
-    expect(siteSwitch().getAttribute('aria-checked')).toBe('true');
+    await waitFor(() => expect(siteSwitch().getAttribute('aria-checked')).toBe('true'));
     // Same element: the popup was updated in place, not reopened.
     expect(captureSwitch()).toBe(capture);
   });
@@ -158,21 +164,16 @@ describe('popup', () => {
   it('ignores the current site in one click, and can undo it', async () => {
     const { app } = await openPopup({ currentUrl: 'https://www.example.com/downloads' });
     const user = userEvent.setup();
+    await waitFor(() => expect(isUnavailable(siteSwitch())).toBe(false));
     await user.click(siteSwitch());
     await waitFor(() => expect(app.settings.ignored_sites).toEqual(['example.com']));
     await waitFor(() => expect(siteSwitch().getAttribute('aria-checked')).toBe('true'));
     await user.click(siteSwitch());
     await waitFor(() => expect(app.settings.ignored_sites).toEqual([]));
-    // One site added and removed, never the whole list.
-    expect(app.calls('update_extension_settings')).toEqual([
-      {
-        method: 'update_extension_settings',
-        params: patchOf({ add_ignored_sites: ['example.com'] }),
-      },
-      {
-        method: 'update_extension_settings',
-        params: patchOf({ remove_ignored_sites: ['example.com'] }),
-      },
+    // An action about the page's whole host alone, never the whole list; the app picks the site (D280).
+    expect(app.calls('invoke_action')).toEqual([
+      { method: 'invoke_action', params: { id: 'ignore_site', site: 'www.example.com' } },
+      { method: 'invoke_action', params: { id: 'take_site', site: 'www.example.com' } },
     ]);
   });
 
@@ -180,6 +181,7 @@ describe('popup', () => {
     const { app } = await openPopup({ currentUrl: 'https://www.example.com/downloads' });
     // Another browser adds a site; this popup has not heard about it yet.
     app.settings = { ...app.settings, ignored_sites: ['other.example'] };
+    await waitFor(() => expect(isUnavailable(siteSwitch())).toBe(false));
     await userEvent.setup().click(siteSwitch());
     await waitFor(() =>
       expect(app.settings.ignored_sites).toEqual(['other.example', 'example.com']),
@@ -200,7 +202,7 @@ describe('popup', () => {
         fake.settings = { ...fake.settings, ignored_sites: ['example.com'] };
       },
     });
-    const site = screen.getByRole('switch', { name: 'Ignore example.com' });
+    const site = await siteRow('Ignore example.com');
     expect(site.getAttribute('aria-checked')).toBe('true');
     await userEvent.setup().click(site);
     await waitFor(() => expect(app.settings.ignored_sites).toEqual([]));
@@ -211,15 +213,6 @@ describe('popup', () => {
     await userEvent.setup().click(screen.getByRole('button', { name: 'Open Wirecatch settings' }));
     await waitFor(() => expect(close).toHaveBeenCalledTimes(1));
     expect(app.calls('show_browser_settings')).toHaveLength(1);
-  });
-
-  it('opens the window of an app from before the browser settings could be shown', async () => {
-    const { app, close } = await openPopup({
-      configure: (fake) => fake.unsupported.add('show_browser_settings'),
-    });
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Open Wirecatch settings' }));
-    await waitFor(() => expect(close).toHaveBeenCalledTimes(1));
-    expect(app.calls('show_window')).toHaveLength(1);
   });
 
   it("shows the keyboard shortcut under Video and audio, and opens the browser's shortcuts page to set it", async () => {
@@ -246,26 +239,28 @@ describe('popup', () => {
     const ask = screen.getByRole('switch', { name: 'Ask about each video' });
     expect(ask.getAttribute('aria-checked')).toBe('true');
     await userEvent.setup().click(ask);
-    await waitFor(() => expect(app.controls.media.ask_each_time).toBe(false));
-    expect(app.calls('update_browser_controls')).toEqual([
-      { method: 'update_browser_controls', params: { media: { ask_each_time: false } } },
+    await waitFor(() => expect(ask.getAttribute('aria-checked')).toBe('false'));
+    expect(app.calls('set_option')).toEqual([
+      { method: 'set_option', params: { id: 'ask_each_video', change: { set: false } } },
     ]);
-    expect(ask.getAttribute('aria-checked')).toBe('false');
   });
 
   it('shows a change made in the app at once, without reopening (D61)', async () => {
     const { app } = await openPopup();
     await unfold('Downloads');
-    app.changeControls({ media: { ask_each_time: false }, max_concurrent_downloads: 5 });
+    app.changeOption('ask_each_video', false);
+    app.changeOption('max_concurrent_downloads', 4);
     app.changeSettings({ show_media_button: false });
     await waitFor(() =>
       expect(
         screen.getByRole('switch', { name: 'Ask about each video' }).getAttribute('aria-checked'),
       ).toBe('false'),
     );
-    expect(screen.getByRole('spinbutton', { name: 'Downloads at the same time' })).toHaveProperty(
-      'value',
-      '5',
+    await waitFor(() =>
+      expect(screen.getByRole('spinbutton', { name: 'Downloads at the same time' })).toHaveProperty(
+        'value',
+        '4',
+      ),
     );
     await unfold('Video and audio');
     expect(
@@ -276,34 +271,48 @@ describe('popup', () => {
   });
 
   it('changes the queue, the speed limit and downloads at once in the app', async () => {
-    const { app } = await openPopup();
+    const { app } = await openPopup({
+      configure: (fake) => {
+        fake.options = LONG_OPTIONS;
+      },
+    });
     const user = userEvent.setup();
     await unfold('Downloads');
     await user.click(screen.getByRole('combobox', { name: 'Queue for browser downloads' }));
-    await user.click(screen.getByRole('option', { name: 'Night' }));
-    await waitFor(() => expect(app.settings.default_queue).toBe(queueId(2)));
+    await user.click(screen.getByRole('option', { name: 'Main' }));
+    await waitFor(() =>
+      expect(app.calls('set_option')).toContainEqual({
+        method: 'set_option',
+        params: { id: 'default_queue', change: { set: 1 } },
+      }),
+    );
 
+    // The limit shows in MB/s and is sent in bytes per second.
+    const limit = screen.getByRole('spinbutton', { name: 'Global speed limit' });
+    expect(limit).toHaveProperty('value', '1.5');
     await user.click(screen.getByRole('switch', { name: 'Global speed limit' }));
-    await waitFor(() => expect(app.controls.global_speed_limit).toBe(FIRST_TOTAL_SPEED_LIMIT));
-    expect(screen.getByRole('spinbutton', { name: 'Global speed limit' })).toHaveProperty(
-      'value',
-      '5',
+    await waitFor(() =>
+      expect(app.calls('set_option')).toContainEqual({
+        method: 'set_option',
+        params: { id: 'global_speed_limit', change: { set: null } },
+      }),
     );
 
     const concurrent = screen.getByRole('spinbutton', { name: 'Downloads at the same time' });
     await user.clear(concurrent);
     await user.type(concurrent, '2{Enter}');
-    await waitFor(() => expect(app.controls.max_concurrent_downloads).toBe(2));
+    await waitFor(() =>
+      expect(app.calls('set_option')).toContainEqual({
+        method: 'set_option',
+        params: { id: 'max_concurrent_downloads', change: { set: 2 } },
+      }),
+    );
   });
 
-  it('changes how videos download in the app, keeping the audio quality nearest a new format', async () => {
+  it('changes how videos download in the app', async () => {
     const { app } = await openPopup({
       configure: (fake) => {
-        fake.controls.media.audio = {
-          ...fake.controls.media.audio,
-          format: 'mp3',
-          audio_kbps: 250,
-        };
+        fake.options = LONG_OPTIONS;
       },
     });
     const user = userEvent.setup();
@@ -313,34 +322,46 @@ describe('popup', () => {
 
     await user.click(screen.getByRole('combobox', { name: 'Resolution' }));
     await user.click(screen.getByRole('option', { name: '720p' }));
-    await waitFor(() => expect(app.controls.media.quality).toEqual({ height: 720 }));
-    // A height has a fallback; Best available does not need one.
-    expect(
-      screen.getByRole('combobox', { name: 'If a video doesn’t offer that resolution' }),
-    ).toBeTruthy();
-
     await user.click(screen.getByRole('combobox', { name: 'Save audio as' }));
     await user.click(screen.getByRole('option', { name: 'M4A' }));
-    await waitFor(() => expect(app.controls.media.audio.format).toBe('m4a'));
-    expect(app.controls.media.audio.audio_kbps).toBe(256);
-
     await user.click(screen.getByRole('switch', { name: 'Add chapters' }));
-    await waitFor(() => expect(app.controls.media.video.chapters).toBe(true));
+    await waitFor(() =>
+      expect(app.calls('set_option').map((c) => c.method === 'set_option' && c.params)).toEqual([
+        { id: 'show_media_button', change: { set: false } },
+        { id: 'media_quality', change: { set: 720 } },
+        { id: 'audio_format', change: { set: 'm4a' } },
+        { id: 'chapters', change: { set: true } },
+      ]),
+    );
   });
 
-  it('shows only what an app from before the popup controls can change', async () => {
+  it('draws an option of a kind it does not know as its name and a way to the app (D280)', async () => {
     const { app } = await openPopup({
       configure: (fake) => {
-        fake.versions = { oldest: 1, newest: 1 };
+        const [first, ...rest] = fake.options.groups;
+        if (first === undefined) return;
+        fake.options = {
+          ...fake.options,
+          groups: [
+            {
+              ...first,
+              options: [
+                ...first.options,
+                { id: 'teleport', kind: 'hologram', label: 'Teleport downloads' },
+                { kind: 'toggle' },
+              ],
+            },
+            ...rest,
+          ],
+        };
       },
     });
-    expect(screen.queryByRole('switch', { name: 'Ask about each video' })).toBeNull();
-    await unfold('Video and audio');
-    expect(
-      screen.getByText('Update Wirecatch to choose how videos download from here.'),
-    ).toBeTruthy();
-    expect(screen.getByRole('switch', { name: 'Show a download button on videos' })).toBeTruthy();
-    expect(app.calls('get_browser_controls')).toEqual([]);
+    const row = screen.getByText('Teleport downloads');
+    expect(row).toBeTruthy();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Open in Wirecatch' }));
+    await waitFor(() => expect(app.calls('show_browser_settings')).toHaveLength(1));
+    // The malformed option is left out, and the rest still shows.
+    expect(captureSwitch()).toBeTruthy();
   });
 
   it('offers to allow website access again when it was revoked', async () => {
@@ -599,6 +620,7 @@ describe('popup accessibility', () => {
 
   it('reaches every control with Tab, in reading order', async () => {
     await openPopup();
+    await siteRow();
     const user = userEvent.setup();
     const expected = [
       'button:Open Wirecatch settings',
@@ -608,9 +630,11 @@ describe('popup accessibility', () => {
       'switch:Ask before each download',
       'button:About Ask about each video',
       'switch:Ask about each video',
+      'button:About Work in private windows',
+      'switch:Work in private windows',
       'button:About Ignore example.com',
       'switch:Ignore example.com',
-      'button:Downloads No speed limit · 3 at once · Main',
+      'button:Downloads No speed limit · 5 at once · Main',
       'button:Video and audio Best available · Original',
       'button:Pause all',
       'button:Resume all',
@@ -626,6 +650,7 @@ describe('popup accessibility', () => {
 
   it('works with the keyboard alone: Space toggles capture, Enter ignores the site', async () => {
     const { app } = await openPopup();
+    await siteRow();
     const user = userEvent.setup();
     await user.tab();
     await user.tab();
@@ -633,13 +658,13 @@ describe('popup accessibility', () => {
     expect(document.activeElement).toBe(captureSwitch());
     await user.keyboard(' ');
     await waitFor(() => expect(app.settings.capture_enabled).toBe(false));
-    for (let i = 0; i < 6; i += 1) await user.tab();
+    for (let i = 0; i < 8; i += 1) await user.tab();
     expect(document.activeElement).toBe(siteSwitch());
     await user.keyboard('{Enter}');
     await waitFor(() => expect(app.settings.ignored_sites).toEqual(['example.com']));
   });
 
-  it('turns private windows off and on, and hides the switch from an app that does not know it (D82)', async () => {
+  it('turns private windows off and on in the app (D82)', async () => {
     const { app } = await openPopup({
       configure: (fake) => (fake.settings = { ...fake.settings, private_windows: true }),
     });
@@ -648,15 +673,6 @@ describe('popup accessibility', () => {
     await userEvent.click(privateSwitch());
     await waitFor(() => expect(app.settings.private_windows).toBe(false));
     expect(privateSwitch().getAttribute('aria-checked')).toBe('false');
-    cleanup();
-
-    const old = await openPopup();
-    const noSwitch = () => screen.queryByRole('switch', { name: 'Work in private windows' });
-    expect(noSwitch()).toBeNull();
-    await userEvent.click(captureSwitch());
-    expect(noSwitch()).toBeNull();
-    await waitFor(() => expect(old.app.settings.capture_enabled).toBe(false));
-    expect(noSwitch()).toBeNull();
   });
 
   it('announces results in the footer live region', async () => {
@@ -689,9 +705,8 @@ describe('popup model', () => {
       type: 'snapshot',
       snapshot: {
         status: { state: 'connecting' },
-        settings: null,
-        controls: null,
-        queues: [],
+        options: null,
+        privateWindows: false,
         alerts: [],
       },
     });

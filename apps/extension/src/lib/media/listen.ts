@@ -41,7 +41,7 @@ export interface MediaEventApi {
   onTabRemoved: Event<(tabId: number) => void>;
   onTabUpdated: {
     addListener: (
-      listener: (tabId: number, change: { url?: string }) => void,
+      listener: (tabId: number, change: { url?: string }, tab?: { incognito?: boolean }) => void,
       filter?: { properties: string[] },
     ) => void;
   };
@@ -137,7 +137,12 @@ export function registerMediaListeners(
 
   api.onTabRemoved.addListener((tabId) => watcher.onTabRemoved(tabId));
   // Address changes without a new document (history API, back-forward cache).
-  const onUpdated = (tabId: number, change: { url?: string }): void => {
+  const onUpdated = (
+    tabId: number,
+    change: { url?: string },
+    tab?: { incognito?: boolean },
+  ): void => {
+    if (tab?.incognito !== undefined) watcher.knowTab(tabId, tab.incognito);
     if (change.url === undefined) return;
     watcher
       .onUrlChange(tabId, change.url)

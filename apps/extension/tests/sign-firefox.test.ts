@@ -63,7 +63,7 @@ describe('signing the Firefox package', () => {
     // The extension's release checks run first, so no package with a placeholder (D29) or a
     // stale Public Suffix List (D35) is signed.
     expect(pkg.scripts['sign:firefox']).toBe(
-      'node ../../scripts/gate.mjs publish-extension && node scripts/sign-firefox.mjs',
+      'node ../../scripts/gate.mjs publish && node scripts/sign-firefox.mjs',
     );
     expect(pkg.devDependencies['web-ext']).toMatch(/^\d+\.\d+\.\d+$/);
   });

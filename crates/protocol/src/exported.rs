@@ -301,7 +301,6 @@ mod tests {
 
     use super::Constant;
     use crate::app::OutputFormat;
-    use crate::extension::ExtensionSettings;
 
     /// The file written into the generated folder. `packages/protocol/scripts/index-source.mjs`
     /// re-exports it from the package by this name.
@@ -506,7 +505,7 @@ mod tests {
     /// [`FIXTURES`] and read by the tests of `packages/protocol`, so both languages agree.
     #[test]
     fn write_typescript_fixtures() {
-        use crate::extension::{apply_cases, browser_controls_cases, file_type_cases, site_cases};
+        use crate::extension::{file_type_cases, site_cases};
         let sites: Vec<Value> = site_cases()
             .into_iter()
             .map(|(typed, site)| serde_json::json!({ "typed": typed, "site": site }))
@@ -515,27 +514,9 @@ mod tests {
             .into_iter()
             .map(|(typed, kind)| serde_json::json!({ "typed": typed, "type": kind }))
             .collect();
-        let applied: Vec<Value> = apply_cases()
-            .into_iter()
-            .map(|(before, patch)| {
-                let mut after = before.clone();
-                after.apply(patch.clone());
-                serde_json::json!({ "before": before, "patch": patch, "after": after })
-            })
-            .collect();
-        let controls: Vec<Value> = browser_controls_cases()
-            .into_iter()
-            .map(|(before, patch)| {
-                let mut after = before.clone();
-                after.apply(patch.clone());
-                serde_json::json!({ "before": before, "patch": patch, "after": after })
-            })
-            .collect();
         let fixtures = serde_json::json!({
             "normalize_site": sites,
             "normalize_file_type": file_types,
-            "apply_extension_settings": applied,
-            "apply_browser_controls": controls,
         });
         let dir = export_dir();
         std::fs::create_dir_all(&dir).unwrap();
@@ -573,21 +554,18 @@ mod tests {
                 &[],
                 &crate::languages::LANGUAGES,
             )],
-            vec![Constant::json_naming(
-                "DEFAULT_EXTENSION_SETTINGS",
+            vec![Constant::json(
+                "DEFAULT_MEDIA_TABLES",
                 &[
-                    " The extension's settings on a fresh install (`ExtensionSettings::default`), which",
-                    " the extension judges browser downloads by until it first hears from the app.",
+                    " The tables the extension finds media with before the app first sends its own",
+                    " (`MediaTables::default`, D280).",
                 ],
-                "ExtensionSettings",
-                &["ExtensionSettings"],
-                &ExtensionSettings::default(),
-                &[(
-                    "default_queue",
-                    "DEFAULT_QUEUE_ID",
-                    serde_json::to_value(crate::DEFAULT_QUEUE_ID).unwrap(),
-                )],
+                "MediaTables",
+                &["MediaTables"],
+                &crate::shell::MediaTables::default(),
             )],
+            crate::shell::exported_consts(),
+            crate::shell::name_tables(),
         ];
         let constants: Vec<&Constant> = constants.iter().flatten().collect();
         let mut out = String::from(

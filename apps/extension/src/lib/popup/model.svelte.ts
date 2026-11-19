@@ -1,12 +1,5 @@
 import { PRODUCT_NAME } from '@wirecatch/product';
-import {
-  applyBrowserControlsPatch,
-  applyExtensionSettingsPatch,
-  type BrowserControls,
-  type BrowserControlsPatch,
-  type ExtensionSettings,
-  type ExtensionSettingsPatch,
-} from '@wirecatch/protocol';
+import type { OptionChange, PageOptions } from '@wirecatch/protocol';
 import type { MediaView } from '../media/center';
 import {
   isBackgroundMessage,
@@ -16,7 +9,7 @@ import {
   type PopupRequest,
   type Snapshot,
 } from '../popup-port';
-import { patchOf, type SettingsChange } from '../settings-patch';
+import { parseOptions, type OptionValue, type ParsedGroup, type ParsedOption } from '../options';
 import { log } from '../diag/log';
 import { Requests } from './requests';
 
@@ -31,7 +24,48 @@ export interface MediaStatus {
   text: string;
 }
 
-type Result = { ok: true; message?: string } | { ok: false; message: string };
+type Result = { ok: true; message?: string; page?: PageOptions } | { ok: false; message: string };
+
+/** A change on its way to the app, shown at once. */
+interface Pending {
+  request: number;
+  id: string;
+  change: OptionChange;
+}
+
+function isValue(value: unknown): value is OptionValue {
+  return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
+}
+
+/** `option` with a change still on its way applied, so the popup shows it at once. */
+function withChange(option: ParsedOption, change: OptionChange): ParsedOption {
+  return 'set' in change ? withValue(option, change.set) : withEdit(option, change.edit);
+}
+
+/** `option` holding `value`, when it is a value of its kind. */
+function withValue(option: ParsedOption, value: unknown): ParsedOption {
+  if (option.kind === 'toggle') return typeof value === 'boolean' ? { ...option, value } : option;
+  if (option.kind === 'choice') return isValue(value) ? { ...option, value } : option;
+  if (option.kind === 'number') return typeof value === 'number' ? { ...option, value } : option;
+  if (option.kind === 'limit') {
+    return value === null || typeof value === 'number' ? { ...option, value } : option;
+  }
+  return option;
+}
+
+/** A `choices` option with values added and removed. */
+function withEdit(
+  option: ParsedOption,
+  edit: { add: readonly unknown[]; remove: readonly unknown[] },
+): ParsedOption {
+  if (option.kind !== 'choices') return option;
+  const added = edit.add.filter(isValue);
+  const removed = new Set(edit.remove.filter(isValue));
+  const value = [...option.value, ...added.filter((v) => !option.value.includes(v))].filter(
+    (v) => !removed.has(v),
+  );
+  return { ...option, value };
+}
 
 /** What a request gets when the background script went away before it answered. */
 const RESTARTED: Result = {
@@ -50,26 +84,25 @@ export class PopupModel {
   media = $state<MediaView | null>(null);
   /** Per item key: the outcome of its Download button. */
   mediaStatus = $state<Record<string, MediaStatus>>({});
-  #pending = $state<{ id: number; patch: ExtensionSettingsPatch }[]>([]);
-  #pendingControls = $state<{ id: number; patch: BrowserControlsPatch }[]>([]);
+  #pending = $state<Pending[]>([]);
 
-  /** The settings to show: the app's values with changes still on their way applied on top. */
-  settings = $derived.by((): ExtensionSettings | null => {
-    const base = this.snapshot?.settings ?? null;
-    if (base === null) return null;
-    return this.#pending.reduce((acc, p) => applyExtensionSettingsPatch(acc, p.patch), base);
-  });
-
-  /** The app's own settings the popup shows, with changes still on their way applied on top; null for an app from before them. */
-  controls = $derived.by((): BrowserControls | null => {
-    const base = this.snapshot?.controls ?? null;
-    if (base === null) return null;
-    return this.#pendingControls.reduce((acc, p) => applyBrowserControlsPatch(acc, p.patch), base);
+  /** The options to show: the app's, with changes still on their way applied on top; null while the app is not connected (D61, D280). */
+  groups = $derived.by((): ParsedGroup[] | null => {
+    const list = this.snapshot?.options ?? null;
+    if (list === null) return null;
+    return parseOptions(list).map((group) => ({
+      ...group,
+      options: group.options.map((option) =>
+        this.#pending
+          .filter((p) => p.id === option.id)
+          .reduce((shown, p) => withChange(shown, p.change), option),
+      ),
+    }));
   });
 
   connected = $derived(this.snapshot?.status.state === 'connected');
-  /** Settings can be changed only while the app is connected and has sent them (D61). */
-  editable = $derived(this.connected && (this.snapshot?.settings ?? null) !== null);
+  /** Options can be changed only while the app is connected and has sent them (D61). */
+  editable = $derived(this.connected && (this.snapshot?.options ?? null) !== null);
 
   readonly #channel: Channel<PopupRequest, unknown>;
   readonly #requests = new Requests<Result>();
@@ -104,23 +137,24 @@ export class PopupModel {
     for (const w of ready) w.resolve();
   }
 
-  /** Sends a settings change to the app. Resolves with true once the app accepted it. */
-  async update(changes: SettingsChange): Promise<boolean> {
-    const patch = patchOf(changes);
-    const id = this.#requests.nextId;
-    this.#pending = [...this.#pending, { id, patch }];
-    const result = await this.#send({ type: 'update_settings', patch });
-    this.#pending = this.#pending.filter((p) => p.id !== id);
+  /** Sends a change of one option to the app. Resolves with true once the app accepted it. */
+  async setOption(id: string, change: OptionChange): Promise<boolean> {
+    const request = this.#requests.nextId;
+    this.#pending = [...this.#pending, { request, id, change }];
+    const result = await this.#send({ type: 'set_option', id, change });
+    this.#pending = this.#pending.filter((p) => p.request !== request);
     return this.#settled(result);
   }
 
-  /** Sends a change of the app's own settings the popup shows. Resolves with true once the app accepted it. */
-  async updateControls(patch: BrowserControlsPatch): Promise<boolean> {
-    const id = this.#requests.nextId;
-    this.#pendingControls = [...this.#pendingControls, { id, patch }];
-    const result = await this.#send({ type: 'update_controls', patch });
-    this.#pendingControls = this.#pendingControls.filter((p) => p.id !== id);
-    return this.#settled(result);
+  /** Runs an action, about the page on `site` when it names one. Resolves with true once the app did it. */
+  async invokeAction(id: string, site: string | null): Promise<boolean> {
+    return this.#settled(await this.#send({ type: 'invoke_action', id, site }));
+  }
+
+  /** What to show about the page on `host`; null when the app cannot say now. */
+  async pageOptions(host: string): Promise<PageOptions | null> {
+    const result = await this.#send({ type: 'page_options', host });
+    return result.ok ? (result.page ?? null) : null;
   }
 
   #settled(result: Result): boolean {
@@ -207,9 +241,11 @@ export class PopupModel {
     this.#requests.settle(
       message.id,
       message.ok
-        ? message.message === undefined
-          ? { ok: true }
-          : { ok: true, message: message.message }
+        ? {
+            ok: true,
+            ...(message.message === undefined ? {} : { message: message.message }),
+            ...(message.page === undefined ? {} : { page: message.page }),
+          }
         : { ok: false, message: message.message },
     );
   }

@@ -163,10 +163,7 @@ impl Manager {
             None => Target::Exact,
             Some(settle) => Target::Resolve(path_resolver(settle.clone())),
         };
-        let mark = Mark {
-            url: entry.row.url.clone(),
-            referrer: headers::referrer(&entry.origin.headers).map(str::to_string),
-        };
+        let mark = Mark::of(&entry.row.url, &entry.origin);
         match engine_request(entry, policy, target) {
             #[cfg(test)]
             Ok(request) if self.fake_engine().is_some() => {
@@ -232,13 +229,17 @@ impl Manager {
         };
         let (gauge, work) = work(cancel.clone(), file_work.clone());
         let cleanup = entry.cleanup.take();
-        let task = self.spawn(async move {
-            if let Some(deleted) = cleanup {
-                deleted.cancelled().await;
-            }
-            let end = work.await;
-            guard.report(end).await;
-        });
+        let private = entry.row.private;
+        let task = self.spawn(super::private_sessions::private_scope(
+            private,
+            async move {
+                if let Some(deleted) = cleanup {
+                    deleted.cancelled().await;
+                }
+                let end = work.await;
+                guard.report(end).await;
+            },
+        ));
         entry.run = Some(Run {
             id: run_id,
             answered,
@@ -382,6 +383,7 @@ impl Manager {
             return;
         };
         let partial = entry.partial();
+        let span = super::private_sessions::private_span(entry.row.private);
         let deleted = CancellationToken::new();
         entry.cleanup = Some(deleted.clone());
         let deletion = entry.pending_deletion();
@@ -390,7 +392,8 @@ impl Manager {
         let manager = self.clone();
         #[cfg(test)]
         let before_deleting = self.before_deleting();
-        self.inner.runtime.spawn_blocking(move || {
+        wirecatch_engine::task::spawn_blocking_on(&self.inner.runtime, move || {
+            let _private = span.enter();
             #[cfg(test)]
             if let Some(hook) = before_deleting {
                 hook();
@@ -573,6 +576,23 @@ pub(super) struct Mark {
     pub referrer: Option<String>,
 }
 
+impl Mark {
+    /// The mark of a download of `url` with `origin`: a private one names no address, so only
+    /// its zone is written (D280).
+    pub fn of(url: &str, origin: &crate::headers::Origin) -> Self {
+        if super::private_sessions::is_private(origin) {
+            return Self {
+                url: String::new(),
+                referrer: None,
+            };
+        }
+        Self {
+            url: url.to_owned(),
+            referrer: headers::referrer(&origin.headers).map(str::to_string),
+        }
+    }
+}
+
 /// Runs the engine on `request`. A finished file is marked as downloaded from
 /// the internet before the run reports it, so it is never shown as finished
 /// (or opened from the app) without the mark. The part file is normally marked
@@ -587,7 +607,7 @@ async fn download_marked(
     let result = wirecatch_engine::download(request, progress, cancel).await;
     if let Ok(Outcome::Completed { path, .. }) = &result {
         let path = path.clone();
-        let marking = tokio::task::spawn_blocking(move || {
+        let marking = wirecatch_engine::task::spawn_blocking(move || {
             wirecatch_files::zone::mark(&path, &mark.url, mark.referrer.as_deref());
         });
         if let Err(e) = marking.await {

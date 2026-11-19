@@ -9,7 +9,7 @@ import { DIAG_KEY_PREFIX } from '../src/lib/diag/persist';
 // waiting for its first state, so nothing is mounted, and its component is not even compiled.
 vi.mock('@/ui/popup/Popup.svelte', () => ({ default: {} }));
 vi.mock('@/lib/popup/page', () => ({
-  activeTab: () => Promise.resolve({ id: null, url: null }),
+  activeTab: () => Promise.resolve({ id: null, url: null, incognito: false }),
   connectPage: () => ({ watchMedia: () => undefined }),
   firstState: () => new Promise<never>(() => undefined),
   hasSiteAccess: () => Promise.resolve(true),

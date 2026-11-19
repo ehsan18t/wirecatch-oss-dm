@@ -1,13 +1,13 @@
 import { PRODUCT_NAME } from '@wirecatch/product';
-import {
-  DEFAULT_EXTENSION_SETTINGS,
-  type Call,
-  type Event,
-  type Outcome,
-} from '@wirecatch/protocol';
+import type { Call, CookieRequest, DownloadCheck, Event, Outcome } from '@wirecatch/protocol';
 import { candidateFromItem, type DownloadItemLike } from '../capture/candidate';
-import { handOver, readBrowserCopy, type HandoverResult } from '../capture/handover';
-import { shouldCapture } from '../capture/should-capture';
+import {
+  handOver,
+  readBrowserCopy,
+  type DownloadFields,
+  type HandoverResult,
+} from '../capture/handover';
+import { browserKeeps, shouldCapture } from '../capture/should-capture';
 import { cookieStoreOf } from '../cookies';
 import { fallback, log } from '../diag/log';
 import { fileNameFromUrl } from '../file-types';
@@ -25,10 +25,62 @@ import {
   NO_SITE_ACCESS,
   menuNotTaken,
 } from './alerts';
-import { Popups, type PopupChannel } from './popups';
+import { Popups, type CommandAnswer, type PopupChannel } from './popups';
 import { recoverHandover } from './recovery';
 import { hasAccess, newHandoverId } from './media-sender';
 import type { KnownSettings } from './settings';
+
+/** What a context menu click hands over, besides its cookies. */
+/** What the app is asked before it takes a link from the menu, with no cookies (D280). */
+function menuCheck(
+  url: string,
+  click: MenuClick,
+  request: CookieRequest,
+  privateSession: string | null,
+): DownloadCheck {
+  return {
+    url,
+    page_url: click.pageUrl ?? null,
+    frame_url: click.frameUrl ?? null,
+    file_name: null,
+    mime: null,
+    size: null,
+    source: 'context_menu',
+    private_session: privateSession,
+    cookie_request: request,
+  };
+}
+
+function menuFields(
+  url: string,
+  click: MenuClick,
+  tab: MenuTab | undefined,
+  privateSession: string | null,
+): Omit<DownloadFields, 'cookies' | 'cookie_jar'> {
+  const page = click.frameUrl ?? click.pageUrl ?? null;
+  return {
+    url,
+    // What the browser itself would send (strict-origin-when-cross-origin), never more.
+    referrer: refererFor(url, page),
+    page_url: click.pageUrl ?? null,
+    ...(tab === undefined
+      ? {}
+      : {
+          browser_route: {
+            observed_page: click.pageUrl ?? page,
+            private_window: tab.incognito,
+            private_session: privateSession,
+            redirect_urls: [],
+          },
+        }),
+    // The document the link is in chose it, a frame from another site included.
+    ...(page === null ? {} : { frame_url: page }),
+    suggested_name: null,
+    mime: null,
+    size_hint: null,
+    source: 'context_menu',
+  };
+}
 
 /**
  * The background script's state: the connection, the app's settings and queues,
@@ -130,13 +182,17 @@ export class Hub {
    */
   async onDownload(item: DownloadItemLike): Promise<HandoverResult | null> {
     if (this.#inFlight.has(item.id)) return null;
+    // One deadline from the browser's event bounds every wait for the app (D280).
+    const deadline = this.#now() + this.#app.timing.captureDeadlineMs;
     this.#inFlight.set(item.id, null);
     let persisted = false;
     try {
       await this.#ready;
       const candidate = candidateFromItem(item);
-      const known = this.#settings.known() ?? DEFAULT_EXTENSION_SETTINGS;
-      if (!shouldCapture(candidate, known).capture) return null;
+      if (browserKeeps(candidate) !== null) return null;
+      // Unknown values are fetched after pausing, never taken from defaults: a setting turned off earlier must not count as on.
+      const known = this.#settings.known();
+      if (known !== null && !shouldCapture(candidate, known).capture) return null;
       const name = candidate.fileName ?? fileNameFromUrl(candidate.url) ?? 'A download';
 
       if (!(await hasAccess(this.#deps, candidate.url))) {
@@ -159,10 +215,14 @@ export class Hub {
         },
         {
           downloads: this.#deps.downloads,
-          liveSettings: () => this.#app.judgingSettings(),
+          liveSettings: (timeoutMs) => this.#app.judgingSettings(timeoutMs),
+          check: (check, timeoutMs) => this.#app.check(check, timeoutMs),
           addDownload: (download) => this.#app.addDownload(download),
           withdraw: (handoverId) => this.#app.withdraw(handoverId),
-          cookies: (url, store, request) => this.#deps.cookies(url, store, request),
+          cookies: (url, store, request, plan) => this.#deps.cookies(url, store, request, plan),
+          privateSession: (incognito) => this.#privateSession(incognito),
+          deadline,
+          now: this.#now,
           userAgent: this.#deps.userAgent,
         },
       );
@@ -209,32 +269,18 @@ export class Hub {
     await this.#ready;
     const handoverId = newHandoverId(this.#deps);
     const page = click.frameUrl ?? click.pageUrl ?? null;
-    const result = await this.#app.submit(handoverId, {
-      url,
-      // What the browser itself would send (strict-origin-when-cross-origin), never more.
-      referrer: refererFor(url, page),
-      page_url: click.pageUrl ?? null,
-      ...(tab === undefined
-        ? {}
-        : {
-            browser_route: {
-              observed_page: click.pageUrl ?? page,
-              private_window: tab.incognito,
-              redirect_urls: [],
-            },
-          }),
-      // The document the link is in chose it, a frame from another site included.
-      ...(page === null ? {} : { frame_url: page }),
-      suggested_name: null,
-      mime: null,
-      size_hint: null,
-      // Like following the link: a top-level navigation started by the frame it is in.
-      ...(await this.#deps.cookies(url, cookieStoreOf(tab ?? {}), {
-        initiator: page,
-        navigation: true,
-      })),
-      source: 'context_menu',
-    });
+    // Like following the link: a top-level navigation started by the frame it is in.
+    const request = { initiator: page, navigation: true };
+    const store = cookieStoreOf(tab ?? {});
+    const privateSession = await this.#privateSession(tab?.incognito === true);
+    // Its private window closed: the app would have no session to forget it with (D280).
+    if (tab?.incognito === true && privateSession === null) return this.#browserFallback(url, null);
+    const result = await this.#app.submitChecked(
+      handoverId,
+      menuCheck(url, click, request, privateSession),
+      menuFields(url, click, tab, privateSession),
+      (plan) => this.#deps.cookies(url, store, request, plan),
+    );
     if (result.taken) return 'handed_over';
     if (!result.uncertain) return this.#browserFallback(url, menuNotTaken(name, result.detail));
     const fallback = await this.#browserFallback(url, null);
@@ -296,8 +342,14 @@ export class Hub {
     this.#alerts.recovered(recovered, entry.id);
   }
 
-  /** Runs a popup command; resolves with a sentence to show when there is one. */
-  async #runCommand(command: PopupCommand): Promise<string | undefined> {
+  /** The private session a capture from a private window comes from; null for a normal window (D280). */
+  async #privateSession(incognito: boolean): Promise<string | null> {
+    if (!incognito) return null;
+    return (await this.#deps.privateSession?.current()) ?? null;
+  }
+
+  /** Runs a popup command; resolves with what to answer it with, if anything. */
+  async #runCommand(command: PopupCommand): Promise<CommandAnswer | undefined> {
     if (!isLocalCommand(command)) {
       await this.#app.run(command);
       return undefined;
@@ -310,8 +362,10 @@ export class Hub {
         if (media === undefined) throw new Error('Media cannot be sent from here.');
         const result = await media.download(command.tabId, command.key);
         if (!result.ok) throw new Error(result.message);
-        return result.message;
+        return { message: result.message };
       }
+      case 'page_options':
+        return { page: await this.#app.pageOptions(command.host) };
       case 'reconnect':
         this.#client.reconnectNow();
         return;
@@ -334,14 +388,13 @@ export class Hub {
 
   #onEvent(event: Event): void {
     switch (event.type) {
-      case 'extension_settings_changed':
+      case 'shell_config_changed':
         this.#settings.adopt(event.data);
         return;
-      case 'queues_changed':
-        this.#settings.adoptQueues(event.data);
+      case 'options_changed':
+        this.#settings.adoptOptions(event.data);
         return;
-      case 'browser_controls_changed':
-        this.#settings.adoptControls(event.data);
+      case 'queues_changed':
         return;
       case 'notice_requested':
       case 'notice_withdrawn':

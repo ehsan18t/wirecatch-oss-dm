@@ -37,7 +37,7 @@ impl Manager {
             .inner
             .folders
             .resolve(&PortablePath(folder.to_string()))?;
-        let exited = {
+        let (exited, private) = {
             let mut state = self.lock_open()?;
             let entry = state.entry_mut(id)?;
             entry.refuse_if_stranded()?;
@@ -61,13 +61,17 @@ impl Manager {
             }
             entry.hold.begin_move();
             let exited = entry.run.as_ref().map(|run| run.exited.clone());
+            let private = entry.row.private;
             self.stop_run(entry, Stop::Requeue);
             self.close_questions_of(&mut state, id);
-            exited
+            (exited, private)
         };
         let manager = self.clone();
-        self.to_the_end(async move { manager.finish_moving(id, dir, exited).await })
-            .await
+        self.to_the_end(super::private_sessions::private_scope(
+            private,
+            async move { manager.finish_moving(id, dir, exited).await },
+        ))
+        .await
     }
 
     /// Moves download `id`, already marked as moving, to `dir` once its run has exited.

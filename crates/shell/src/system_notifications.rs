@@ -283,6 +283,7 @@ mod platform {
                 click: Act::Open(DownloadId(1)),
                 lasts: Lasts::Kept,
                 important: true,
+                private: false,
             };
             let xml = toast_xml(&notification, false);
             assert!(!xml.contains("scenario"), "{xml}");
@@ -455,6 +456,7 @@ mod tests {
             click: Act::Retry(DownloadId(1)),
             lasts: Lasts::Kept,
             important: true,
+            private: false,
         };
         let pick = |argument: &str| chosen(&notification, clicked_button(argument));
         assert_eq!(

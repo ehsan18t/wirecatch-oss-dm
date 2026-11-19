@@ -210,7 +210,7 @@ impl Checkpoints {
     pub fn spawn(saver: Arc<ResumeSaver>) -> Self {
         let every = saver.shared.opts.checkpoint_interval;
         let cancel = saver.shared.request.cancel.clone();
-        let task = tokio::spawn(async move {
+        let task = crate::task::spawn(async move {
             let mut tick = ticker(every);
             tick.tick().await;
             loop {

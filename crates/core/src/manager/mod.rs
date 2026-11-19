@@ -5,6 +5,7 @@ mod added_pages;
 mod addons;
 pub mod app_update;
 mod arrival;
+mod browser;
 mod captures;
 mod downloads;
 #[cfg(test)]
@@ -15,10 +16,12 @@ mod handovers;
 mod media;
 
 mod media_run;
+mod options;
 mod page_readings;
 mod placement;
 mod policy;
 mod preferences;
+pub(crate) mod private_sessions;
 mod proxy;
 mod questions;
 mod queues;
@@ -94,6 +97,8 @@ pub struct ManagerConfig {
     /// the app gives up and the browser keeps the download. Shorter than the
     /// extension's own wait for the app's reply.
     pub capture_timeout: Duration,
+    /// How long a private session no connection names stays open (D280).
+    pub private_session_grace: Duration,
     /// Where the media add-on comes from: the pinned official releases, or a
     /// local server in tests.
     pub addon_sources: MediaAddonSources,
@@ -162,6 +167,7 @@ impl ManagerConfig {
             clock: Arc::new(SystemClock),
             stop_timeout: DEFAULT_STOP_TIMEOUT,
             capture_timeout: DEFAULT_CAPTURE_TIMEOUT,
+            private_session_grace: private_sessions::PRIVATE_SESSION_GRACE,
             addon_sources: MediaAddonSources::official(),
             media_timeout: DEFAULT_MEDIA_TIMEOUT,
             media_refresh_delays: DEFAULT_MEDIA_REFRESH_DELAYS.to_vec(),
@@ -291,6 +297,13 @@ impl ManagerConfig {
         self.stop_timeout = timeout;
         self
     }
+
+    /// Uses `grace` as the [`private_session_grace`](Self::private_session_grace).
+    #[must_use]
+    pub fn with_private_session_grace(mut self, grace: Duration) -> Self {
+        self.private_session_grace = grace;
+        self
+    }
 }
 
 /// The download manager. Cheap to clone; every clone is the same manager.
@@ -315,6 +328,7 @@ struct Inner {
     clock: Arc<dyn Clock>,
     stop_timeout: Duration,
     capture_timeout: Duration,
+    private_session_grace: Duration,
     folders: KnownFolders,
     /// The media add-on's folder.
     addon_dir: PathBuf,
@@ -337,6 +351,12 @@ struct Inner {
     global_limiter: Arc<RateLimiter>,
     ui_events: broadcast::Sender<UiEvent>,
     wire_events: broadcast::Sender<Event>,
+    /// New at every start, so the extension tells this run's answers from an earlier run's.
+    instance: String,
+    /// Raised by every change sent to the extension (D280).
+    revision: std::sync::atomic::AtomicU64,
+    /// The browsers' private sessions.
+    private: Mutex<private_sessions::PrivateSessions>,
     /// Wakes the ticker when a row changes or a download starts.
     rows_changed: Arc<Notify>,
     /// Wakes the scheduler when queues change.
@@ -377,6 +397,22 @@ fn storage_news(ui_events: broadcast::Sender<UiEvent>) -> SaveWatcher {
                 SaveNews::Recovered => UiEvent::StorageRecovered,
             },
         );
+    })
+}
+
+/// What the person is told about a start: lists recovered, and a data folder others may read.
+fn startup_notices(recoveries: &[Recovery], not_private: bool) -> Vec<StartupNotice> {
+    startup::list_recovered(recoveries)
+        .into_iter()
+        .chain(not_private.then(startup::not_private))
+        .collect()
+}
+
+/// Where a damaged download list was set aside at start, if one was.
+fn set_aside_list(recoveries: &[Recovery]) -> Option<PathBuf> {
+    recoveries.iter().find_map(|r| match r {
+        Recovery::Damaged { kept_at } => Some(kept_at.clone()),
+        _ => None,
     })
 }
 
@@ -439,6 +475,7 @@ impl Manager {
             clock: config.clock,
             stop_timeout: config.stop_timeout,
             capture_timeout: config.capture_timeout,
+            private_session_grace: config.private_session_grace,
             folders: config.folders,
             addon_dir,
             addon_sources: config.addon_sources,
@@ -455,17 +492,14 @@ impl Manager {
             global_limiter,
             ui_events,
             wire_events: broadcast::Sender::new(WIRE_EVENT_BUFFER),
+            instance: format!("{:x}-{:x}", std::process::id(), now_millis.0),
+            revision: std::sync::atomic::AtomicU64::new(0),
+            private: Mutex::default(),
             rows_changed: Arc::new(Notify::new()),
             queues_changed: Arc::new(Notify::new()),
             stopped: CancellationToken::new(),
-            startup_notices: startup::list_recovered(&recoveries)
-                .into_iter()
-                .chain(not_private.then(startup::not_private))
-                .collect(),
-            set_aside_list: recoveries.iter().find_map(|r| match r {
-                Recovery::Damaged { kept_at } => Some(kept_at.clone()),
-                _ => None,
-            }),
+            startup_notices: startup_notices(&recoveries, not_private),
+            set_aside_list: set_aside_list(&recoveries),
             #[cfg(test)]
             fake_engine: Mutex::new(None),
             #[cfg(test)]
@@ -667,13 +701,14 @@ impl Manager {
         true
     }
 
-    /// Starts a task on the manager's runtime, whichever thread this is called from.
+    /// Starts a task on the manager's runtime, whichever thread this is called from, in the
+    /// caller's span.
     fn spawn<F>(&self, task: F) -> JoinHandle<F::Output>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,
     {
-        self.inner.runtime.spawn(task)
+        wirecatch_engine::task::spawn_on(&self.inner.runtime, task)
     }
 
     /// Starts `work` on the manager's runtime at once and returns a wait for it. A caller that stops waiting (a timeout, a `select!`) leaves it running to the end: a method that changes state in steps across awaits makes its first change itself, then hands the rest to this, so it is never left half done (CORE-6).
@@ -732,19 +767,32 @@ impl Manager {
     fn save(&self, state: &mut State, id: DownloadId) {
         // One being removed is already off the saved list and must stay off it.
         let now = self.inner.clock.unix_millis();
-        if let Some(entry) = state
+        let Some(entry) = state
             .downloads
             .get_mut(&id)
             .filter(|e| !e.hold.is_removing())
-        {
-            entry.note_changes(now);
+        else {
+            return;
+        };
+        entry.note_changes(now);
+        let completed = entry.row.status == wirecatch_protocol::app::DownloadStatus::Completed;
+        if entry.row.private {
+            // A private download lives in memory only (D280); its partial files are listed by
+            // path alone, so the next start deletes what a crash left of them.
+            let deletion = (!completed).then(|| entry.pending_deletion());
+            match deletion {
+                Some(deletion) => state.pending_deletions.insert(id, deletion),
+                None => state.pending_deletions.remove(&id),
+            };
+            self.save_pending_deletions(state);
+        } else {
             self.inner.store.save_downloads(vec![entry.stored()]);
-            if entry.row.status == wirecatch_protocol::app::DownloadStatus::Completed {
-                state.stop_watching_link(id);
-            }
-            state.touch(id);
-            self.inner.rows_changed.notify_one();
         }
+        if completed {
+            state.stop_watching_link(id);
+        }
+        state.touch(id);
+        self.inner.rows_changed.notify_one();
     }
 
     fn emit(&self, event: UiEvent) {

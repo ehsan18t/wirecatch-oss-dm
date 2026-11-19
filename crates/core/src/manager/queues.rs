@@ -201,6 +201,8 @@ impl Manager {
         self.inner.store.save_queues(state.queue_list());
         self.emit(UiEvent::QueuesChanged(state.queue_list()));
         self.emit_wire(Event::QueuesChanged(state.queue_summaries()));
+        // The popup's queue choice names them.
+        self.publish_shell(state);
     }
 }
 

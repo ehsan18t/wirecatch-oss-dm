@@ -124,7 +124,12 @@ impl Manager {
             timeout: self.inner.media_timeout,
             refresh_delays: self.inner.media_refresh_delays.clone(),
             clock: self.inner.clock.clone(),
-            readings: self.inner.page_readings.clone(),
+            // A private page's reading (signed addresses, its cookies) is never shared (D280).
+            readings: if entry.private_session.is_some() {
+                Arc::default()
+            } else {
+                self.inner.page_readings.clone()
+            },
             reserve: {
                 let manager = Arc::downgrade(&self.inner);
                 Arc::new(move |path: &Path, take: bool| {

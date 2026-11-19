@@ -38,7 +38,7 @@ pub(in crate::manager) async fn ytdlp_off_local_network(
         proxy.is_empty()
     } else {
         // Any proxy the computer has: `proxy_environment` would replace them all, the page's scheme or not (D136.2).
-        let system = tokio::task::spawn_blocking(ManualProxies::from_system).await;
+        let system = wirecatch_engine::task::spawn_blocking(ManualProxies::from_system).await;
         matches!(system, Ok(None))
     };
     direct && !page_is_local(chosen_by, page).await

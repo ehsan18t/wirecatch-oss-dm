@@ -1,4 +1,4 @@
-import { takesPrivateWindows, type ExtensionSettings } from '@wirecatch/protocol';
+import type { ShellConfig } from '@wirecatch/protocol';
 import { fileNameFromUrl, matchesFileTypes } from '../file-types';
 import { matchingSite } from '../sites';
 import { isWebUrl } from '../url';
@@ -99,19 +99,40 @@ function isInternal(url: string | null): boolean {
  *    takes every file.
  * 8. The size is known and below the minimum: keep. An unknown size is captured.
  */
-export function shouldCapture(
-  item: CaptureCandidate,
-  settings: ExtensionSettings,
-): CaptureDecision {
+export function shouldCapture(item: CaptureCandidate, settings: ShellConfig): CaptureDecision {
   const rule = KEEP_RULES.find(({ keeps }) => keeps(item, settings));
   return rule === undefined ? { capture: true } : { capture: false, reason: rule.reason };
+}
+
+/** The rules that need no setting: what only the browser knows. A download they keep is never paused, and nothing about it is sent (D280). */
+export function browserKeeps(item: CaptureCandidate): SkipReason | null {
+  return BROWSER_RULES.find(({ keeps }) => keeps(item))?.reason ?? null;
 }
 
 /** One of the rules above: when `keeps` is true, the download stays in the browser for `reason`. */
 interface KeepRule {
   reason: SkipReason;
-  keeps: (item: CaptureCandidate, settings: ExtensionSettings) => boolean;
+  keeps: (item: CaptureCandidate, settings: ShellConfig) => boolean;
 }
+
+/** A rule that needs no setting. */
+interface BrowserRule {
+  reason: SkipReason;
+  keeps: (item: CaptureCandidate) => boolean;
+}
+
+/** The rules that need no setting, in the order `KEEP_RULES` has them. */
+const BROWSER_RULES: readonly BrowserRule[] = [
+  { reason: 'not_in_progress', keeps: (item) => !item.inProgress },
+  { reason: 'started_by_extension', keeps: (item) => item.startedByExtension },
+  {
+    reason: 'browser_flagged',
+    keeps: (item) => item.danger !== null && !NOT_DANGEROUS.has(item.danger),
+  },
+  { reason: 'blob_or_data_url', keeps: (item) => BROWSER_ONLY_SCHEMES.has(schemeOf(item.url)) },
+  { reason: 'internal_page', keeps: (item) => isInternal(item.url) || isInternal(item.referrer) },
+  { reason: 'unsupported_url', keeps: (item) => !isWebUrl(item.url) },
+];
 
 /** The rules of `shouldCapture`, in order; the first that keeps the download decides. */
 const KEEP_RULES: readonly KeepRule[] = [
@@ -120,7 +141,7 @@ const KEEP_RULES: readonly KeepRule[] = [
   { reason: 'started_by_extension', keeps: (item) => item.startedByExtension },
   {
     reason: 'private_window',
-    keeps: (item, settings) => item.incognito && !takesPrivateWindows(settings),
+    keeps: (item, settings) => item.incognito && !settings.private_windows,
   },
   {
     reason: 'browser_flagged',

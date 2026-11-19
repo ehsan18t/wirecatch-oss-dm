@@ -186,7 +186,7 @@ test('loads the page and its font without the browser opening a socket', async (
 for (const font of FONTS) {
   test.describe(`in ${font.name}`, () => {
     test.describe('the popup with long text', () => {
-      for (const state of ['long', 'many', 'no-access', 'closed', 'capture-off', 'old-app']) {
+      for (const state of ['long', 'many', 'no-access', 'closed', 'capture-off']) {
         test(`keeps everything inside the popup (${state})`, async ({ page }) => {
           await page.setViewportSize({ width: 480, height: 720 });
           await open(page, `state=${state}&pseudo`, font);
@@ -196,7 +196,7 @@ for (const font of FONTS) {
       }
 
       // The Downloads and Video and audio sections, unfolded (D61).
-      for (const state of ['long', 'connected', 'no-media', 'old-app']) {
+      for (const state of ['long', 'connected', 'no-media']) {
         test(`keeps everything inside the popup with its sections open (${state})`, async ({
           page,
         }) => {

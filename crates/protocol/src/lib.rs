@@ -29,6 +29,7 @@ pub mod proxy;
 pub mod rules;
 pub mod secret;
 pub mod secrets;
+pub mod shell;
 pub mod version;
 pub mod wire;
 

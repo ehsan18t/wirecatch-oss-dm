@@ -9,6 +9,11 @@ export type BrowserRoute = {
    */
   private_window: boolean;
   /**
+   * The private session the download comes from (D280): the app keeps such a download in
+   * memory only and forgets it when the session ends.
+   */
+  private_session?: string | null;
+  /**
    * The full page observed in the browser, used to return there. The HTTP
    * referrer alone is insufficient to identify that page.
    */

@@ -332,7 +332,8 @@ pub(super) async fn run_system_proxy_reads(
             () = stopped.cancelled() => return,
         }
         let computer = computer.clone();
-        let Ok(read) = tokio::task::spawn_blocking(move || computer.proxies()).await else {
+        let Ok(read) = wirecatch_engine::task::spawn_blocking(move || computer.proxies()).await
+        else {
             return;
         };
         let Some(manager) = Manager::from_weak(&weak) else {

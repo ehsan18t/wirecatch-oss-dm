@@ -147,9 +147,9 @@ fn sites(list: impl IntoIterator<Item = String>) -> Vec<String> {
     list.into_iter().collect()
 }
 
-/// About 80,000 sites fit in one frame. Such a list is refused for its length before any site in it is read, from the browser and from a window, and changes nothing: its first entry names no host, and the refusal is the one for the length. That it is refused without the manager's lock is held by `manager::tests::a_list_of_sites_too_long_is_refused_without_the_lock`.
+/// About 80,000 sites fit in one frame. Such a list is refused for its length before any site in it is read, and changes nothing: its first entry names no host, and the refusal is the one for the length. That it is refused without the manager's lock is held by `manager::tests::a_list_of_sites_too_long_is_refused_without_the_lock`.
 #[tokio::test]
-async fn a_frame_full_of_sites_is_refused_unread_from_the_browser_and_the_windows() -> TestResult {
+async fn a_frame_full_of_sites_is_refused_unread() -> TestResult {
     let h = Harness::new().await?;
     let before = h.manager.get_settings();
     let flood = || {
@@ -159,19 +159,22 @@ async fn a_frame_full_of_sites_is_refused_unread_from_the_browser_and_the_window
         ))
     };
 
-    let from_browser = h.manager.update_extension_settings(ExtensionSettingsPatch {
-        add_ignored_sites: flood(),
-        ..ExtensionSettingsPatch::default()
-    });
-    let from_window = h.manager.change_settings(AppSettingsPatch {
+    let replaced = h.manager.change_settings(AppSettingsPatch {
         extension: Some(ExtensionSettingsPatch {
             ignored_sites: flood(),
             ..ExtensionSettingsPatch::default()
         }),
         ..AppSettingsPatch::default()
     });
+    let added = h.manager.change_settings(AppSettingsPatch {
+        extension: Some(ExtensionSettingsPatch {
+            add_ignored_sites: flood(),
+            ..ExtensionSettingsPatch::default()
+        }),
+        ..AppSettingsPatch::default()
+    });
 
-    for refused in [from_browser.unwrap_err(), from_window.unwrap_err()] {
+    for refused in [replaced.unwrap_err(), added.unwrap_err()] {
         let refused = refused.to_string();
         assert!(refused.contains("at most 1000"), "{refused}");
     }
@@ -185,26 +188,31 @@ async fn a_site_that_names_no_host_is_refused_by_name() -> TestResult {
     let h = Harness::new().await?;
     let before = h.manager.get_settings();
 
-    let refused = h
-        .manager
-        .update_extension_settings(ExtensionSettingsPatch {
-            add_ignored_sites: Some(sites(["a.example".into(), "exa mple.com".into()])),
-            ..ExtensionSettingsPatch::default()
+    let change = |patch| {
+        h.manager.change_settings(AppSettingsPatch {
+            extension: Some(patch),
+            ..AppSettingsPatch::default()
         })
-        .unwrap_err()
-        .to_string();
+    };
+    let refused = change(ExtensionSettingsPatch {
+        add_ignored_sites: Some(sites(["a.example".into(), "exa mple.com".into()])),
+        ..ExtensionSettingsPatch::default()
+    })
+    .unwrap_err()
+    .to_string();
     assert!(refused.contains("\"exa mple.com\""), "{refused}");
     assert_eq!(h.manager.get_settings(), before);
 
-    let kept = h
-        .manager
-        .update_extension_settings(ExtensionSettingsPatch {
-            add_ignored_sites: Some(sites(["A.example/".into(), " ".into()])),
-            remove_ignored_sites: Some(sites(["not a site".into()])),
-            ..ExtensionSettingsPatch::default()
-        })
-        .unwrap();
-    assert_eq!(kept.ignored_sites, ["a.example"]);
+    change(ExtensionSettingsPatch {
+        add_ignored_sites: Some(sites(["A.example/".into(), " ".into()])),
+        remove_ignored_sites: Some(sites(["not a site".into()])),
+        ..ExtensionSettingsPatch::default()
+    })
+    .unwrap();
+    assert_eq!(
+        h.manager.get_settings().extension.ignored_sites,
+        ["a.example"]
+    );
     Ok(())
 }
 

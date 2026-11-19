@@ -4,7 +4,6 @@
 //   node scripts/gate.mjs                    every check CI runs (see DEFAULT)
 //   node scripts/gate.mjs rust js            named checks or groups (see GROUPS)
 //   node scripts/gate.mjs publish            what a release needs on top of DEFAULT
-//   node scripts/gate.mjs publish-extension  `publish` plus what a release of the browser extension needs
 //   node scripts/gate.mjs release-build      what a release build runs: `publish`, with placeholders only warned about
 //   node scripts/gate.mjs commit-msg FILE    check one commit message (the commit-msg hook)
 //   node scripts/gate.mjs --install-tools    install the cargo tools some checks need, at the versions in TOOLS (scripts/gate/rust.mjs)
@@ -31,7 +30,7 @@ import { NOTICES_CHECKS } from './gate/notices.mjs';
 import { PATH_TEXT_CHECKS } from './gate/path-text.mjs';
 import { DESKTOP_CRATE, installTools, RUST_CHECKS, toolSpecs } from './gate/rust.mjs';
 import { PRODUCT_NAME_CHECKS } from './gate/product-name.mjs';
-import { SUFFIX_LIST_CHECKS } from './gate/suffix-list.mjs';
+import { TASK_SPAN_CHECKS } from './gate/task-span.mjs';
 import { TEST_TIMING_CHECKS } from './gate/test-timing.mjs';
 import { TEXT_CHECKS } from './gate/text.mjs';
 
@@ -48,13 +47,13 @@ const CHECKS = {
   ...EXCEPTION_CHECKS,
   ...TEST_TIMING_CHECKS,
   ...DISCARDED_CHECKS,
+  ...TASK_SPAN_CHECKS,
   ...PRODUCT_NAME_CHECKS,
   'clippy-linux': clippyLinux,
   ...JS_CHECKS,
   ...BROWSER_CHECKS,
   ...TEXT_CHECKS,
   ...COMMIT_CHECKS,
-  ...SUFFIX_LIST_CHECKS,
   ...NOTICES_CHECKS,
   ...ICON_CHECKS,
   ...PATH_TEXT_CHECKS,
@@ -73,6 +72,7 @@ const GROUPS = {
     'cfg-allow',
     'test-timing',
     'discarded',
+    'task-span',
     'clippy',
     'clippy-linux',
     'clippy-http3',
@@ -97,11 +97,8 @@ const GROUPS = {
   'supply-chain': ['unused-deps', 'deny', 'notices', 'npm-audit'],
   // Only when publishing a release, never in DEFAULT: the product identity still holds placeholders until the publisher's details are decided (D29). `product` first, so committed generated files are what is checked. Every step that publishes runs this group first.
   publish: ['product', 'product-placeholders'],
-  // What the extension's publishing step runs instead of `publish`: the extension alone ships the Public Suffix List, so only its releases wait on the list's age, which needs the registry and changes as the calendar moves (D35).
-  'publish-extension': ['publish', 'suffix-list'],
   // What a release build runs before it builds: the same checks, but a placeholder is only warned about, so installers and store packages can be built and tried before the publisher's details are decided; publishing still refuses them (D49).
   'release-build': ['product', 'product-placeholders-warn'],
-  'release-build-extension': ['release-build', 'suffix-list'],
 };
 
 /** What `node scripts/gate.mjs` runs with no names: every check CI runs. */

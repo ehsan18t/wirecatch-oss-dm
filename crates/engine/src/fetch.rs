@@ -184,7 +184,7 @@ impl Fetcher {
             Clients::new(options)?
         } else {
             let options = options.clone();
-            tokio::task::spawn_blocking(move || Clients::new(&options))
+            crate::task::spawn_blocking(move || Clients::new(&options))
                 .await
                 .map_err(|e| Error::task(&e))??
         };

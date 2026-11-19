@@ -241,15 +241,24 @@ impl Manager {
         if let Some(known) = state.handovers.get(&capture.handover_id) {
             return Ok(known.reply.clone());
         }
+        if let Some(refused) = self.refused_private_capture(capture) {
+            return Err(refused);
+        }
         let reply = AddedDownload {
             id: None,
             action: AddAction::AwaitingConfirmation,
         };
-        // The same media captured again joins the one already waiting.
+        // The same media captured again, in the same private session or none, joins the one already waiting.
+        let session = super::private_sessions::capture_session(capture);
         if let Some(&id) = state
             .media
             .iter()
-            .find(|(_, m)| m.source.fetch.url == url && m.source.kind == kind)
+            .find(|(_, m)| {
+                m.source.fetch.url == url
+                    && m.source.kind == kind
+                    && super::private_sessions::session_of(&m.source.fetch.origin).as_deref()
+                        == session
+            })
             .map(|(id, _)| id)
         {
             state.media.join(id, &capture.handover_id)?;
@@ -272,11 +281,12 @@ impl Manager {
                 wirecatch_logging::redact::url_for_display(source.fetch.url.as_str())
             });
         let held = Held::capture(capture.handover_id.clone(), capture.queue);
+        let private = super::private_sessions::is_private(&source.fetch.origin);
         let id = self.hold_media(&mut state, source, placed, held);
         // Read without a window: the person hears it was added now, not seconds later when its
         // download starts (D67).
         if state.media.get(&id).is_some_and(|m| m.quiet) {
-            self.emit(UiEvent::MediaCaptured { id, title });
+            self.emit(UiEvent::MediaCaptured { id, title, private });
         }
         state.handovers.insert(
             &capture.handover_id,
@@ -310,6 +320,7 @@ impl Manager {
             MediaStage::Analysing(token.clone())
         };
         let shown = wirecatch_logging::redact::url_for_display(source.fetch.url.as_str());
+        let private = super::private_sessions::is_private(&source.fetch.origin);
         state.media.insert(
             id,
             MediaPending {
@@ -336,7 +347,7 @@ impl Manager {
                 id,
             });
         } else {
-            self.spawn_analysis(id, token);
+            self.spawn_analysis(id, token, private);
         }
         id
     }
@@ -662,12 +673,13 @@ impl Manager {
                 if matches!(pending.stage, MediaStage::NeedsAddon) {
                     let token = self.inner.stopped.child_token();
                     pending.stage = MediaStage::Analysing(token.clone());
-                    started.push((*id, token));
+                    let private = super::private_sessions::is_private(&pending.source.fetch.origin);
+                    started.push((*id, token, private));
                 }
             }
         }
-        for (id, token) in started {
-            self.spawn_analysis(id, token);
+        for (id, token, private) in started {
+            self.spawn_analysis(id, token, private);
         }
     }
 
@@ -731,9 +743,13 @@ impl Manager {
         }
     }
 
-    fn spawn_analysis(&self, id: QuestionId, token: CancellationToken) {
+    /// Called with the state locked: `private` comes from the caller, never from a second lock.
+    fn spawn_analysis(&self, id: QuestionId, token: CancellationToken, private: bool) {
         let manager = self.clone();
-        self.spawn(async move { manager.analyse(id, token).await });
+        self.spawn(super::private_sessions::private_scope(
+            private,
+            async move { manager.analyse(id, token).await },
+        ));
     }
 
     /// Reads a stream or page and offers its qualities.
@@ -961,12 +977,15 @@ impl Manager {
             .await
             .map_err(|e| describe::ytdlp(&e, tools))?;
         let info = Arc::new(info);
-        self.inner.page_readings.put(
-            &source.fetch.url,
-            self.inner.clock.unix_millis(),
-            info.clone(),
-            token,
-        );
+        // A private page's reading (signed addresses, its cookies) is never shared (D280).
+        if !super::private_sessions::is_private(&source.fetch.origin) {
+            self.inner.page_readings.put(
+                &source.fetch.url,
+                self.inner.clock.unix_millis(),
+                info.clone(),
+                token,
+            );
+        }
         Ok(Found {
             title: info.title.clone(),
             offers: choice::from_page(&info)?,

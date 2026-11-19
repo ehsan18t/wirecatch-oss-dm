@@ -252,15 +252,6 @@ fn listed_subtitles(offered: &[MediaSubtitle], ids: &[String]) -> Vec<String> {
     listed
 }
 
-/// The bit rate `format` offers nearest `wanted`.
-pub fn nearest_kbps(format: OutputFormat, wanted: u32) -> Option<u32> {
-    format
-        .kbps_choices()
-        .iter()
-        .copied()
-        .min_by_key(|choice| (choice.abs_diff(wanted), *choice))
-}
-
 /// The audio quality to start from for `format`: `None` keeps the downloaded audio when it fits as
 /// it is and nothing else was wanted, else the wanted quality or the format's usual one, at or
 /// below what the download has, since a higher one only makes the file bigger.
@@ -278,7 +269,7 @@ pub fn kbps_for(fit: Option<&OutputFit>, format: OutputFormat, wanted: Option<u3
         .copied()
         .filter(|choice| *choice <= limit)
         .max()
-        .or_else(|| nearest_kbps(format, limit))
+        .or_else(|| format.nearest_kbps(limit))
 }
 
 /// A video's length: "3:33", "1:02:03".

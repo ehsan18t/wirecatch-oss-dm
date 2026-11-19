@@ -6,10 +6,8 @@
   import ConnectionNotice from '../common/ConnectionNotice.svelte';
   import { connectionBadge, waitingNote } from '../connection';
   import { describeError } from '../../lib/diag/redact';
-  import CaptureCard from './CaptureCard.svelte';
-  import DownloadsSection from './DownloadsSection.svelte';
   import MediaList from './MediaList.svelte';
-  import MediaSection from './MediaSection.svelte';
+  import OptionGroups from './OptionGroups.svelte';
   import Alerts from './Alerts.svelte';
   import PopupFooter from './PopupFooter.svelte';
   import PopupHeader from './PopupHeader.svelte';
@@ -18,6 +16,8 @@
     model: PopupModel;
     /** Address of the active tab, for "Ignore this site". */
     currentUrl: string | null;
+    /** The popup is in a private window. */
+    privateTab?: boolean;
     /** False when the person revoked the extension's access to websites (possible in Firefox). */
     siteAccess?: boolean;
     /** Asks the browser to grant website access again; resolves with the new state. */
@@ -35,6 +35,7 @@
   let {
     model,
     currentUrl,
+    privateTab = false,
     siteAccess = true,
     requestSiteAccess,
     mediaShortcut = null,
@@ -71,6 +72,13 @@
   const snapshot = $derived(model.snapshot);
   const status = $derived(snapshot?.status ?? { state: 'connecting' as const });
   const problem = $derived(status.state === 'unavailable' ? status.problem : null);
+  const groups = $derived(model.groups);
+  // The cards that do not fold come before the page's media, the folds after it.
+  const firstFold = $derived(groups?.findIndex((g) => g.title !== null) ?? -1);
+  const above = $derived(
+    groups === null ? [] : firstFold < 0 ? groups : groups.slice(0, firstFold),
+  );
+  const below = $derived(groups === null || firstFold < 0 ? [] : groups.slice(firstFold));
 </script>
 
 <svelte:head><title>{PRODUCT_NAME}</title></svelte:head>
@@ -111,11 +119,18 @@
       fallback={() => mainArea}
     />
 
-    {#if model.settings === null}
+    {#if groups === null}
       <!-- The settings are the app's: while it is not connected, say so instead of showing values it may have changed. -->
       <p class="px-1 text-ui text-ink-muted">{waitingNote(status)}</p>
     {:else}
-      <CaptureCard {model} settings={model.settings} controls={model.controls} {currentUrl} />
+      <OptionGroups
+        {model}
+        groups={above}
+        {currentUrl}
+        {privateTab}
+        shortcut={mediaShortcut}
+        {openShortcuts}
+      />
     {/if}
 
     <MediaList
@@ -124,21 +139,14 @@
       ondownload={(key: string) => void model.downloadMedia(key)}
     />
 
-    {#if model.settings !== null}
-      <DownloadsSection
-        {model}
-        settings={model.settings}
-        controls={model.controls}
-        queues={snapshot?.queues ?? []}
-      />
-      <MediaSection
-        {model}
-        settings={model.settings}
-        controls={model.controls}
-        shortcut={mediaShortcut}
-        {openShortcuts}
-      />
-    {/if}
+    <OptionGroups
+      {model}
+      groups={below}
+      {currentUrl}
+      {privateTab}
+      shortcut={mediaShortcut}
+      {openShortcuts}
+    />
   </main>
 
   <PopupFooter

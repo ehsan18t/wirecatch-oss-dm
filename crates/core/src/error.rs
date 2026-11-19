@@ -158,8 +158,7 @@ pub(crate) async fn blocking<T: Send + 'static>(
     runtime: &tokio::runtime::Handle,
     work: impl FnOnce() -> Result<T> + Send + 'static,
 ) -> Result<T> {
-    runtime
-        .spawn_blocking(work)
+    wirecatch_engine::task::spawn_blocking_on(runtime, work)
         .await
         .map_err(|e| CoreError::Internal(e.to_string()))?
 }

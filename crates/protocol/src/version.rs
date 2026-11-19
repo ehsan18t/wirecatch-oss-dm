@@ -17,7 +17,7 @@ crate::exported::exported_consts! {
     pub const PROTOCOL_VERSION: u32 = 2;
     /// The oldest protocol version this build still speaks. Raised only by a change an older
     /// peer cannot read, which then cannot connect at all and is told to update (D32).
-    pub const MIN_PROTOCOL_VERSION: u32 = 1;
+    pub const MIN_PROTOCOL_VERSION: u32 = 2;
 }
 
 const _: () = assert!(MIN_PROTOCOL_VERSION <= PROTOCOL_VERSION);
@@ -128,18 +128,21 @@ impl CallMethod {
         CallMethod::Hello,
         CallMethod::AddDownload,
         CallMethod::WithdrawDownload,
-        CallMethod::GetExtensionSettings,
-        CallMethod::UpdateExtensionSettings,
         CallMethod::ListQueues,
         CallMethod::PauseAll,
         CallMethod::ResumeAll,
         CallMethod::ShowWindow,
-        CallMethod::GetBrowserControls,
-        CallMethod::UpdateBrowserControls,
         CallMethod::ShowBrowserSettings,
         CallMethod::NoticeShown,
         CallMethod::NoticePressed,
         CallMethod::OpenLinks,
+        CallMethod::GetShellConfig,
+        CallMethod::GetOptions,
+        CallMethod::SetOption,
+        CallMethod::InvokeAction,
+        CallMethod::PageOptions,
+        CallMethod::CheckDownload,
+        CallMethod::PrivateSessionEnded,
     ];
 
     /// The protocol version that added the call, or `None` for a method this build does not
@@ -151,18 +154,21 @@ impl CallMethod {
             CallMethod::Hello
             | CallMethod::AddDownload
             | CallMethod::WithdrawDownload
-            | CallMethod::GetExtensionSettings
-            | CallMethod::UpdateExtensionSettings
             | CallMethod::ListQueues
             | CallMethod::PauseAll
             | CallMethod::ResumeAll
             | CallMethod::ShowWindow => Some(1),
-            CallMethod::GetBrowserControls
-            | CallMethod::UpdateBrowserControls
-            | CallMethod::ShowBrowserSettings
+            CallMethod::ShowBrowserSettings
             | CallMethod::NoticeShown
             | CallMethod::NoticePressed
-            | CallMethod::OpenLinks => Some(2),
+            | CallMethod::OpenLinks
+            | CallMethod::GetShellConfig
+            | CallMethod::GetOptions
+            | CallMethod::SetOption
+            | CallMethod::InvokeAction
+            | CallMethod::PageOptions
+            | CallMethod::CheckDownload
+            | CallMethod::PrivateSessionEnded => Some(2),
             CallMethod::Unknown => None,
         }
     }
@@ -177,11 +183,11 @@ impl CallMethod {
 impl EventKind {
     /// Every kind of event this build has (see [`CallMethod::KNOWN`]).
     pub const KNOWN: &[EventKind] = &[
-        EventKind::ExtensionSettingsChanged,
         EventKind::QueuesChanged,
-        EventKind::BrowserControlsChanged,
         EventKind::NoticeRequested,
         EventKind::NoticeWithdrawn,
+        EventKind::ShellConfigChanged,
+        EventKind::OptionsChanged,
     ];
 
     /// The protocol version that added the event. The app sends it only on connections that
@@ -189,10 +195,11 @@ impl EventKind {
     #[must_use]
     pub fn since(self) -> u32 {
         match self {
-            EventKind::ExtensionSettingsChanged | EventKind::QueuesChanged => 1,
-            EventKind::BrowserControlsChanged
-            | EventKind::NoticeRequested
-            | EventKind::NoticeWithdrawn => 2,
+            EventKind::QueuesChanged => 1,
+            EventKind::NoticeRequested
+            | EventKind::NoticeWithdrawn
+            | EventKind::ShellConfigChanged
+            | EventKind::OptionsChanged => 2,
         }
     }
 }
@@ -266,24 +273,11 @@ impl ErrorCode {
         }
     }
 
-    /// The code a connection older than [`ErrorCode::since`] gets for the same failure: an
-    /// older code, or this one for a code from the oldest version.
-    fn older_equivalent(self) -> ErrorCode {
-        match self {
-            ErrorCode::UnsupportedVersion
-            | ErrorCode::InvalidRequest
-            | ErrorCode::InvalidUrl
-            | ErrorCode::NotFound
-            | ErrorCode::AppUnavailable
-            | ErrorCode::AppNotRunning
-            | ErrorCode::Internal
-            | ErrorCode::NotStarted
-            | ErrorCode::AddonRequired => self,
-            ErrorCode::LimitReached
-            | ErrorCode::WrongState
-            | ErrorCode::UpdateCheckFailed
-            | ErrorCode::UnsupportedCall => ErrorCode::InvalidRequest,
-        }
+    /// The code a connection older than [`ErrorCode::since`] gets for the same failure. Every
+    /// code exists in [`MIN_PROTOCOL_VERSION`]; a code a later version adds maps here to the code
+    /// that version had for it.
+    const fn older_equivalent(self) -> ErrorCode {
+        self
     }
 
     /// The code a connection on protocol `version` is sent for this failure: this code, or for
@@ -415,7 +409,7 @@ mod tests {
         codes: &'static str,
     }
 
-    /// Every released protocol version, frozen. A released version never changes: what it has is what peers built for it can read. Releasing a new version copies its generated types into `released/v<version>` and adds its entry here (D32); the `protocol` gate check fails when a snapshot already on main changes.
+    /// Every released protocol version, frozen. A released version never changes: what it has is what peers built for it can read. Releasing a new version copies its generated types into `released/v<version>` and adds its entry here (D32); the `protocol` gate check fails when a snapshot already on main changes. A version below `MIN_PROTOCOL_VERSION` stays only as a record (D280): no build speaks it.
     const RELEASED: &[Released] = &[Released {
         version: 1,
         calls: include_str!("../released/v1/Call.ts"),
@@ -460,7 +454,10 @@ mod tests {
     /// version, which cannot read it. New ones belong to the version being built.
     #[test]
     fn every_released_version_keeps_exactly_what_it_had() {
-        for released in RELEASED {
+        for released in RELEASED
+            .iter()
+            .filter(|released| released.version >= MIN_PROTOCOL_VERSION)
+        {
             let v = released.version;
             assert_eq!(
                 names_in(CallMethod::KNOWN, call_since, v),
@@ -521,19 +518,6 @@ mod tests {
                 );
             }
         }
-        for code in [
-            ErrorCode::LimitReached,
-            ErrorCode::WrongState,
-            ErrorCode::UpdateCheckFailed,
-            ErrorCode::UnsupportedCall,
-        ] {
-            assert_eq!(code.as_of(1), ErrorCode::InvalidRequest, "{code:?}");
-            assert_eq!(code.as_of(2), code);
-        }
-        assert_eq!(
-            ErrorCode::InvalidRequest.as_of(0),
-            ErrorCode::InvalidRequest
-        );
     }
 
     /// The values of the enums inside calls, replies and events, as the generated TypeScript
@@ -604,8 +588,10 @@ mod tests {
     /// The fields the generated TypeScript requires in what the app answers the extension with. A new field is optional there, or a new extension refuses every older app's answer (D210): make it so, and leave this list as it is.
     #[test]
     fn the_required_fields_of_answers_to_the_extension_are_settled() {
-        use crate::app::{MediaDefaults, OutputDefaults};
-        use crate::extension::{AddedDownload, BrowserControls, BrowserNotice, ExtensionSettings};
+        use crate::extension::{AddedDownload, BrowserNotice};
+        use crate::shell::{
+            CookiePlan, MediaTables, OptionGroup, OptionList, PageOptions, Revision, ShellConfig,
+        };
         use crate::wire::{HelloReply, ProtocolError, QueueSummary};
         use ts_rs::TS;
 
@@ -622,44 +608,44 @@ mod tests {
                 BrowserNotice::inline(&cfg),
                 &["id", "kind", "title", "body", "buttons", "stays_ms"],
             ),
+            (Revision::inline(&cfg), &["instance", "counter"]),
             (
-                ExtensionSettings::inline(&cfg),
+                ShellConfig::inline(&cfg),
                 &[
+                    "revision",
                     "capture_enabled",
-                    "ask_before_download",
+                    "private_windows",
                     "show_media_button",
                     "ignored_sites",
                     "capture_extensions",
                     "min_capture_size",
-                    "default_queue",
+                    "video_sites",
+                    "media",
                 ],
             ),
             (
-                BrowserControls::inline(&cfg),
-                &["global_speed_limit", "max_concurrent_downloads", "media"],
-            ),
-            (
-                MediaDefaults::inline(&cfg),
+                MediaTables::inline(&cfg),
                 &[
-                    "video",
-                    "audio",
-                    "ask_each_time",
-                    "remember_choices",
-                    "quality",
-                    "fallback",
+                    "hls_extensions",
+                    "hls_types",
+                    "dash_extensions",
+                    "dash_types",
+                    "video_extensions",
+                    "audio_extensions",
+                    "segment_extensions",
+                    "segment_types",
+                    "min_direct_bytes",
                 ],
             ),
+            (OptionList::inline(&cfg), &["revision", "groups"]),
             (
-                OutputDefaults::inline(&cfg),
-                &[
-                    "format",
-                    "audio_kbps",
-                    "subtitle_languages",
-                    "auto_subtitles",
-                    "subtitles",
-                    "unembedded_subtitles",
-                    "chapters",
-                ],
+                OptionGroup::inline(&cfg),
+                &["id", "title", "summary", "folded", "options"],
+            ),
+            (PageOptions::inline(&cfg), &["site", "ignored"]),
+            (
+                CookiePlan::inline(&cfg),
+                &["site", "top_level_site", "cross_site"],
             ),
         ];
         for (declaration, settled) in answers {
@@ -675,7 +661,7 @@ mod tests {
             event: Event::QueuesChanged(Vec::new()),
         };
         assert_eq!(event.clone().as_of(0), None);
-        assert_eq!(event.clone().as_of(1), Some(event));
+        assert_eq!(event.clone().as_of(MIN_PROTOCOL_VERSION), Some(event));
 
         let unsupported = |code| Message::Response {
             id: 4,
@@ -684,10 +670,6 @@ mod tests {
                 message: "No.".into(),
             }),
         };
-        assert_eq!(
-            unsupported(ErrorCode::UnsupportedCall).as_of(1),
-            Some(unsupported(ErrorCode::InvalidRequest))
-        );
         assert_eq!(
             unsupported(ErrorCode::UnsupportedCall).as_of(2),
             Some(unsupported(ErrorCode::UnsupportedCall))

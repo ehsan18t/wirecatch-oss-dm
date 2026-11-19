@@ -12,10 +12,8 @@ export const HAND_WRITTEN = [
   'extension-settings',
   'hosts',
   'ids',
-  'media-choices',
   'queue-settings',
   'secrets',
-  'setting-words',
   'video-sites',
 ];
 

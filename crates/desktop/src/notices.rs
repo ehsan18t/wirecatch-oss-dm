@@ -136,9 +136,9 @@ async fn watch(manager: Manager, tellers: Arc<Tellers>) {
                                 tell_started(&manager, &tellers, &settings, &rows);
                             }
                         }
-                        UiEvent::MediaCaptured { title, .. } => {
+                        UiEvent::MediaCaptured { title, private, .. } => {
                             tell_added(&manager, &tellers, &settings, |stays| {
-                                notifications::video_added(&title, stays)
+                                notifications::video_added(&title, private, stays)
                             });
                         }
                         UiEvent::NoticeShown(id) => tellers.browser.shown(id),
@@ -235,7 +235,7 @@ fn tell_added(
 }
 
 /// Tells `notification` in the browser in front, or in a system notification when no browser
-/// shows it in time.
+/// shows it in time or it is private.
 fn ask_browser(
     manager: &Manager,
     tellers: &Arc<Tellers>,
@@ -244,6 +244,9 @@ fn ask_browser(
     kind: NoticeKind,
     stays: Option<std::time::Duration>,
 ) {
+    if notification.private {
+        return show(tellers, settings, notification);
+    }
     let Some((id, answer)) = tellers.browser.ask(manager, &notification, kind, stays) else {
         return show(tellers, settings, notification);
     };

@@ -15,12 +15,9 @@ use wirecatch_e2e::extension::{
 use wirecatch_e2e::server::{serve, serve_held};
 use wirecatch_protocol::PROTOCOL_VERSION;
 use wirecatch_protocol::app::{
-    AddRequest, AppSettings, CaptureConfirmation, DownloadStatus, MediaDefaultsPatch, Update,
-    VideoQuality,
+    AddRequest, AppSettings, CaptureConfirmation, DownloadStatus, VideoQuality,
 };
-use wirecatch_protocol::extension::{
-    AddAction, AddedDownload, BrowserControlsPatch, ExtensionSettingsPatch, WithdrawOutcome,
-};
+use wirecatch_protocol::extension::{AddAction, AddedDownload, WithdrawOutcome};
 use wirecatch_protocol::wire::{Call, ErrorCode, Event, Outcome};
 use wirecatch_test_support::test_data;
 
@@ -53,7 +50,10 @@ fn a_capture_starts_after_the_server_answers_and_completes() {
         let url = server.url("complete.bin").to_string();
 
         let request = ext
-            .send(Call::AddDownload(capture(&url, "handover-complete")))
+            .send(Call::AddDownload(Box::new(capture(
+                &url,
+                "handover-complete",
+            ))))
             .await;
         server.wait_for_request("/complete.bin", PATIENCE).await;
         assert!(
@@ -96,7 +96,10 @@ fn withdrawing_from_a_new_connection_before_the_server_answers_leaves_nothing() 
         let url = server.url("withdraw.bin").to_string();
 
         let request = ext
-            .send(Call::AddDownload(capture(&url, "handover-withdraw")))
+            .send(Call::AddDownload(Box::new(capture(
+                &url,
+                "handover-withdraw",
+            ))))
             .await;
         server.wait_for_request("/withdraw.bin", PATIENCE).await;
 
@@ -137,7 +140,10 @@ fn withdrawing_on_the_same_connection_before_the_server_answers_leaves_nothing()
         let url = server.url("withdraw.bin").to_string();
 
         let request = ext
-            .send(Call::AddDownload(capture(&url, "handover-withdraw")))
+            .send(Call::AddDownload(Box::new(capture(
+                &url,
+                "handover-withdraw",
+            ))))
             .await;
         server.wait_for_request("/withdraw.bin", PATIENCE).await;
 
@@ -205,10 +211,10 @@ fn a_repeated_handover_id_adds_one_download() {
         let url = server.url("twice.bin").to_string();
 
         let first = ext
-            .send(Call::AddDownload(capture(&url, "handover-twice")))
+            .send(Call::AddDownload(Box::new(capture(&url, "handover-twice"))))
             .await;
         let second = ext
-            .send(Call::AddDownload(capture(&url, "handover-twice")))
+            .send(Call::AddDownload(Box::new(capture(&url, "handover-twice"))))
             .await;
         server.wait_for_request("/twice.bin", PATIENCE).await;
         server.release();
@@ -234,8 +240,8 @@ fn a_repeated_handover_id_adds_one_download() {
     });
 }
 
-/// Scenario 4: a change from the extension is the app's setting at once and
-/// reaches the other browser; a change in the app reaches both browsers.
+/// Scenario 4: a change from the extension's popup is the app's setting at once and reaches the
+/// other browser; a change in the app reaches both browsers (D280).
 #[test]
 fn extension_settings_sync_both_ways() {
     run(|sandbox| async move {
@@ -243,94 +249,32 @@ fn extension_settings_sync_both_ways() {
         let mut firefox = FakeExtension::firefox(&sandbox.endpoint);
         firefox.hello().await;
 
-        assert_eq!(
-            chrome.get_extension_settings().await,
-            app.manager.extension_settings()
-        );
+        assert_eq!(chrome.get_shell_config().await, app.manager.shell_config());
+        assert_eq!(chrome.get_options().await, app.manager.options());
 
-        let changed = chrome
-            .update_extension_settings(ExtensionSettingsPatch {
-                show_media_button: Some(false),
-                add_ignored_sites: Some(vec!["Ignored.Example".into()]),
-                min_capture_size: Some(4096),
-                ..ExtensionSettingsPatch::default()
-            })
+        chrome
+            .set_option("show_media_button", serde_json::Value::Bool(false))
             .await;
-        assert!(!changed.show_media_button);
-        assert!(
-            changed
-                .ignored_sites
-                .contains(&"ignored.example".to_string())
-        );
-        assert_eq!(changed.min_capture_size, 4096);
-        assert_eq!(app.manager.get_settings().extension, changed);
+        assert!(!app.manager.get_settings().extension.show_media_button);
         firefox
-            .event("extension_settings_changed from Chrome", |e| match e {
-                Event::ExtensionSettingsChanged(s) if *s == changed => Some(()),
+            .event("shell_config_changed from Chrome", |e| match e {
+                Event::ShellConfigChanged(c) if !c.show_media_button => Some(()),
                 _ => None,
             })
             .await;
 
-        let mut settings = app.manager.get_settings();
-        settings.extension.capture_enabled = false;
-        settings.extension.capture_extensions = vec!["zip".into()];
-        app.manager
-            .change_settings(wirecatch_test_support::settings::whole_patch(&settings))
-            .expect("the app saved the change");
-        let from_app = app.manager.extension_settings();
-        assert!(!from_app.capture_enabled);
-        for ext in [&mut chrome, &mut firefox] {
-            ext.event("extension_settings_changed from the app", |e| match e {
-                Event::ExtensionSettingsChanged(s) if *s == from_app => Some(()),
-                _ => None,
-            })
+        chrome
+            .set_option("global_speed_limit", serde_json::json!(1024 * 1024))
             .await;
-            assert_eq!(ext.get_extension_settings().await, from_app);
-        }
-
-        assert!(firefox.close().await.success());
-        assert!(chrome.close().await.success());
-        app.quit().await;
-    });
-}
-
-/// The app settings the popup shows (D61) are the app's: a change from one browser is
-/// stored at once and reaches the other browser, and each one changed in the app
-/// reaches both browsers.
-#[test]
-fn browser_controls_sync_both_ways() {
-    run(|sandbox| async move {
-        let (app, mut chrome) = connected(&sandbox).await;
-        let mut firefox = FakeExtension::firefox(&sandbox.endpoint);
-        firefox.hello().await;
         assert_eq!(
-            chrome.get_browser_controls().await,
-            app.manager.browser_controls()
+            app.manager.get_settings().global_speed_limit,
+            Some(1024 * 1024)
         );
 
-        let changed = chrome
-            .update_browser_controls(BrowserControlsPatch {
-                global_speed_limit: Update::Set(Some(1024 * 1024)),
-                max_concurrent_downloads: Some(2),
-                media: Some(MediaDefaultsPatch {
-                    ask_each_time: Some(false),
-                    ..MediaDefaultsPatch::default()
-                }),
-            })
-            .await;
-        assert_eq!(app.manager.browser_controls(), changed);
-        firefox
-            .event("browser_controls_changed from Chrome", |e| match e {
-                Event::BrowserControlsChanged(c) if *c == changed => Some(()),
-                _ => None,
-            })
-            .await;
-
-        // Every control the popup shows, changed in the app.
-        let edits: [fn(&mut AppSettings); 5] = [
-            |s| s.global_speed_limit = None,
+        // Settings the popup shows, changed in the app.
+        let edits: [fn(&mut AppSettings); 4] = [
+            |s| s.extension.capture_enabled = false,
             |s| s.max_concurrent_downloads = 4,
-            |s| s.media.ask_each_time = true,
             |s| s.media.quality = VideoQuality::Height(720),
             |s| s.media.video.chapters = !s.media.video.chapters,
         ];
@@ -340,15 +284,16 @@ fn browser_controls_sync_both_ways() {
             app.manager
                 .change_settings(wirecatch_test_support::settings::whole_patch(&settings))
                 .expect("the app saved the change");
-            let from_app = app.manager.browser_controls();
+            let from_app = app.manager.options();
             for ext in [&mut chrome, &mut firefox] {
-                ext.event("browser_controls_changed from the app", |e| match e {
-                    Event::BrowserControlsChanged(c) if *c == from_app => Some(()),
+                ext.event("options_changed from the app", |e| match e {
+                    Event::OptionsChanged(list) if list.groups == from_app.groups => Some(()),
                     _ => None,
                 })
                 .await;
             }
         }
+        assert!(!chrome.get_shell_config().await.capture_enabled);
 
         assert!(firefox.close().await.success());
         assert!(chrome.close().await.success());
@@ -412,10 +357,10 @@ fn a_capture_waiting_on_a_silent_server_does_not_delay_other_calls() {
         let server = serve_held(test_data(FILE_LEN)).await;
 
         let capture_request = ext
-            .send(Call::AddDownload(capture(
+            .send(Call::AddDownload(Box::new(capture(
                 server.url("silent.bin").as_str(),
                 "handover-silent",
-            )))
+            ))))
             .await;
         server.wait_for_request("/silent.bin", PATIENCE).await;
         // The held capture outlasts the wait for this answer, so an answer queued behind it
@@ -445,10 +390,10 @@ fn the_app_quitting_mid_session_closes_the_bridge() {
         let server = serve_held(test_data(FILE_LEN)).await;
 
         let request = ext
-            .send(Call::AddDownload(capture(
+            .send(Call::AddDownload(Box::new(capture(
                 server.url("quit.bin").as_str(),
                 "handover-quit",
-            )))
+            ))))
             .await;
         server.wait_for_request("/quit.bin", PATIENCE).await;
         app.quit().await;
@@ -536,11 +481,8 @@ fn ask_before_download_waits_for_the_user() {
     run(|sandbox| async move {
         let (app, mut ext) = connected(&sandbox).await;
         let server = serve(test_data(FILE_LEN)).await;
-        ext.update_extension_settings(ExtensionSettingsPatch {
-            ask_before_download: Some(true),
-            ..ExtensionSettingsPatch::default()
-        })
-        .await;
+        ext.set_option("ask_before_download", serde_json::Value::Bool(true))
+            .await;
         assert!(app.manager.get_settings().extension.ask_before_download);
         let waiting = AddedDownload {
             id: None,

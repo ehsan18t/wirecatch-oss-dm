@@ -8,6 +8,7 @@ import type { CookieStore } from '../src/lib/cookies';
 import { appSide } from '../src/lib/hub/app';
 import type { CachedSettings } from '../src/lib/cache';
 import type { HubDeps } from '../src/lib/hub/deps';
+import { MEDIA_PRIVATE_WINDOW } from '../src/lib/hub/alerts';
 import { Hub } from '../src/lib/hub/hub';
 import { MediaSender } from '../src/lib/hub/media-sender';
 import {
@@ -199,6 +200,7 @@ interface Harness {
   client: NativeClient;
   registry: MediaRegistry;
   center: MediaCenter;
+  sender: MediaSender;
   tabs: Map<number, TabInfo>;
   cookieCalls: [string, CookieStore][];
   cookieContexts: CookieRequest[];
@@ -232,7 +234,7 @@ async function setup(
       Promise.resolve({
         client: 'extension',
         client_version: '0.1.0',
-        browser: null,
+        private_session: null,
       }),
     backoffMs: [60_000],
   });
@@ -290,6 +292,7 @@ async function setup(
       return Promise.resolve({ cookies: 'session=1' });
     },
     hasSiteAccess: () => Promise.resolve(options.siteAccess ?? true),
+    privateSession: { current: () => Promise.resolve('private-1') },
     userAgent: 'TestAgent/1.0',
     newHandoverId: () => `h${app.requests.length}`,
     mediaButtonSetting: {
@@ -331,6 +334,7 @@ async function setup(
     client,
     registry,
     center,
+    sender,
     tabs,
     cookieCalls,
     cookieContexts,
@@ -438,6 +442,7 @@ describe('media button messages', () => {
       browser_route: {
         observed_page: 'https://example.com/watch',
         private_window: false,
+        private_session: null,
         redirect_urls: [],
       },
       suggested_name: null,
@@ -447,7 +452,7 @@ describe('media button messages', () => {
       user_agent: 'TestAgent/1.0',
       extra_headers: [],
       source: 'media_button',
-      queue: 1,
+      queue: null,
       media: { kind: 'hls', title: 'A nice video' },
     });
     expect(cookieCalls).toEqual([[HLS.url, { id: null, private: false }]]);
@@ -650,6 +655,30 @@ describe('media button messages', () => {
     expect(await center.downloadBest(2)).toEqual({ ok: false, message: PRIVATE_WINDOW });
     expect(await center.download(2, 'anything')).toEqual({ ok: false, message: PRIVATE_WINDOW });
     expect(cookieCalls).toHaveLength(1);
+  });
+
+  it("sends nothing of a private tab's media once private windows are off, whatever the list showed (D280)", async () => {
+    const { app, sender } = await setup({
+      configure: (fake) => (fake.settings = { ...fake.settings, private_windows: false }),
+    });
+    const answer = await sender.send({
+      target: {
+        key: 'k',
+        kind: 'hls',
+        url: HLS.url,
+        mime: null,
+        size: null,
+        audio: false,
+        site: null,
+        requestedBy: null,
+      },
+      title: null,
+      pageUrl: 'https://video.example/watch',
+      referrer: null,
+      cookieStore: { id: null, private: true },
+    });
+    expect(answer).toEqual({ ok: false, message: MEDIA_PRIVATE_WINDOW });
+    expect(app.calls('check_download')).toEqual([]);
   });
 
   it('refuses private windows while they are turned off, and missing site access, without sending anything', async () => {

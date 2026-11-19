@@ -27,7 +27,7 @@ import {
 } from '@/lib/capture/browser-route';
 import { installDiagnostics } from '@/lib/diag/install';
 import { fallback } from '@/lib/diag/log';
-import { appSide } from '@/lib/hub/app';
+import { appSide, type AppSide } from '@/lib/hub/app';
 import type { HubDeps, MenuTab } from '@/lib/hub/deps';
 import { Hub } from '@/lib/hub/hub';
 import { MediaSender } from '@/lib/hub/media-sender';
@@ -43,6 +43,7 @@ import { NoticeCenter } from '@/lib/notices/center';
 import { focusedWebTab } from '@/lib/notices/focus';
 import { NOTICE_MOUNT, NOTICE_UNMOUNT, NOTICES_PORT, isMountAnswer } from '@/lib/notices/messages';
 import { SITE_ORIGINS } from '@/lib/site-access';
+import { PrivateSession } from '@/lib/private-session';
 import { parseWebUrl } from '@/lib/url';
 
 const MENU_ID = 'wirecatch-download';
@@ -139,53 +140,14 @@ function registerDownloads(hub: Hub): void {
   registerCapture(downloadEvents, hub);
 }
 
-export default defineBackground(() => {
-  installDiagnostics('background', self);
-  const client = new NativeClient({ transport: browserTransport(), hello: helloFromExtension });
-
-  const hubDeps = {
-    mediaButtonSetting: { publish: publishButtonSetting },
-    client,
-    cache: settingsCache(),
-    downloads: browserDownloads(),
-    cookies: cookiesFor,
-    hasSiteAccess,
-    userAgent: navigator.userAgent,
-    inFlight: inFlightStore(),
-    alert: alertStore(),
-    badge: toolbarBadge(),
-  } satisfies HubDeps;
-  // Built before the hub, the media side and the notices, which all use them.
-  const side = appSide(hubDeps);
-  const { settings, app } = side;
-  const sender = new MediaSender(side, hubDeps);
-
-  const registry = new MediaRegistry();
-  const media = new MediaCenter({
-    registry,
-    getTab: tabInfo,
-    send: (request) => sender.send(request),
-    store: mediaStore(),
-    ignoredSites: () => settings.known()?.ignored_sites ?? [],
-    videoSites: () => settings.known()?.video_sites ?? [],
-    mediaButtonOn: () => settings.mediaButtonOnceLoaded(),
-    privateWindowsOn: () => app.privateWindowsOn(),
-    liveTabs,
-  });
-  // Started before any listener can fire, so every response waits for the restored lists.
-  const restored = media.start();
-  const watcher = new MediaWatcher(registry, {
-    isPrivateTab: async (tabId) => (await browser.tabs.get(tabId)).incognito,
-    privateWindowsOn: () => app.privateWindowsOn(),
-    ready: restored,
-  });
-
-  const notices = new NoticeCenter({
+/** Shows the app's notices in the tab the person is looking at (D65). Unasked work: it reads only the values held. */
+function noticeCenter({ settings, app }: AppSide): NoticeCenter {
+  return new NoticeCenter({
     focusedTab: () =>
       focusedWebTab({
         lastFocusedWindow: () => browser.windows.getLastFocused(),
         activeTab: async (windowId) => (await browser.tabs.query({ active: true, windowId }))[0],
-        privateWindowsOn: () => app.privateWindowsOn(),
+        privateWindowsOn: () => settings.privateWindowsKnownOn(),
       }),
     mount: async (tabId) => {
       const answer: unknown = await browser.tabs.sendMessage(
@@ -202,6 +164,81 @@ export default defineBackground(() => {
     pressed: (id, button) => app.noticePressed(id, button),
     now: () => Date.now(),
   });
+}
+
+/** The browser's private session (D280), told when its last private window closes; `ended` is set once the app side exists. */
+function followPrivateSession(): {
+  session: PrivateSession;
+  ended: { tell: (id: string) => void };
+} {
+  const ended = { tell: (_id: string): void => undefined };
+  const session = new PrivateSession({
+    area: browser.storage.local,
+    anyPrivateWindow: async () => (await browser.windows.getAll()).some((w) => w.incognito),
+    newId: () => crypto.randomUUID(),
+    ended: (id) => {
+      ended.tell(id);
+    },
+  });
+  browser.windows.onRemoved.addListener(() => void session.windowsChanged());
+  return { session, ended };
+}
+
+export default defineBackground(() => {
+  installDiagnostics('background', self);
+  const { session: privateSession, ended: sessionEnded } = followPrivateSession();
+  const client = new NativeClient({
+    transport: browserTransport(),
+    hello: () => helloFromExtension(privateSession),
+  });
+
+  const hubDeps = {
+    mediaButtonSetting: { publish: publishButtonSetting },
+    client,
+    cache: settingsCache(),
+    downloads: browserDownloads(),
+    cookies: cookiesFor,
+    privateSession,
+    hasSiteAccess,
+    userAgent: navigator.userAgent,
+    inFlight: inFlightStore(),
+    alert: alertStore(),
+    badge: toolbarBadge(),
+  } satisfies HubDeps;
+  // Built before the hub, the media side and the notices, which all use them.
+  const side = appSide(hubDeps);
+  const { settings, app } = side;
+  sessionEnded.tell = (id) => {
+    app
+      .privateSessionEnded(id)
+      .catch(fallback('hub', 'Could not tell the app the private session ended', undefined));
+  };
+  const sender = new MediaSender(side, hubDeps);
+
+  const registry = new MediaRegistry();
+  const media = new MediaCenter({
+    registry,
+    getTab: tabInfo,
+    send: (request) => sender.send(request),
+    store: mediaStore(),
+    ignoredSites: () => settings.known()?.ignored_sites ?? [],
+    videoSites: () => settings.known()?.video_sites ?? [],
+    mediaButtonOn: () => settings.mediaButtonOnceLoaded(),
+    // Unasked work reads only the values held: a page never starts the app (D25.6, D280).
+    privateWindowsOn: () => settings.privateWindowsKnownOn(),
+    liveTabs,
+  });
+  // Started before any listener can fire, so every response waits for the restored lists.
+  const restored = media.start();
+  const watcher = new MediaWatcher(registry, {
+    isPrivateTab: async (tabId) => (await browser.tabs.get(tabId)).incognito,
+    privateWindowsOn: () => settings.privateWindowsKnownOn(),
+    privateWindowsNow: () => settings.known()?.private_windows === true,
+    mediaTables: () => settings.known()?.media ?? null,
+    ready: restored,
+  });
+
+  const notices = noticeCenter(side);
 
   // Every listener is registered synchronously so a sleeping background wakes up for it.
   const hub = new Hub({ ...hubDeps, media, notices, routes: watchedRoutes() }, side);

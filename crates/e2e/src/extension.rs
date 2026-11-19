@@ -17,14 +17,12 @@ use wirecatch_ipc::Endpoint;
 use wirecatch_product::{
     CHROMIUM_EXTENSION_ORIGIN, FIREFOX_EXTENSION_ID, LOG_FOLDER_VARIABLE, NATIVE_HOST_NAME,
 };
-use wirecatch_protocol::extension::{
-    AddedDownload, BrowserControls, BrowserControlsPatch, ExtensionSettings,
-    ExtensionSettingsPatch, NewDownload, WithdrawOutcome, WithdrawRequest,
-};
+use wirecatch_protocol::extension::{AddedDownload, NewDownload, WithdrawOutcome, WithdrawRequest};
 use wirecatch_protocol::frame;
+use wirecatch_protocol::shell::{OptionChange, OptionList, SetOption, ShellConfig};
 use wirecatch_protocol::wire::{
-    BrowserInfo, Call, ClientKind, Event, Hello, HelloReply, Message, Outcome, ProtocolError,
-    QueueSummary, Reply,
+    Call, ClientKind, Event, Hello, HelloReply, Message, Outcome, ProtocolError, QueueSummary,
+    Reply,
 };
 use wirecatch_protocol::{MIN_PROTOCOL_VERSION, PROTOCOL_VERSION};
 
@@ -325,7 +323,7 @@ impl FakeExtension {
         &mut self,
         capture: NewDownload,
     ) -> Result<AddedDownload, ProtocolError> {
-        let id = self.send(Call::AddDownload(capture)).await;
+        let id = self.send(Call::AddDownload(Box::new(capture))).await;
         added(self.outcome(id).await)
     }
 
@@ -342,41 +340,31 @@ impl FakeExtension {
         withdrawn(self.outcome(id).await)
     }
 
-    /// `get_extension_settings`.
-    pub async fn get_extension_settings(&mut self) -> ExtensionSettings {
-        match self.ok(Call::GetExtensionSettings).await {
-            Reply::ExtensionSettings(settings) => settings,
-            other => panic!("get_extension_settings got {other:?}"),
+    /// `get_shell_config`.
+    pub async fn get_shell_config(&mut self) -> ShellConfig {
+        match self.ok(Call::GetShellConfig).await {
+            Reply::ShellConfig(config) => *config,
+            other => panic!("get_shell_config got {other:?}"),
         }
     }
 
-    /// `update_extension_settings`.
-    pub async fn update_extension_settings(
-        &mut self,
-        patch: ExtensionSettingsPatch,
-    ) -> ExtensionSettings {
-        match self.ok(Call::UpdateExtensionSettings(patch)).await {
-            Reply::ExtensionSettings(settings) => settings,
-            other => panic!("update_extension_settings got {other:?}"),
+    /// `get_options`.
+    pub async fn get_options(&mut self) -> OptionList {
+        match self.ok(Call::GetOptions).await {
+            Reply::Options(options) => *options,
+            other => panic!("get_options got {other:?}"),
         }
     }
 
-    /// `get_browser_controls`.
-    pub async fn get_browser_controls(&mut self) -> BrowserControls {
-        match self.ok(Call::GetBrowserControls).await {
-            Reply::BrowserControls(controls) => controls,
-            other => panic!("get_browser_controls got {other:?}"),
-        }
-    }
-
-    /// `update_browser_controls`.
-    pub async fn update_browser_controls(
-        &mut self,
-        patch: BrowserControlsPatch,
-    ) -> BrowserControls {
-        match self.ok(Call::UpdateBrowserControls(patch)).await {
-            Reply::BrowserControls(controls) => controls,
-            other => panic!("update_browser_controls got {other:?}"),
+    /// `set_option` with a new value.
+    pub async fn set_option(&mut self, id: &str, value: serde_json::Value) -> OptionList {
+        let call = Call::SetOption(SetOption {
+            id: id.into(),
+            change: OptionChange::Set(value),
+        });
+        match self.ok(call).await {
+            Reply::Options(options) => *options,
+            other => panic!("set_option got {other:?}"),
         }
     }
 
@@ -459,10 +447,7 @@ pub fn hello_call() -> Call {
         client_version: "0.1.0-e2e".into(),
         protocol_version: MIN_PROTOCOL_VERSION,
         max_protocol_version: Some(PROTOCOL_VERSION),
-        browser: Some(BrowserInfo {
-            name: "chrome".into(),
-            version: Some("140".into()),
-        }),
+        private_session: None,
         start_app: true,
     })
 }

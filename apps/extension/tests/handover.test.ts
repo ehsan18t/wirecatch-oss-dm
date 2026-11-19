@@ -32,6 +32,10 @@ interface Options {
   cache?: SettingsCache;
   downloads?: FakeDownloads;
   start?: boolean;
+  /** The open private session; null once the last private window closed. */
+  privateSession?: string | null;
+  /** Gets each session the app said ended. */
+  renewed?: string[];
 }
 
 interface Setup {
@@ -64,7 +68,7 @@ async function setup(options: Options = {}): Promise<Setup> {
       Promise.resolve({
         client: 'extension',
         client_version: '0.1.0',
-        browser: null,
+        private_session: null,
       }),
     backoffMs: [60_000],
   });
@@ -79,12 +83,24 @@ async function setup(options: Options = {}): Promise<Setup> {
       return Promise.resolve({ cookies: url.includes('example.com') ? 'session=abc' : null });
     },
     hasSiteAccess: () => Promise.resolve(options.siteAccess ?? true),
+    privateSession: {
+      current: () =>
+        Promise.resolve(
+          options.privateSession === undefined ? 'private-1' : options.privateSession,
+        ),
+      renew: (id) => void options.renewed?.push(id),
+    },
     userAgent: 'TestBrowser/1.0',
     inFlight,
     alert,
     badge: { set: (text) => void badges.push(text) },
     newHandoverId: () => `h${String((next += 1))}`,
-    timing: { connectWaitMs: 3000, requestTimeoutMs: 5000, withdrawTimeoutMs: 3000 },
+    timing: {
+      connectWaitMs: 3000,
+      requestTimeoutMs: 5000,
+      withdrawTimeoutMs: 3000,
+      captureDeadlineMs: 3000,
+    },
   });
   const started = hub.start();
   if (options.start !== false) {
@@ -156,7 +172,9 @@ describe('handover', () => {
         page_url: 'https://example.com/downloads',
         browser_route: {
           private_window: false,
+          private_session: null,
           observed_page: null,
+          page_redirect_urls: undefined,
           redirect_urls: [],
         },
         suggested_name: 'big.zip',
@@ -166,7 +184,8 @@ describe('handover', () => {
         user_agent: 'TestBrowser/1.0',
         extra_headers: [],
         source: 'browser_download',
-        queue: 1,
+        // The app picks the queue (D280).
+        queue: null,
       },
     ]);
   });
@@ -675,7 +694,7 @@ describe('handover', () => {
         configure: (app) => {
           // Connected, but the app stops answering calls from its first settings request on.
           app.onRequest = (call) => {
-            if (call.method === 'get_extension_settings') app.answers = false;
+            if (call.method === 'get_shell_config') app.answers = false;
           };
         },
       });
@@ -1467,7 +1486,7 @@ describe('context menu', () => {
       frame_url: 'https://example.com/page',
       cookies: 'session=abc',
       source: 'context_menu',
-      queue: 1,
+      queue: null,
     });
     expect(s.cookieCalls).toEqual([
       ['https://example.com/file.iso', { id: 'firefox-container-2', private: false }],
@@ -1532,6 +1551,34 @@ describe('context menu', () => {
     );
     expect(result).toBe('handed_over');
     expect(s.cookieCalls).toEqual([['https://example.com/a.zip', { id: null, private: true }]]);
+    expect(s.app.calls('check_download')[0]).toMatchObject({
+      params: { private_session: 'private-1' },
+    });
+  });
+
+  it('starts a new private session when the app says this one ended, with a window still open (D280)', async () => {
+    const renewed: string[] = [];
+    s = await setup({
+      renewed,
+      configure: (app) => (app.checkBehavior = { leave: 'private_session_ended' }),
+    });
+    const result = await s.hub.onMenuClick(
+      { linkUrl: 'https://example.com/a.zip' },
+      { incognito: true, cookieStoreId: null },
+    );
+    expect(result).toBe('browser');
+    expect(renewed).toEqual(['private-1']);
+  });
+
+  it('lets the browser download a link from a private window that has since closed (D280)', async () => {
+    s = await setup({ privateSession: null });
+    const result = await s.hub.onMenuClick(
+      { linkUrl: 'https://example.com/a.zip' },
+      { incognito: true, cookieStoreId: null },
+    );
+    expect(result).toBe('browser');
+    expect(s.app.calls('check_download')).toHaveLength(0);
+    expect(s.cookieCalls).toEqual([]);
   });
 
   it('asks the app before taking a private window while the settings are not known yet', async () => {

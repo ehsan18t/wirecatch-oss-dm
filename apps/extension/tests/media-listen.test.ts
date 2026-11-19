@@ -39,7 +39,7 @@ function fakeApi(firefox = false) {
   }[] = [];
   const removed: ((tabId: number) => void)[] = [];
   const updated: {
-    listener: (tabId: number, change: { url?: string }) => void;
+    listener: (tabId: number, change: { url?: string }, tab?: { incognito?: boolean }) => void;
     filter: unknown;
   }[] = [];
   const messages: MessageListener[] = [];
@@ -207,13 +207,19 @@ describe('the Cookie header sent with media', () => {
       ...(cookie === undefined ? [] : [{ name: 'Cookie', value: cookie }]),
     ],
   });
+  /** A watcher that knows tab 3 is in a normal window, as `tabs.onUpdated` tells it. */
+  const watched = () => {
+    const fake = setup();
+    fake.updated[0]?.listener(3, {}, { incognito: false });
+    return fake;
+  };
   /** Sends requests with ids `from` up to `to`, each with a cookie of its own. */
   const fill = (send: (r: ObservedRequest) => void, from: number, to: number): void => {
     for (let id = from; id <= to; id += 1) send(request(String(id), `n=${String(id)}`));
   };
 
   it('is kept with the media its request loaded, and none sent is kept as none', async () => {
-    const { requests, responses, registry } = setup();
+    const { requests, responses, registry } = watched();
     requests[1]?.listener(request('7', 'sid=2; prefs=dark'));
     requests[1]?.listener(request('8'));
     responses[1]?.listener(manifest('https://cdn.example.com/a/manifest.mpd', '7'));
@@ -228,8 +234,16 @@ describe('the Cookie header sent with media', () => {
     ]);
   });
 
-  it('is never held for requests outside a tab', async () => {
+  it('is never held for a tab not yet known to be in a normal window (D280)', async () => {
     const { requests, responses, registry } = setup();
+    requests[1]?.listener(request('7', 'sid=2'));
+    responses[1]?.listener(manifest('https://cdn.example.com/a/manifest.mpd', '7'));
+    await flush();
+    expect(registry.items(3).map((i) => i.sentCookies)).toEqual([undefined]);
+  });
+
+  it('is never held for requests outside a tab', async () => {
+    const { requests, responses, registry } = watched();
     requests[1]?.listener(request('9', 'worker=1', -1));
     responses[1]?.listener(manifest('https://cdn.example.com/a/manifest.mpd', '9'));
     await flush();
@@ -237,7 +251,7 @@ describe('the Cookie header sent with media', () => {
   });
 
   it(`is forgotten for requests no answer came for, beyond the newest ${String(MAX_UNANSWERED_REQUESTS)}`, async () => {
-    const { requests, responses, registry } = setup();
+    const { requests, responses, registry } = watched();
     const send = (r: ObservedRequest) => requests[1]?.listener(r);
     fill(send, 0, MAX_UNANSWERED_REQUESTS);
     const last = String(MAX_UNANSWERED_REQUESTS);
@@ -248,7 +262,7 @@ describe('the Cookie header sent with media', () => {
   });
 
   it('is the last hop’s after a redirect, which counts as the newest request', async () => {
-    const { requests, responses, registry } = setup();
+    const { requests, responses, registry } = watched();
     const send = (r: ObservedRequest) => requests[1]?.listener(r);
     send(request('r', 'hop=1'));
     fill(send, 1, MAX_UNANSWERED_REQUESTS - 1);

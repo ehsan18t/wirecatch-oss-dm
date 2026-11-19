@@ -1,9 +1,12 @@
 import type {
   AddAction,
   AddedDownload,
+  CheckAnswer,
+  CookiePlan,
   CookieRequest,
-  ExtensionSettings,
+  DownloadCheck,
   NewDownload,
+  ShellConfig,
   WithdrawOutcome,
 } from '@wirecatch/protocol';
 import type { CookieStore, DownloadCookies } from '../cookies';
@@ -35,9 +38,9 @@ export interface DownloadControl {
   state: (id: number) => Promise<DownloadState | null>;
 }
 
-/** Settings to judge a download by, and whether they came from the app just now or from the session copy (D61). */
+/** Values to judge a download by, and whether they came from the app just now or from the session copy (D61). */
 export interface JudgingSettings {
-  settings: ExtensionSettings;
+  settings: ShellConfig;
   fromApp: boolean;
 }
 
@@ -101,12 +104,24 @@ export async function submit(download: NewDownload, deps: SubmitDeps): Promise<S
 export interface HandoverDeps extends SubmitDeps {
   downloads: DownloadControl;
   /**
-   * The settings to judge by after pausing: the app's live ones (waiting briefly for
-   * the connection), or the cached ones when the app cannot be reached; null if neither.
+   * The values to judge by after pausing: the app's live ones (connecting within `timeoutMs`
+   * when needed), or the session copy when the app cannot be reached; null if neither.
    */
-  liveSettings: () => Promise<JudgingSettings | null>;
-  /** The `Cookie` header the browser would send to a URL in this context, or null. Never rejects. */
-  cookies: (url: string, store: CookieStore, request: CookieRequest) => Promise<DownloadCookies>;
+  liveSettings: (timeoutMs: number) => Promise<JudgingSettings | null>;
+  /** Asks whether the app takes the capture, with no cookies; rejects when no answer comes within `timeoutMs` (D280). */
+  check: (check: DownloadCheck, timeoutMs: number) => Promise<CheckAnswer>;
+  /** The cookies the browser holds for a URL in this context, read for the sites the app named. Never rejects. */
+  cookies: (
+    url: string,
+    store: CookieStore,
+    request: CookieRequest,
+    plan: CookiePlan,
+  ) => Promise<DownloadCookies>;
+  /** The private session the download comes from; null for a normal window. */
+  privateSession: (incognito: boolean) => Promise<string | null>;
+  /** When the wait for the app ends, in the clock of `now`: one deadline from the browser's event (D280). */
+  deadline: number;
+  now: () => number;
   userAgent: string | null;
 }
 
@@ -120,6 +135,8 @@ export type KeptReason =
   | SkipReason
   /** The app answered with an error. */
   | 'app_refused'
+  /** The app said to leave it in the browser (D280). */
+  | 'app_left'
   /** No answer came back, and the app then withdrew it (or could not be asked). */
   | 'no_answer'
   /** The app answered in a shape this version cannot read, and then withdrew it (or could not be asked). */
@@ -168,8 +185,10 @@ export interface HandoverInput {
  * Moves a browser download to the app without ever losing it:
  *
  * 1. Pause the browser download. If that fails, leave it alone.
- * 2. Check the settings again (the app's live ones when it can be reached) and build the request.
- * 3. Send `add_download` under the handover id the caller chose and saved before pausing; if
+ * 2. Check the settings again (the app's, fetched first when not known) and ask the app with
+ *    `check_download`, which carries no cookies, whether it takes the download; one deadline from
+ *    the browser's event bounds both (D280).
+ * 3. Read the cookies for the sites the app named, and send `add_download` under the handover id the caller chose and saved before pausing; if
  *    no answer comes back, withdraw it (see `submit`).
  * 4. Only when the app has it (started, queued or awaiting confirmation): cancel and erase the browser copy,
  *    if it is still paused (see `removeBrowserCopy`).
@@ -210,36 +229,21 @@ export async function handOver(input: HandoverInput, deps: HandoverDeps): Promis
     uncertain,
   });
 
-  const judging = await deps.liveSettings();
+  const left = () => Math.max(0, deps.deadline - deps.now());
+  const judging = await deps.liveSettings(left());
   if (judging === null) return keep(null, 'app_unreachable', null);
   const judged = await withLatestVerdict(candidate, deps.downloads, downloadId);
   const decision = shouldCapture(judged, judging.settings);
   if (!decision.capture) return keep(null, decision.reason, null);
   if (!judging.fromApp) return keep(null, 'app_unreachable', null);
 
+  const asked = await askApp(candidate, deps, left);
+  if ('reason' in asked) return keep(null, asked.reason, asked.detail);
   const { handoverId } = input;
-  const download = newDownload(handoverId, deps.userAgent, judging.settings.default_queue, {
-    url: candidate.url,
-    referrer: candidate.referrer,
-    page_url: candidate.referrer,
-    browser_route: {
-      private_window: candidate.incognito,
-      observed_page: input.route?.pageUrl ?? null,
-      page_redirect_urls: input.route?.pageRedirectUrls,
-      redirect_urls:
-        input.route?.redirectUrls ??
-        (candidate.originalUrl === null ? [] : [candidate.originalUrl]),
-    },
-    suggested_name: candidate.fileName,
-    mime: candidate.mime,
-    size_hint: candidate.size,
-    // A browser download is a top-level navigation started by the page it came from.
-    ...(await deps.cookies(candidate.url, input.cookieStore, {
-      initiator: candidate.referrer,
-      original_url: candidate.originalUrl,
-      navigation: true,
-    })),
-    source: 'browser_download',
+  const download = newDownload(handoverId, deps.userAgent, {
+    ...browserFields(input),
+    browser_route: { ...browserRoute(input), private_session: asked.privateSession },
+    ...(await deps.cookies(candidate.url, input.cookieStore, asked.request, asked.plan)),
   });
   const result = await submit(download, deps);
   if (!result.taken) {
@@ -248,6 +252,82 @@ export async function handOver(input: HandoverInput, deps: HandoverDeps): Promis
 
   const browserCopy = await removeBrowserCopy(deps.downloads, downloadId);
   return { kind: 'handed_over', handoverId, action: result.action, browserCopy };
+}
+
+/** A browser download is a top-level navigation started by the page it came from. */
+function navigationOf(candidate: CaptureCandidate): CookieRequest {
+  return { initiator: candidate.referrer, original_url: candidate.originalUrl, navigation: true };
+}
+
+/**
+ * Asks the app with `check_download` whether it takes the download, with no cookies (D280): the
+ * sites to read cookies for when it does, or why it stays in the browser. Nothing with credentials
+ * was sent when the answer does not come, so there is nothing to withdraw.
+ */
+async function askApp(
+  candidate: CaptureCandidate,
+  deps: HandoverDeps,
+  left: () => number,
+): Promise<
+  | { plan: CookiePlan; request: CookieRequest; privateSession: string | null }
+  | { reason: KeptReason; detail: string | null }
+> {
+  const request = navigationOf(candidate);
+  const privateSession = await deps.privateSession(candidate.incognito);
+  // Its private window closed: the app would have no session to forget it with (D280).
+  if (candidate.incognito && privateSession === null) {
+    return { reason: 'private_window', detail: null };
+  }
+  let answer: CheckAnswer;
+  try {
+    answer = await deps.check(
+      {
+        url: candidate.url,
+        page_url: candidate.referrer,
+        frame_url: null,
+        file_name: candidate.fileName,
+        mime: candidate.mime,
+        size: candidate.size,
+        source: 'browser_download',
+        private_session: privateSession,
+        cookie_request: request,
+      },
+      left(),
+    );
+  } catch (error) {
+    const unsent = error instanceof RequestError && error.kind === 'too_large';
+    return { reason: unsent ? 'app_refused' : 'app_unreachable', detail: messageOf(error) };
+  }
+  if (answer.decision === 'leave') return { reason: 'app_left', detail: answer.reason };
+  return { plan: answer.cookies, request, privateSession };
+}
+
+/** What the browser saw of a download, as the app is told it. */
+function browserFields(
+  input: HandoverInput,
+): Omit<DownloadFields, 'browser_route' | 'cookies' | 'cookie_jar'> {
+  const { candidate } = input;
+  return {
+    url: candidate.url,
+    referrer: candidate.referrer,
+    page_url: candidate.referrer,
+    suggested_name: candidate.fileName,
+    mime: candidate.mime,
+    size_hint: candidate.size,
+    source: 'browser_download',
+  };
+}
+
+/** How the browser reached the download and its page. */
+function browserRoute(input: HandoverInput): NonNullable<DownloadFields['browser_route']> {
+  const { candidate, route } = input;
+  return {
+    private_window: candidate.incognito,
+    observed_page: route?.pageUrl ?? null,
+    page_redirect_urls: route?.pageRedirectUrls,
+    redirect_urls:
+      route?.redirectUrls ?? (candidate.originalUrl === null ? [] : [candidate.originalUrl]),
+  };
 }
 
 /** Why the browser keeps a download the app did not take, by why the app did not take it. */
@@ -368,12 +448,17 @@ export type DownloadFields = Omit<
   'handover_id' | 'user_agent' | 'extra_headers' | 'queue'
 >;
 
-/** A download to offer the app: the extension adds no headers of its own. */
+/** A download to offer the app: the extension adds no headers of its own, and the app picks the queue. */
 export function newDownload(
   handoverId: string,
   userAgent: string | null,
-  queue: NewDownload['queue'],
   fields: DownloadFields,
 ): NewDownload {
-  return { ...fields, handover_id: handoverId, user_agent: userAgent, extra_headers: [], queue };
+  return {
+    ...fields,
+    handover_id: handoverId,
+    user_agent: userAgent,
+    extra_headers: [],
+    queue: null,
+  };
 }

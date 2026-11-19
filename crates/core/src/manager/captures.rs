@@ -364,12 +364,20 @@ impl Manager {
                 Ok(row.id)
             }
             Err(e) => {
-                // Keep it so the user can fix the problem (another folder, say) and confirm again.
+                // Keep it so the user can fix the problem (another folder, say) and confirm again,
+                // unless its private session ended meanwhile (D280).
                 if let Ok(mut state) = self.lock_open() {
-                    for handover in &pending.handovers {
-                        state.handovers.retarget(handover, Target::Pending(id));
+                    if self.refused_private_capture(&pending.request).is_some() {
+                        for handover in &pending.handovers {
+                            state.handovers.retarget(handover, Target::Dismissed);
+                        }
+                        self.emit(UiEvent::ConfirmationClosed { id });
+                    } else {
+                        for handover in &pending.handovers {
+                            state.handovers.retarget(handover, Target::Pending(id));
+                        }
+                        state.pending.insert(id, pending);
                     }
-                    state.pending.insert(id, pending);
                 }
                 Err(e)
             }
@@ -435,19 +443,27 @@ impl Manager {
         if state.handovers.get(&capture.handover_id).is_some() {
             return Ok(None);
         }
-        Ok(self.join_unfinished_locked(&mut state, &capture.handover_id, url.as_str()))
+        Ok(self.join_unfinished_locked(
+            &mut state,
+            &capture.handover_id,
+            url.as_str(),
+            super::private_sessions::capture_session(capture),
+        ))
     }
 
     /// [`join_unfinished`](Self::join_unfinished) under the lock of the caller, for the decision to join or add to be one step.
+    /// Only a download of the same private session, or of none, is joined: a session's end forgets it (D280).
     pub(super) fn join_unfinished_locked(
         &self,
         state: &mut State,
         handover: &str,
         url: &str,
+        session: Option<&str>,
     ) -> Option<AddedDownload> {
         let entry = state
             .unfinished()
             .filter(|entry| !entry.hold.is_removing())
+            .filter(|entry| entry.private_session.as_deref() == session)
             .find(|entry| unfinished(entry.row.status) && same_address(&entry.row.url, url))?;
         let id = entry.row.id;
         let action = match capture_action(&entry.row) {
@@ -472,6 +488,9 @@ impl Manager {
 
     /// How a capture arrives, read from the state in one go.
     fn arrival(&self, capture: &NewDownload) -> Result<Arrival> {
+        if let Some(refused) = self.refused_private_capture(capture) {
+            return Err(refused);
+        }
         let state = self.lock_open()?;
         Ok(Arrival {
             known: state.handovers.get(&capture.handover_id).is_some(),
@@ -495,16 +514,23 @@ impl Manager {
         if let Some(known) = state.handovers.get(&capture.handover_id) {
             return Ok(known.reply.clone());
         }
+        if let Some(refused) = self.refused_private_capture(&capture) {
+            return Err(refused);
+        }
         let reply = AddedDownload {
             id: None,
             action: AddAction::AwaitingConfirmation,
         };
-        // The same link captured again joins the confirmation already showing.
+        // The same link captured again, in the same private session or none, joins the confirmation already showing.
         let url_text = url.to_string();
+        let session = super::private_sessions::capture_session(&capture);
         if let Some(id) = state
             .pending
             .values()
-            .find(|p| same_address(&p.capture.url, &url_text))
+            .find(|p| {
+                same_address(&p.capture.url, &url_text)
+                    && super::private_sessions::capture_session(&p.request) == session
+            })
             .map(|p| p.capture.id)
         {
             state.pending.join(id, &capture.handover_id)?;

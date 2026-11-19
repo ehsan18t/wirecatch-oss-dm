@@ -45,6 +45,10 @@ export type UiEvent =
          * Its title, or its address with any password removed.
          */
         title: string;
+        /**
+         * From a private window (D280).
+         */
+        private: boolean;
       };
     }
   | {

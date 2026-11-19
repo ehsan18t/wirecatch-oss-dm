@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
+use tracing::Instrument as _;
 
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
@@ -315,7 +316,7 @@ pub async fn download(
         Clients::new(&request.options)?
     } else {
         let opts = request.options.clone();
-        tokio::task::spawn_blocking(move || Clients::new(&opts))
+        crate::task::spawn_blocking(move || Clients::new(&opts))
             .await
             .map_err(|e| Error::task(&e))??
     };
@@ -656,13 +657,17 @@ async fn spawn_workers(
             Some(connection) => connection,
             None => shared.remote.connection(clients)?,
         };
-        workers.spawn(worker::run(
-            id,
-            shared.clone(),
-            file,
-            connection,
-            if id == 0 { first.take() } else { None },
-        ));
+        // In the caller's span, like every task (`crate::task`).
+        workers.spawn(
+            worker::run(
+                id,
+                shared.clone(),
+                file,
+                connection,
+                if id == 0 { first.take() } else { None },
+            )
+            .in_current_span(),
+        );
     }
     Ok(workers)
 }

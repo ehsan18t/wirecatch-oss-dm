@@ -499,7 +499,7 @@ async fn names_are_checked_on_disk_off_the_async_threads() {
     );
 }
 
-/// A client sending a list longer than the list may hold is answered while the manager's lock is held elsewhere: the list is refused before the lock is taken, so such a request never waits for it nor holds it.
+/// A list longer than the list may hold is answered while the manager's lock is held elsewhere: the list is refused before the lock is taken, so such a request never waits for it nor holds it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_list_of_sites_too_long_is_refused_without_the_lock() {
     use wirecatch_protocol::app::AppSettingsPatch;
@@ -518,20 +518,19 @@ async fn a_list_of_sites_too_long_is_refused_without_the_lock() {
     let (answered, answers) = std::sync::mpsc::channel();
     std::thread::scope(|scope| {
         scope.spawn(|| {
-            let from_browser = manager.update_extension_settings(too_long()).is_err();
-            let from_window = manager
+            let refused = manager
                 .change_settings(AppSettingsPatch {
                     extension: Some(too_long()),
                     ..AppSettingsPatch::default()
                 })
                 .is_err();
-            answered.send((from_browser, from_window)).unwrap();
+            answered.send(refused).unwrap();
         });
         let refused = answers.recv_timeout(PATIENCE);
         drop(held);
         assert_eq!(
             refused,
-            Ok((true, true)),
+            Ok(true),
             "the list was not refused while the lock was held elsewhere"
         );
     });

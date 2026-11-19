@@ -274,6 +274,7 @@ mod socks;
 mod state;
 mod storage;
 mod target;
+pub mod task;
 mod transport;
 pub mod units;
 pub mod url;

@@ -73,7 +73,7 @@ fn start_group_watcher(group: libc::pid_t) -> Option<io::PipeWriter> {
     });
     match started {
         Ok((mut watcher, app_alive)) => {
-            tokio::spawn(async move { watcher.wait().await });
+            wirecatch_engine::task::spawn(async move { watcher.wait().await });
             Some(app_alive)
         }
         Err(e) => {
@@ -98,7 +98,7 @@ pub(super) async fn spawn(mut command: Command) -> io::Result<(Child, Tree)> {
             .and_then(|id| libc::pid_t::try_from(id).ok())
             .ok_or_else(|| io::Error::other("the started program has no process id"))?;
         on_signal::add(group);
-        let exit = tokio::task::spawn_blocking(move || exit_without_reaping(group));
+        let exit = wirecatch_engine::task::spawn_blocking(move || exit_without_reaping(group));
         Ok((
             child,
             Tree {

@@ -403,7 +403,7 @@ mod tests {
                 client_version: "1".into(),
                 protocol_version: wirecatch_protocol::MIN_PROTOCOL_VERSION,
                 max_protocol_version: Some(wirecatch_protocol::PROTOCOL_VERSION),
-                browser: None,
+                private_session: None,
                 start_app: true,
             }),
         };

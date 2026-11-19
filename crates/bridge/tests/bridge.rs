@@ -136,7 +136,7 @@ fn hello(id: u64) -> TestResult<Vec<u8>> {
             client_version: "test".into(),
             protocol_version: MIN_PROTOCOL_VERSION,
             max_protocol_version: Some(PROTOCOL_VERSION),
-            browser: None,
+            private_session: None,
             start_app: true,
         }),
     })?)

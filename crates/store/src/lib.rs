@@ -1813,6 +1813,7 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<StoredRow> {
                 media: media.as_ref().map(|m| m.summary.clone()),
                 processing: None,
                 proxy: row.get(20)?,
+                private: false,
             },
             position: row.get(4)?,
             origin,

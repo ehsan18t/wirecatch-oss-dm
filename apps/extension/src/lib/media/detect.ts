@@ -3,7 +3,7 @@
  * `webRequest`. Observing only: nothing here can change, delay or block a request.
  */
 
-import { KB } from '@wirecatch/units';
+import { DEFAULT_MEDIA_TABLES, type MediaTables } from '@wirecatch/protocol';
 import { MAX_MEDIA_URL_LENGTH } from './messages';
 import { isWebUrl, parseUrl } from '../url';
 
@@ -17,6 +17,8 @@ export interface ObservedRequest {
   tabId: number;
   /** In Chromium the `Cookie` header is among them only when asked for with `extraHeaders`. */
   requestHeaders?: { name: string; value?: string }[];
+  /** Firefox only: true for requests from private windows. Chromium leaves it out. */
+  incognito?: boolean;
 }
 
 /** The `Cookie` header a request was sent with, or null when it was sent without one. */
@@ -64,33 +66,48 @@ export interface Detection {
   audio: boolean;
 }
 
-const HLS_TYPES = new Set([
-  'application/vnd.apple.mpegurl',
-  'application/x-mpegurl',
-  'audio/mpegurl',
-  'audio/x-mpegurl',
-]);
-const DASH_TYPES = new Set(['application/dash+xml', 'video/vnd.mpeg.dash.mpd']);
+/** The app's media tables (D280) as sets, for lookups. */
+export interface MediaRules {
+  hlsExtensions: ReadonlySet<string>;
+  hlsTypes: ReadonlySet<string>;
+  dashExtensions: ReadonlySet<string>;
+  dashTypes: ReadonlySet<string>;
+  videoExtensions: ReadonlySet<string>;
+  audioExtensions: ReadonlySet<string>;
+  /** Pieces of a stream rather than whole files: listing them would only add noise. */
+  segmentExtensions: ReadonlySet<string>;
+  segmentTypes: ReadonlySet<string>;
+  /** Pages play short interface sounds as media; real recordings are far larger. Files of unknown size are kept. */
+  minDirectBytes: number;
+}
+
+const built = new WeakMap<MediaTables, MediaRules>();
+
+/** The rules `tables` say, built once per copy of the tables. */
+export function mediaRules(tables: MediaTables): MediaRules {
+  let rules = built.get(tables);
+  if (rules === undefined) {
+    rules = {
+      hlsExtensions: new Set(tables.hls_extensions),
+      hlsTypes: new Set(tables.hls_types),
+      dashExtensions: new Set(tables.dash_extensions),
+      dashTypes: new Set(tables.dash_types),
+      videoExtensions: new Set(tables.video_extensions),
+      audioExtensions: new Set(tables.audio_extensions),
+      segmentExtensions: new Set(tables.segment_extensions),
+      segmentTypes: new Set(tables.segment_types),
+      minDirectBytes: tables.min_direct_bytes,
+    };
+    built.set(tables, rules);
+  }
+  return rules;
+}
+
+/** The rules the extension ships with, for the time before the app first answers. */
+export const DEFAULT_MEDIA_RULES = mediaRules(DEFAULT_MEDIA_TABLES);
 
 /** Generic XML types a DASH manifest may be served as. */
 const XML_TYPES = new Set(['application/xml', 'text/xml']);
-
-/** Pieces of a stream rather than whole files: listing them would only add noise. */
-const SEGMENT_TYPES = new Set(['video/mp2t', 'video/iso.segment', 'audio/iso.segment']);
-const SEGMENT_EXTENSIONS = new Set(['ts', 'm4s', 'm4f', 'm4v-seg', 'cmfv', 'cmfa', 'aac-seg']);
-
-const VIDEO_EXTENSIONS = new Set(['mp4', 'm4v', 'webm', 'mkv', 'mov', 'ogv', 'avi', 'flv', '3gp']);
-const AUDIO_EXTENSIONS = new Set([
-  'mp3',
-  'm4a',
-  'ogg',
-  'oga',
-  'opus',
-  'wav',
-  'flac',
-  'aac',
-  'weba',
-]);
 
 /**
  * Resource types whose video or audio responses are whole files. Media fetched by
@@ -98,14 +115,6 @@ const AUDIO_EXTENSIONS = new Set([
  * a player through Media Source Extensions, so it is not listed as a file.
  */
 const FILE_REQUEST_TYPES = new Set(['media', 'main_frame', 'object']);
-
-/**
- * Direct video and audio files whose known size is below this (100 KB) are not listed.
- * Pages play short interface sounds as media (YouTube's voice search sounds `open.mp3`,
- * `success.mp3`, `failure.mp3` and `no_input.mp3` are about 6 KB each); nobody wants to
- * download those, and real recordings are far larger. Files of unknown size are kept.
- */
-export const MIN_DIRECT_MEDIA_BYTES = 100 * KB;
 
 /** HTTP 206: the answer holds part of the file, and `Content-Range` says its total size. */
 const HTTP_PARTIAL_CONTENT = 206;
@@ -131,14 +140,17 @@ export function extensionOf(url: string): string | null {
 }
 
 /** What an address alone says about the media it points to (by extension), or null. */
-export function classifyUrl(url: string): { kind: DetectedKind; audio: boolean } | null {
+export function classifyUrl(
+  url: string,
+  rules: MediaRules = DEFAULT_MEDIA_RULES,
+): { kind: DetectedKind; audio: boolean } | null {
   if (!isWebUrl(url)) return null;
   const ext = extensionOf(url);
   if (ext === null) return null;
-  if (ext === 'm3u8') return { kind: 'hls', audio: false };
-  if (ext === 'mpd') return { kind: 'dash', audio: false };
-  if (VIDEO_EXTENSIONS.has(ext)) return { kind: 'direct', audio: false };
-  if (AUDIO_EXTENSIONS.has(ext)) return { kind: 'direct', audio: true };
+  if (rules.hlsExtensions.has(ext)) return { kind: 'hls', audio: false };
+  if (rules.dashExtensions.has(ext)) return { kind: 'dash', audio: false };
+  if (rules.videoExtensions.has(ext)) return { kind: 'direct', audio: false };
+  if (rules.audioExtensions.has(ext)) return { kind: 'direct', audio: true };
   return null;
 }
 
@@ -189,18 +201,23 @@ export function isNavigation(response: ObservedResponse): boolean {
 /**
  * Decides whether a response is media worth offering, and what kind:
  *
- * - HLS and DASH manifests by content type, or by `.m3u8` / `.mpd` when the server
- *   sends a generic type (many send `text/plain` or `application/octet-stream`).
+ * - HLS and DASH manifests by content type, or by their extension (`.m3u8`, `.mpd`) when the
+ *   server sends a generic type (many send `text/plain` or `application/octet-stream`).
  * - Whole video and audio files (`video/*`, `audio/*`, or a media extension with a
  *   generic type) loaded by a media element, a frame or the tab itself.
  * - Never stream segments, error answers, redirects, downloads (attachments, which
  *   the capture flow handles), anything outside a tab, or addresses longer than
- *   `MAX_MEDIA_URL_LENGTH`, nor direct files smaller than `MIN_DIRECT_MEDIA_BYTES`.
+ *   `MAX_MEDIA_URL_LENGTH`, nor direct files smaller than `rules.minDirectBytes`.
+ *
+ * The tables are the app's (D280); the order of the checks stays here.
  */
-export function classifyResponse(response: ObservedResponse): Detection | null {
+export function classifyResponse(
+  response: ObservedResponse,
+  rules: MediaRules = DEFAULT_MEDIA_RULES,
+): Detection | null {
   if (rejectionOf(response) !== null) return null;
   const mime = mimeOf(response);
-  return manifestOf(response.url, mime) ?? directFileOf(response, mime);
+  return manifestOf(response.url, mime, rules) ?? directFileOf(response, mime, rules);
 }
 
 /** Why a response is never listed, whatever it contains. */
@@ -226,37 +243,42 @@ export function rejectionOf(response: ObservedResponse): Rejection | null {
 }
 
 /** An HLS or DASH manifest, by its type, or by its extension when the type is generic. */
-function manifestOf(url: string, mime: string | null): Detection | null {
-  const kind = manifestKind(url, mime);
+function manifestOf(url: string, mime: string | null, rules: MediaRules): Detection | null {
+  const kind = manifestKind(url, mime, rules);
   return kind === null ? null : { kind, url, mime, size: null, audio: false };
 }
 
-function manifestKind(url: string, mime: string | null): 'hls' | 'dash' | null {
-  const byUrl = classifyUrl(url)?.kind;
-  if ((mime !== null && HLS_TYPES.has(mime)) || (byUrl === 'hls' && isPlainText(mime))) {
+function manifestKind(url: string, mime: string | null, rules: MediaRules): 'hls' | 'dash' | null {
+  const byUrl = classifyUrl(url, rules)?.kind;
+  if ((mime !== null && rules.hlsTypes.has(mime)) || (byUrl === 'hls' && isPlainText(mime))) {
     return 'hls';
   }
   const xmlOrPlain = isPlainText(mime) || (mime !== null && XML_TYPES.has(mime));
-  if ((mime !== null && DASH_TYPES.has(mime)) || (byUrl === 'dash' && xmlOrPlain)) {
+  if ((mime !== null && rules.dashTypes.has(mime)) || (byUrl === 'dash' && xmlOrPlain)) {
     return 'dash';
   }
   return null;
 }
 
 /** A whole video or audio file, loaded by a media element, a frame or the tab itself; never a stream segment. */
-function directFileOf(response: ObservedResponse, mime: string | null): Detection | null {
-  if (!FILE_REQUEST_TYPES.has(response.type) || isSegment(response.url, mime)) return null;
-  const audio = directAudio(response.url, mime);
+function directFileOf(
+  response: ObservedResponse,
+  mime: string | null,
+  rules: MediaRules,
+): Detection | null {
+  if (!FILE_REQUEST_TYPES.has(response.type) || isSegment(response.url, mime, rules)) return null;
+  const audio = directAudio(response.url, mime, rules);
   if (audio === null) return null;
   const size = sizeOf(response);
-  if (size !== null && size < MIN_DIRECT_MEDIA_BYTES) return null;
+  if (size !== null && size < rules.minDirectBytes) return null;
   return { kind: 'direct', url: response.url, mime, size, audio };
 }
 
-function isSegment(url: string, mime: string | null): boolean {
+function isSegment(url: string, mime: string | null, rules: MediaRules): boolean {
   const ext = extensionOf(url);
   return (
-    (mime !== null && SEGMENT_TYPES.has(mime)) || (ext !== null && SEGMENT_EXTENSIONS.has(ext))
+    (mime !== null && rules.segmentTypes.has(mime)) ||
+    (ext !== null && rules.segmentExtensions.has(ext))
   );
 }
 
@@ -264,9 +286,9 @@ function isSegment(url: string, mime: string | null): boolean {
  * Whether a media file is audio: by its type, or by its extension when the type is
  * generic. Null when it is not a video or audio file.
  */
-function directAudio(url: string, mime: string | null): boolean | null {
+function directAudio(url: string, mime: string | null, rules: MediaRules): boolean | null {
   if (isMediaMime(mime)) return mime.startsWith('audio/');
-  const byUrl = classifyUrl(url);
+  const byUrl = classifyUrl(url, rules);
   return byUrl?.kind === 'direct' && isGenericMime(mime) ? byUrl.audio : null;
 }
 

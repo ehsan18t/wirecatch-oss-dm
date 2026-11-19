@@ -44,6 +44,14 @@ test('an object needs every field it names, of the right type, and may carry oth
   assert.equal(isSettings(null), false);
 });
 
+test('an unknown field holds anything, which its own reader checks later', async () => {
+  const { guards } = await guardsFor({ Group: '{ id: string, options: Array<unknown> }' });
+  const { isGroup } = guards;
+  assert.equal(isGroup({ id: 'a', options: [1, 'two', { kind: 'new' }, null] }), true);
+  assert.equal(isGroup({ id: 'a', options: 'not a list' }), false);
+  assert.equal(isGroup({ options: [] }), false);
+});
+
 test('a union is one of its members, told apart by the tag', async () => {
   const { guards } = await guardsFor({
     Kind: '"a" | "b"',

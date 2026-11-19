@@ -63,7 +63,7 @@ impl FileWork {
     ) -> tokio::task::JoinHandle<T> {
         self.0.running.fetch_add(1, Ordering::AcqRel);
         let ticket = Ticket(self.0.clone());
-        tokio::task::spawn_blocking(move || {
+        crate::task::spawn_blocking(move || {
             let done = work();
             drop(ticket);
             done

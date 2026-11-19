@@ -36,6 +36,19 @@ export default wirecatch({
       },
     },
     {
+      // Text the app sends is data, never markup: a store reviewer must find no path from it to the page (D280).
+      files: ['src/**', 'entrypoints/**'],
+      rules: {
+        'no-restricted-properties': [
+          'error',
+          ...['innerHTML', 'outerHTML', 'insertAdjacentHTML'].map((property) => ({
+            property,
+            message: 'Build elements and set `textContent`: markup is never written from text.',
+          })),
+        ],
+      },
+    },
+    {
       files: ['src/**'],
       rules: { 'wirecatch/no-product-name': ['error', { name: PRODUCT_NAME }] },
     },

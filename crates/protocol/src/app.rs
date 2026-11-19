@@ -62,6 +62,10 @@ pub struct DownloadSummary {
     /// computer's proxy, or no proxy (D73.3). `None` before its first run.
     #[serde(default)]
     pub proxy: Option<String>,
+    /// From a private window (D280): kept in memory only, and forgotten when its private
+    /// session ends.
+    #[serde(default)]
+    pub private: bool,
 }
 
 /// What ffmpeg is doing to a downloaded video or audio, and how far it is (D24).
@@ -494,6 +498,16 @@ impl OutputFormat {
             | OutputFormat::Flac
             | OutputFormat::Wav => &[],
         }
+    }
+
+    /// The bit rate among [`kbps_choices`](Self::kbps_choices) nearest `wanted`, the lower on a
+    /// tie; `None` when the format has no choice.
+    #[must_use]
+    pub fn nearest_kbps(self, wanted: u32) -> Option<u32> {
+        self.kbps_choices()
+            .iter()
+            .copied()
+            .min_by_key(|choice| (choice.abs_diff(wanted), *choice))
     }
 
     /// The audio bit rate, in kbps, used when the audio must be re-encoded for this format
@@ -1929,6 +1943,9 @@ pub enum UiEvent {
         id: QuestionId,
         /// Its title, or its address with any password removed.
         title: String,
+        /// From a private window (D280).
+        #[serde(default)]
+        private: bool,
     },
     /// Wirecatch started reading a captured page or stream to find its qualities, which can
     /// take a few seconds. It ends with a [`MediaChoiceRequested`](Self::MediaChoiceRequested)
@@ -2191,6 +2208,14 @@ impl Question {
 mod tests {
     use super::*;
 
+    #[test]
+    fn the_nearest_bit_rate_takes_the_lower_on_a_tie() {
+        assert_eq!(OutputFormat::Opus.nearest_kbps(112), Some(96));
+        assert_eq!(OutputFormat::Opus.nearest_kbps(320), Some(192));
+        assert_eq!(OutputFormat::Mp3.nearest_kbps(200), Some(192));
+        assert_eq!(OutputFormat::Flac.nearest_kbps(200), None);
+    }
+
     // A link pasted into the app may carry a sign-in (`ftp://me:pw@host`), and printing the
     // request printed it (W4I review L2).
     #[test]
@@ -2287,22 +2312,6 @@ mod tests {
 
     fn read_settings(value: serde_json::Value) -> AppSettings {
         serde_json::from_value(value).unwrap()
-    }
-
-    /// The popup shows a change with a port of `BrowserControls::apply` before the app confirms
-    /// it, while the app saves it with `AppSettings::apply`: both give the same settings (D61).
-    #[test]
-    fn browser_controls_apply_as_the_app_settings_do() {
-        for (before, patch) in crate::extension::browser_controls_cases() {
-            let mut settings = read_settings(stored_settings());
-            settings.global_speed_limit = before.global_speed_limit;
-            settings.max_concurrent_downloads = before.max_concurrent_downloads;
-            settings.media = before.media.clone();
-            settings.apply(patch.clone().into());
-            let mut controls = before;
-            controls.apply(patch);
-            assert_eq!(settings.browser_controls(), controls);
-        }
     }
 
     #[test]

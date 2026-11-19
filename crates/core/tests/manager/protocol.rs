@@ -5,6 +5,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::io;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll, ready};
 use std::time::Duration;
 
@@ -13,15 +14,16 @@ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, DuplexStream, ReadBuf};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use wirecatch_core::{LinkFrom, Manager};
-use wirecatch_protocol::app::{
-    CaptureConfirmation, DownloadStatus, MediaDefaultsPatch, QueueSettings, UiEvent, Update,
-};
+use wirecatch_protocol::app::{CaptureConfirmation, DownloadStatus, QueueSettings, UiEvent};
 use wirecatch_protocol::extension::{
-    AddAction, BrowserControlsPatch, BrowserRoute, CookieJar, CookieRequest,
-    ExtensionSettingsPatch, Header, JarCookie, NewDownload, SameSite, WithdrawOutcome,
-    WithdrawRequest,
+    AddAction, BrowserRoute, CaptureSource, CookieJar, CookieRequest, Header, JarCookie,
+    NewDownload, SameSite, WithdrawOutcome, WithdrawRequest,
 };
 use wirecatch_protocol::frame::{self, MAX_FRAME_LEN};
+use wirecatch_protocol::shell::{
+    CheckAnswer, DownloadCheck, InvokeAction, OptionChange, PageOptions, PageQuery,
+    PrivateSessionEnded, Revision, SetOption, ShellConfig, actions,
+};
 use wirecatch_protocol::wire::{
     Call, ClientKind, ErrorCode, Event, Hello, MAX_OPEN_LINKS, Message, OpenLinks, Outcome,
     ProtocolError, Reply, UNKNOWN_REQUEST_ID,
@@ -34,6 +36,11 @@ use crate::common::{
     tune,
 };
 use wirecatch_engine::units::KIB_USIZE;
+
+/// An `add_download` call handing over `capture`.
+fn add(capture: NewDownload) -> Call {
+    Call::AddDownload(Box::new(capture))
+}
 
 /// A socket client talking to `serve_connection` over an in-memory stream.
 struct Client {
@@ -158,7 +165,7 @@ fn hello(protocol_version: u32, max_protocol_version: Option<u32>) -> Call {
         client_version: "0.1.0".into(),
         protocol_version,
         max_protocol_version,
-        browser: None,
+        private_session: None,
         start_app: true,
     })
 }
@@ -265,29 +272,23 @@ async fn a_client_sharing_no_protocol_version_is_refused_and_closed() -> TestRes
     Ok(())
 }
 
-/// An extension from before version ranges sends only `protocol_version: 1` and accepts only
-/// 1 back. The app answers it in version 1, with version 1's error codes.
+/// An extension from before version ranges sends only `protocol_version: 1`, which no build
+/// speaks since D280: it is refused and told to update.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_client_from_before_version_ranges_is_answered_in_version_1() -> TestResult {
+async fn a_client_from_before_version_ranges_is_told_to_update() -> TestResult {
     let h = Harness::new().await?;
     let mut client = Client::connect(&h.manager);
     client
         .send_raw(r#"{"kind":"request","id":1,"call":{"method":"hello","params":{"client":"extension","client_version":"0.1.0","protocol_version":1,"browser":null}}}"#)
         .await?;
-    let reply = client.response(1).await?;
+    let err = client.response(1).await?.unwrap_err();
+    assert_eq!(err.code, ErrorCode::UnsupportedVersion);
     assert!(
-        matches!(reply, Ok(Reply::Hello(ref r)) if r.protocol_version == 1),
-        "{reply:?}"
+        err.message.contains("Update the browser extension"),
+        "{}",
+        err.message
     );
-
-    client
-        .send_raw(r#"{"kind":"request","id":2,"call":{"method":"format_disk"}}"#)
-        .await?;
-    assert_eq!(
-        client.response(2).await?.unwrap_err().code,
-        ErrorCode::InvalidRequest
-    );
-    assert!(client.call(Call::ListQueues).await?.is_ok());
+    client.assert_closed().await?;
     Ok(())
 }
 
@@ -424,64 +425,82 @@ async fn a_client_vanishing_mid_frame_does_not_hurt_the_server() -> TestResult {
     client.server.await.unwrap().unwrap();
     // Other clients are unaffected.
     let mut other = Client::connected(&h.manager).await?;
-    assert!(other.call(Call::GetExtensionSettings).await?.is_ok());
+    assert!(other.call(Call::GetShellConfig).await?.is_ok());
     Ok(())
 }
 
+/// The options and the values the extension's checks use are the app's (D280): a change from one
+/// browser is stored and reaches the other browser and the UI, and a change in the app reaches
+/// every browser under a newer revision.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn settings_changes_reach_every_client() -> TestResult {
     let h = Harness::new().await?;
     let mut ui = h.manager.subscribe();
     let mut chrome = Client::connected(&h.manager).await?;
     let mut firefox = Client::connected(&h.manager).await?;
+    let Reply::ShellConfig(first) = chrome.call(Call::GetShellConfig).await?.unwrap() else {
+        panic!("no shell config");
+    };
 
     // From one client to the other client and to the UI.
-    let patch = ExtensionSettingsPatch {
-        ask_before_download: Some(true),
-        ignored_sites: Some(vec!["Example.COM".into()]),
-        ..Default::default()
-    };
+    let asking = !h.manager.get_settings().extension.ask_before_download;
     let reply = chrome
-        .call(Call::UpdateExtensionSettings(patch))
+        .call(set_option("ask_before_download", asking.into()))
         .await?
         .unwrap();
-    let Reply::ExtensionSettings(saved) = reply else {
-        panic!("unexpected reply {reply:?}");
-    };
-    assert_eq!(saved.ignored_sites, vec!["example.com"]);
+    assert!(matches!(reply, Reply::Options(_)), "{reply:?}");
     assert_eq!(
-        firefox.next_event().await?,
-        Event::ExtensionSettingsChanged(saved.clone())
+        h.manager.get_settings().extension.ask_before_download,
+        asking
     );
+    let config = shell_config_event(&mut firefox).await?;
+    assert!(newer(&config.revision, &first.revision));
     assert!(matches!(
         ui.recv().await.unwrap(),
-        UiEvent::SettingsChanged(s) if s.extension == saved
+        UiEvent::SettingsChanged(s) if s.extension.ask_before_download == asking
     ));
 
     // From the UI to every client.
     tune(&h.manager, |s| s.extension.capture_enabled = false)?;
     for client in [&mut chrome, &mut firefox] {
         loop {
-            match client.next_event().await? {
-                Event::ExtensionSettingsChanged(s) if !s.capture_enabled => break,
-                Event::ExtensionSettingsChanged(_) => {}
-                other @ (Event::QueuesChanged(_)
-                | Event::BrowserControlsChanged(_)
-                | Event::NoticeRequested(_)
-                | Event::NoticeWithdrawn(_)) => {
-                    panic!("unexpected event {other:?}")
-                }
+            if !shell_config_event(client).await?.capture_enabled {
+                break;
             }
         }
     }
 
     // Queue changes are pushed too.
     h.manager.create_queue(QueueSettings::new("Later")).unwrap();
-    assert!(matches!(
-        firefox.next_event().await?,
-        Event::QueuesChanged(q) if q.iter().any(|q| q.name == "Later")
-    ));
+    loop {
+        if let Event::QueuesChanged(q) = firefox.next_event().await? {
+            assert!(q.iter().any(|q| q.name == "Later"));
+            break;
+        }
+    }
     Ok(())
+}
+
+fn set_option(id: &str, value: serde_json::Value) -> Call {
+    Call::SetOption(SetOption {
+        id: id.into(),
+        change: OptionChange::Set(value),
+    })
+}
+
+/// The next `shell_config_changed`, passing over the other events.
+async fn shell_config_event(
+    client: &mut Client,
+) -> Result<ShellConfig, Box<dyn std::error::Error + Send + Sync>> {
+    loop {
+        if let Event::ShellConfigChanged(config) = client.next_event().await? {
+            return Ok(*config);
+        }
+    }
+}
+
+fn newer(a: &Revision, b: &Revision) -> bool {
+    a.instance != b.instance || a.counter > b.counter
 }
 
 /// The server's end of a stream whose first flush waits for `release`: what the server
@@ -542,10 +561,7 @@ async fn a_change_made_as_the_hello_is_answered_reaches_the_client() -> TestResu
 
     tune(&h.manager, |s| s.extension.capture_enabled = false)?;
     release.send(()).map_err(|()| "the server stopped")?;
-    assert!(matches!(
-        client.next_event().await?,
-        Event::ExtensionSettingsChanged(s) if !s.capture_enabled
-    ));
+    assert!(!shell_config_event(&mut client).await?.capture_enabled);
     Ok(())
 }
 
@@ -629,114 +645,172 @@ async fn a_note_reaches_the_browsers_and_their_answers_reach_the_app() -> TestRe
     Ok(())
 }
 
-/// The app settings the popup shows (D61) are the app's: a change from one browser is stored
-/// and reaches the other browser and the UI, and a change in the app reaches every browser.
+/// The popup's options (D280) come from the app: a change from one browser is stored and reaches
+/// the other browser, and one that moves another value (the audio format and its quality) moves
+/// both at once.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn browser_controls_changes_reach_every_client() -> TestResult {
+async fn option_changes_reach_every_client() -> TestResult {
     let h = Harness::new().await?;
     let mut chrome = Client::connected(&h.manager).await?;
     let mut firefox = Client::connected(&h.manager).await?;
     assert_eq!(
-        chrome.call(Call::GetBrowserControls).await?.unwrap(),
-        Reply::BrowserControls(h.manager.get_settings().browser_controls())
+        chrome.call(Call::GetOptions).await?.unwrap(),
+        Reply::Options(Box::new(h.manager.options()))
     );
 
-    let patch = BrowserControlsPatch {
-        global_speed_limit: Update::Set(Some(512 * 1024)),
-        max_concurrent_downloads: Some(2),
-        media: Some(MediaDefaultsPatch {
-            ask_each_time: Some(false),
-            ..Default::default()
-        }),
-    };
-    let reply = chrome
-        .call(Call::UpdateBrowserControls(patch))
+    chrome
+        .call(set_option("global_speed_limit", (512 * 1024).into()))
         .await?
         .unwrap();
-    let Reply::BrowserControls(saved) = reply else {
-        panic!("unexpected reply {reply:?}");
-    };
-    assert_eq!(saved.global_speed_limit, Some(512 * 1024));
-    assert_eq!(saved.max_concurrent_downloads, 2);
-    assert!(!saved.media.ask_each_time);
-    assert_eq!(h.manager.get_settings().browser_controls(), saved);
-    assert_eq!(
-        firefox.next_event().await?,
-        Event::BrowserControlsChanged(saved.clone())
-    );
-
-    tune(&h.manager, |s| s.global_speed_limit = None)?;
-    // The browser that made the first change is told of it too, before this one.
-    for client in [&mut chrome, &mut firefox] {
-        loop {
-            match client.next_event().await? {
-                Event::BrowserControlsChanged(c) if c.global_speed_limit.is_none() => {
-                    assert_eq!(c.max_concurrent_downloads, 2);
-                    break;
-                }
-                Event::BrowserControlsChanged(c) => assert_eq!(c, saved),
-                other => panic!("unexpected event {other:?}"),
+    chrome
+        .call(set_option("max_concurrent_downloads", 2.into()))
+        .await?
+        .unwrap();
+    let settings = h.manager.get_settings();
+    assert_eq!(settings.global_speed_limit, Some(512 * 1024));
+    assert_eq!(settings.max_concurrent_downloads, 2);
+    loop {
+        if let Event::OptionsChanged(list) = firefox.next_event().await? {
+            let downloads = list.groups.iter().find(|g| g.id == "downloads").unwrap();
+            if downloads.summary.as_deref() == Some("512 KB/s · 2 at once · Main") {
+                break;
             }
         }
     }
+
+    tune(&h.manager, |s| {
+        s.media.audio.format = wirecatch_protocol::app::OutputFormat::Mp3;
+        s.media.audio.audio_kbps = Some(320);
+    })?;
+    chrome
+        .call(set_option("audio_format", "opus".into()))
+        .await?
+        .unwrap();
+    let audio = h.manager.get_settings().media.audio;
+    assert_eq!(audio.format, wirecatch_protocol::app::OutputFormat::Opus);
+    assert!(
+        audio
+            .audio_kbps
+            .is_some_and(|k| audio.format.kbps_choices().contains(&k)),
+        "{audio:?}"
+    );
     Ok(())
 }
 
-/// A change to a setting the popup does not show sends no `browser_controls_changed`.
+/// A value the app's own settings refuse is refused from the popup too, and nothing changes; so
+/// is an option this app does not have.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn other_settings_send_no_browser_controls_event() -> TestResult {
-    let h = Harness::new().await?;
-    let mut client = Client::connected(&h.manager).await?;
-    tune(&h.manager, |s| s.close_to_tray = !s.close_to_tray)?;
-    tune(&h.manager, |s| s.max_concurrent_downloads = 2)?;
-    assert!(matches!(
-        client.next_event().await?,
-        Event::BrowserControlsChanged(c) if c.max_concurrent_downloads == 2
-    ));
-    Ok(())
-}
-
-/// A value the app's own settings refuse is refused from the popup too, and nothing changes.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn browser_controls_out_of_range_are_refused() -> TestResult {
+async fn options_out_of_range_or_unknown_are_refused() -> TestResult {
     let h = Harness::new().await?;
     let before = h.manager.get_settings();
     let mut client = Client::connected(&h.manager).await?;
-    let patch = BrowserControlsPatch {
-        max_concurrent_downloads: Some(0),
-        ..Default::default()
-    };
-    let error = client
-        .call(Call::UpdateBrowserControls(patch))
-        .await?
-        .unwrap_err();
-    assert_eq!(error.code, ErrorCode::InvalidRequest);
+    for call in [
+        set_option("max_concurrent_downloads", 0.into()),
+        set_option("max_concurrent_downloads", "two".into()),
+        set_option("teleport", true.into()),
+    ] {
+        let error = client.call(call).await?.unwrap_err();
+        assert_eq!(error.code, ErrorCode::InvalidRequest);
+    }
     assert_eq!(h.manager.get_settings(), before);
     Ok(())
 }
 
-/// A client on version 1 has neither the new calls nor the new event (D32.3).
+/// Before any cookie is read, the app decides on a capture with the same settings the extension
+/// checks, and names the sites whose cookies the extension reads (D280).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_version_1_client_never_sees_the_browser_controls() -> TestResult {
+async fn the_app_decides_a_capture_before_its_cookies_are_read() -> TestResult {
     let h = Harness::new().await?;
-    let mut client = Client::connect(&h.manager);
-    let reply = client.call(hello(1, Some(1))).await?;
+    let mut client = Client::connected(&h.manager).await?;
+    let check = |url: &str| DownloadCheck {
+        url: url.into(),
+        page_url: Some("https://www.example.com/page".into()),
+        frame_url: None,
+        file_name: None,
+        mime: None,
+        size: Some(10_000),
+        source: CaptureSource::BrowserDownload,
+        private_session: None,
+        cookie_request: CookieRequest {
+            initiator: Some("https://www.example.com".into()),
+            original_url: None,
+            top_level: None,
+            navigation: true,
+        },
+    };
+    let reply = client
+        .call(Call::CheckDownload(Box::new(check(
+            "https://cdn.example.com/a.zip",
+        ))))
+        .await?
+        .unwrap();
+    let Reply::DownloadCheck(CheckAnswer::Take { cookies }) = reply else {
+        panic!("not taken: {reply:?}");
+    };
+    assert_eq!(cookies.site.as_deref(), Some("https://example.com"));
+    assert_eq!(
+        cookies.top_level_site.as_deref(),
+        Some("https://example.com")
+    );
+    assert!(!cookies.cross_site);
+
+    tune(&h.manager, |s| {
+        s.extension.ignored_sites = vec!["example.com".into()];
+    })?;
+    let reply = client
+        .call(Call::CheckDownload(Box::new(check(
+            "https://cdn.example.com/a.zip",
+        ))))
+        .await?
+        .unwrap();
     assert!(
-        matches!(reply, Ok(Reply::Hello(ref r)) if r.protocol_version == 1),
+        matches!(reply, Reply::DownloadCheck(CheckAnswer::Leave { ref reason }) if reason == "ignored_site"),
         "{reply:?}"
     );
-    for call in [Call::GetBrowserControls, Call::ShowBrowserSettings] {
-        assert_eq!(
-            client.call(call).await?.unwrap_err().code,
-            ErrorCode::InvalidRequest
+
+    tune(&h.manager, |s| {
+        s.extension.ignored_sites.clear();
+        s.extension.min_capture_size = 20_000;
+    })?;
+    let reply = client
+        .call(Call::CheckDownload(Box::new(check(
+            "https://cdn.example.com/a.zip",
+        ))))
+        .await?
+        .unwrap();
+    assert!(
+        matches!(reply, Reply::DownloadCheck(CheckAnswer::Leave { ref reason }) if reason == "too_small"),
+        "{reply:?}"
+    );
+
+    // The capture filters are about the browser's own downloads: what the person sends from the
+    // menu or the media button goes even with capture off.
+    tune(&h.manager, |s| s.extension.capture_enabled = false)?;
+    for source in [CaptureSource::ContextMenu, CaptureSource::MediaButton] {
+        let sent = DownloadCheck {
+            source,
+            ..check("https://cdn.example.com/a.zip")
+        };
+        let reply = client
+            .call(Call::CheckDownload(Box::new(sent)))
+            .await?
+            .unwrap();
+        assert!(
+            matches!(reply, Reply::DownloadCheck(CheckAnswer::Take { .. })),
+            "{reply:?}"
         );
     }
-    tune(&h.manager, |s| s.global_speed_limit = Some(1024))?;
-    tune(&h.manager, |s| s.extension.capture_enabled = false)?;
-    assert!(matches!(
-        client.next_event().await?,
-        Event::ExtensionSettingsChanged(s) if !s.capture_enabled
-    ));
+    Ok(())
+}
+
+/// A client that speaks only version 1 is refused and told to update (D280).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_version_1_client_is_told_to_update() -> TestResult {
+    let h = Harness::new().await?;
+    let mut client = Client::connect(&h.manager);
+    let error = client.call(hello(1, Some(1))).await?.unwrap_err();
+    assert_eq!(error.code, ErrorCode::UnsupportedVersion);
+    assert!(error.message.contains("Update"), "{}", error.message);
     Ok(())
 }
 
@@ -770,7 +844,7 @@ async fn the_app_picks_the_cookies_from_the_jar() -> TestResult {
         ..capture(server.url("get?id=8").to_string())
     };
 
-    let reply = client.call(Call::AddDownload(capture)).await?.unwrap();
+    let reply = client.call(add(capture)).await?.unwrap();
     let Reply::DownloadAdded(added) = reply else {
         panic!("unexpected reply {reply:?}");
     };
@@ -792,9 +866,7 @@ async fn a_capture_starts_at_once_and_shows_a_toast() -> TestResult {
     let mut client = Client::connected(&h.manager).await?;
 
     let reply = client
-        .call(Call::AddDownload(capture(
-            server.url("get?id=7").to_string(),
-        )))
+        .call(add(capture(server.url("get?id=7").to_string())))
         .await?
         .unwrap();
     let Reply::DownloadAdded(added) = reply else {
@@ -846,7 +918,7 @@ async fn ask_before_download_waits_for_the_user() -> TestResult {
     let mut client = Client::connected(&h.manager).await?;
 
     let ask = |name: &str| capture(server.url(name).to_string());
-    let reply = client.call(Call::AddDownload(ask("a"))).await?.unwrap();
+    let reply = client.call(add(ask("a"))).await?.unwrap();
     assert!(matches!(
         reply,
         Reply::DownloadAdded(a) if a.id.is_none() && a.action == AddAction::AwaitingConfirmation
@@ -891,7 +963,7 @@ async fn ask_before_download_waits_for_the_user() -> TestResult {
     );
 
     // A rejected capture downloads nothing.
-    client.call(Call::AddDownload(ask("b"))).await?.unwrap();
+    client.call(add(ask("b"))).await?.unwrap();
     let second = h.manager.pending_confirmations().remove(0);
     h.manager.reject_capture(second.id).unwrap();
     assert_eq!(
@@ -902,7 +974,7 @@ async fn ask_before_download_waits_for_the_user() -> TestResult {
     assert!(h.manager.reject_capture(second.id).is_err());
 
     // A slash in the name the user picks is part of the name, before and after the server answers.
-    client.call(Call::AddDownload(ask("c"))).await?.unwrap();
+    client.call(add(ask("c"))).await?.unwrap();
     let third = h.manager.pending_confirmations().remove(0);
     let id = h
         .manager
@@ -933,11 +1005,11 @@ async fn a_repeated_handover_adds_nothing() -> TestResult {
     let mut client = Client::connected(&h.manager).await?;
 
     let first = client
-        .call(Call::AddDownload(capture(server.url("x.pdf").to_string())))
+        .call(add(capture(server.url("x.pdf").to_string())))
         .await?
         .unwrap();
     let again = client
-        .call(Call::AddDownload(capture(server.url("x.pdf").to_string())))
+        .call(add(capture(server.url("x.pdf").to_string())))
         .await?
         .unwrap();
     assert_eq!(first, again);
@@ -1151,26 +1223,70 @@ async fn withdraw_drops_only_what_the_server_has_not_answered() -> TestResult {
     Ok(())
 }
 
+/// "Ignore this site" from two browsers at once keeps both, and taking a page back removes the
+/// entry that covers it, a parent site included (D280).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn ignored_site_edits_from_two_browsers_merge() -> TestResult {
     let h = Harness::new().await?;
     let mut chrome = Client::connected(&h.manager).await?;
     let mut firefox = Client::connected(&h.manager).await?;
-    let edit = |add: &[&str], remove: &[&str]| {
-        let list = |l: &[&str]| Some(l.iter().map(std::string::ToString::to_string).collect());
-        Call::UpdateExtensionSettings(ExtensionSettingsPatch {
-            add_ignored_sites: list(add),
-            remove_ignored_sites: list(remove),
-            ..Default::default()
+    let act = |id: &str, site: &str| {
+        Call::InvokeAction(InvokeAction {
+            id: id.into(),
+            site: Some(site.into()),
         })
     };
-    chrome.call(edit(&["A.example"], &[])).await?.unwrap();
-    firefox.call(edit(&["b.example"], &[])).await?.unwrap();
-    let reply = chrome.call(edit(&[], &["a.EXAMPLE/"])).await?.unwrap();
-    let Reply::ExtensionSettings(saved) = reply else {
-        panic!("unexpected reply {reply:?}");
-    };
-    assert_eq!(saved.ignored_sites, vec!["b.example"]);
+    chrome
+        .call(act(actions::IGNORE_SITE, "www.A.example"))
+        .await?
+        .unwrap();
+    firefox
+        .call(act(actions::IGNORE_SITE, "b.example"))
+        .await?
+        .unwrap();
+    assert_eq!(
+        h.manager.get_settings().extension.ignored_sites,
+        ["a.example", "b.example"]
+    );
+    let page = chrome
+        .call(Call::PageOptions(PageQuery {
+            host: "video.a.example".into(),
+        }))
+        .await?
+        .unwrap();
+    assert_eq!(
+        page,
+        Reply::PageOptions(PageOptions {
+            site: "a.example".into(),
+            ignored: true
+        })
+    );
+    chrome
+        .call(act(actions::TAKE_SITE, "video.a.example"))
+        .await?
+        .unwrap();
+    assert_eq!(
+        h.manager.get_settings().extension.ignored_sites,
+        ["b.example"]
+    );
+
+    // An entry typed in the app for the `www.` host alone is found from the page's whole host.
+    tune(&h.manager, |s| {
+        s.extension.ignored_sites = vec!["www.c.example".into()];
+    })?;
+    let page = chrome
+        .call(Call::PageOptions(PageQuery {
+            host: "www.c.example".into(),
+        }))
+        .await?
+        .unwrap();
+    assert_eq!(
+        page,
+        Reply::PageOptions(PageOptions {
+            site: "www.c.example".into(),
+            ignored: true
+        })
+    );
     Ok(())
 }
 
@@ -1338,10 +1454,7 @@ async fn a_server_that_does_not_answer_in_time_leaves_the_download_to_the_browse
     let h = Harness::with_capture_timeout(Duration::from_millis(300)).await?;
     let mut client = Client::connected(&h.manager).await?;
     let lost = capture(silent.url("never.pdf").to_string());
-    let err = client
-        .call(Call::AddDownload(lost.clone()))
-        .await?
-        .unwrap_err();
+    let err = client.call(add(lost.clone())).await?.unwrap_err();
     assert_eq!(err.code, ErrorCode::NotStarted);
     assert!(err.message.contains("did not answer"), "{}", err.message);
     assert!(
@@ -1446,7 +1559,7 @@ async fn a_slow_capture_does_not_hold_up_other_requests() -> TestResult {
     let h = Harness::with_capture_timeout(2 * PATIENCE).await?;
     let mut client = Client::connected(&h.manager).await?;
     let waiting = capture(silent.url("slow.pdf").to_string());
-    let added = client.request(Call::AddDownload(waiting.clone())).await?;
+    let added = client.request(add(waiting.clone())).await?;
     // The capture is now waiting for the server's answer.
     crate::common::wait_until("the capture to connect", || {
         (silent.accepted() > 0).then_some(())
@@ -1487,7 +1600,7 @@ async fn requests_beyond_the_limit_are_refused() -> TestResult {
     let held = capture(server.url("held.pdf").to_string());
     let mut ids = Vec::new();
     for _ in 0..=wirecatch_server::MAX_REQUESTS_IN_FLIGHT {
-        ids.push(client.request(Call::AddDownload(held.clone())).await?);
+        ids.push(client.request(add(held.clone())).await?);
     }
     let last = ids.pop().unwrap();
     let err = client.response(last).await?.unwrap_err();
@@ -1589,6 +1702,7 @@ async fn a_browser_capture_refreshes_the_watched_row_after_a_mirror_change() -> 
     old.suggested_name = Some("report.pdf".into());
     old.browser_route = Some(Box::new(BrowserRoute {
         private_window: false,
+        private_session: None,
         observed_page: Some(page.into()),
         page_redirect_urls: Some(vec![entry.into()]),
         redirect_urls: vec![release.into()],
@@ -1651,6 +1765,7 @@ async fn a_file_of_the_same_size_refreshes_the_watched_row_from_any_site() -> Te
     old.size_hint = Some(1024);
     old.browser_route = Some(Box::new(BrowserRoute {
         private_window: false,
+        private_session: None,
         observed_page: Some(page.into()),
         page_redirect_urls: None,
         redirect_urls: Vec::new(),
@@ -1688,6 +1803,7 @@ async fn a_dismissed_watch_leaves_a_later_capture_to_its_own_row() -> TestResult
     let mut old = capture_from(page, "https://files.example/report.pdf?old".into());
     old.browser_route = Some(Box::new(BrowserRoute {
         private_window: false,
+        private_session: None,
         observed_page: Some(page.into()),
         page_redirect_urls: None,
         redirect_urls: vec!["https://project.example/releases/v1/report.pdf".into()],
@@ -1726,6 +1842,7 @@ async fn unsafe_or_private_source_pages_do_not_open_a_watch() -> TestResult {
         );
         download.browser_route = Some(Box::new(BrowserRoute {
             private_window,
+            private_session: private_window.then(|| "session-1".into()),
             observed_page: Some(page.into()),
             page_redirect_urls: None,
             redirect_urls: Vec::new(),
@@ -1830,6 +1947,212 @@ async fn a_closed_question_is_announced_so_the_dialog_closes() -> TestResult {
         .await
         .unwrap();
     assert_eq!(closed(&mut ui).await?, asked.id);
+    Ok(())
+}
+
+/// A download from a private window lives in memory only: no row in the database, a mark of the
+/// web without its addresses, and forgotten with its partial files once its private session ends;
+/// a capture arriving late for that session is left in the browser (D280).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_private_download_is_never_stored_and_ends_with_its_session() -> TestResult {
+    let h = Harness::new().await?;
+    h.manager
+        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)
+        .unwrap();
+    let mut client = Client::connected(&h.manager).await?;
+    let mut download = capture("https://example.com/private.zip".into());
+    download.browser_route = Some(Box::new(private_route(Some("session-1"))));
+    let Reply::DownloadAdded(added) = client.call(add(download)).await?.unwrap() else {
+        panic!("not added");
+    };
+    let id = added.id.unwrap();
+    let row = h
+        .manager
+        .list_downloads()
+        .into_iter()
+        .find(|row| row.id == id)
+        .unwrap();
+    assert!(row.private);
+    // A normal download added after it is saved, so the database has caught up with both.
+    let normal = client
+        .call(add(capture("https://example.com/normal.zip".into())))
+        .await?
+        .unwrap();
+    let Reply::DownloadAdded(normal) = normal else {
+        panic!("not added");
+    };
+    wait_until_stored(&h, normal.id.unwrap(), |_| true).await;
+    assert_eq!(
+        stored_origin(&h, id),
+        None,
+        "the private download was saved"
+    );
+
+    client
+        .call(Call::PrivateSessionEnded(PrivateSessionEnded {
+            id: "session-1".into(),
+        }))
+        .await?
+        .unwrap();
+    crate::common::wait_until("the private download to be forgotten", || {
+        (!h.manager.list_downloads().iter().any(|row| row.id == id)).then_some(())
+    })
+    .await;
+
+    let late = DownloadCheck {
+        url: "https://example.com/late.zip".into(),
+        page_url: None,
+        frame_url: None,
+        file_name: None,
+        mime: None,
+        size: None,
+        source: CaptureSource::BrowserDownload,
+        private_session: Some("session-1".into()),
+        cookie_request: CookieRequest {
+            initiator: None,
+            original_url: None,
+            top_level: None,
+            navigation: true,
+        },
+    };
+    let reply = client
+        .call(Call::CheckDownload(Box::new(late)))
+        .await?
+        .unwrap();
+    assert!(
+        matches!(reply, Reply::DownloadCheck(CheckAnswer::Leave { ref reason }) if reason == "private_session_ended"),
+        "{reply:?}"
+    );
+    Ok(())
+}
+
+/// A private route naming `session`.
+fn private_route(session: Option<&str>) -> BrowserRoute {
+    BrowserRoute {
+        private_window: true,
+        private_session: session.map(Into::into),
+        observed_page: None,
+        page_redirect_urls: None,
+        redirect_urls: Vec::new(),
+    }
+}
+
+/// A browser that connected before its first private window opened names the session only on a
+/// capture: the session still ends once that connection closes and no other names it (D280).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_session_first_named_on_a_capture_ends_with_its_connection() -> TestResult {
+    let h = Harness::configured(Arc::new(|config| {
+        config.with_private_session_grace(Duration::ZERO)
+    }))
+    .await?;
+    h.manager
+        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)
+        .unwrap();
+    let mut client = Client::connected(&h.manager).await?;
+    let mut download = capture("https://example.com/private.zip".into());
+    download.browser_route = Some(Box::new(private_route(Some("opened-later"))));
+    client.call(add(download)).await?.unwrap();
+    assert_eq!(h.manager.list_downloads().len(), 1);
+    drop(client.stream);
+    client.server.await.unwrap().unwrap();
+    crate::common::wait_until("the session's download to be forgotten", || {
+        h.manager.list_downloads().is_empty().then_some(())
+    })
+    .await;
+    Ok(())
+}
+
+/// Completion clears a download's cookies and headers, not its session: a finished private
+/// download leaves the list when its session ends, and its file stays (D280).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_finished_private_download_is_forgotten_with_its_session() -> TestResult {
+    let server = fast_server(1024).await?;
+    let h = Harness::new().await?;
+    let mut download = capture(server.url("private.bin").to_string());
+    download.browser_route = Some(Box::new(private_route(Some("session-1"))));
+    let added = h.manager.add_capture(download).await.unwrap();
+    let done = h
+        .wait_status(added.id.unwrap(), DownloadStatus::Completed)
+        .await;
+    h.manager.end_private_session("session-1");
+    crate::common::wait_until("the finished download to leave the list", || {
+        h.manager.list_downloads().is_empty().then_some(())
+    })
+    .await;
+    assert!(
+        std::path::Path::new(&done.path).exists(),
+        "the file was deleted"
+    );
+    Ok(())
+}
+
+/// A private capture waiting for the person to confirm it goes with its session, so confirming it
+/// later cannot add a download for a session that ended (D280).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_private_capture_waiting_to_be_confirmed_ends_with_its_session() -> TestResult {
+    let h = Harness::new().await?;
+    tune(&h.manager, |s| s.extension.ask_before_download = true)?;
+    let mut download = capture("https://example.com/private.zip".into());
+    download.browser_route = Some(Box::new(private_route(Some("session-1"))));
+    h.manager.add_capture(download).await.unwrap();
+    assert_eq!(h.manager.pending_confirmations().len(), 1);
+    h.manager.end_private_session("session-1");
+    assert_eq!(
+        h.manager.pending_confirmations(),
+        [] as [wirecatch_protocol::app::PendingCapture; 0]
+    );
+    Ok(())
+}
+
+/// A normal window's capture of a link a private download already has never joins it, nor the
+/// other way round: the session's end would take the normal one with it (D280).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_link_in_a_private_and_a_normal_window_stays_two_downloads() -> TestResult {
+    let h = Harness::new().await?;
+    h.manager
+        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)
+        .unwrap();
+    let mut private = capture("https://example.com/same.zip".into());
+    private.handover_id = "private".into();
+    private.browser_route = Some(Box::new(private_route(Some("session-1"))));
+    h.manager.add_capture(private).await.unwrap();
+    let mut normal = capture("https://example.com/same.zip".into());
+    normal.handover_id = "normal".into();
+    let normal = h.manager.add_capture(normal).await.unwrap().id.unwrap();
+    assert_eq!(h.manager.list_downloads().len(), 2);
+    h.manager.end_private_session("session-1");
+    crate::common::wait_until("only the normal download to stay", || {
+        let ids: Vec<_> = h
+            .manager
+            .list_downloads()
+            .iter()
+            .map(|row| row.id)
+            .collect();
+        (ids == [normal]).then_some(())
+    })
+    .await;
+    Ok(())
+}
+
+/// A capture for a private session that ended, or from a private window with no session at all,
+/// stays in the browser: the app would have nothing to forget it with (D280).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_private_capture_without_an_open_session_is_refused() -> TestResult {
+    let h = Harness::new().await?;
+    h.manager.end_private_session("ended");
+    for session in [Some("ended"), None] {
+        let mut download = capture("https://example.com/private.zip".into());
+        download.browser_route = Some(Box::new(private_route(session)));
+        let refused = h.manager.add_capture(download).await;
+        assert!(
+            matches!(refused, Err(wirecatch_core::CoreError::NotStarted(_))),
+            "{session:?}: {refused:?}"
+        );
+    }
+    assert_eq!(
+        h.manager.list_downloads(),
+        [] as [wirecatch_protocol::app::DownloadSummary; 0]
+    );
     Ok(())
 }
 

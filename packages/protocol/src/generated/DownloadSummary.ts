@@ -97,4 +97,9 @@ export type DownloadSummary = {
    * computer's proxy, or no proxy (D73.3). `None` before its first run.
    */
   proxy: string | null;
+  /**
+   * From a private window (D280): kept in memory only, and forgotten when its private
+   * session ends.
+   */
+  private: boolean;
 };

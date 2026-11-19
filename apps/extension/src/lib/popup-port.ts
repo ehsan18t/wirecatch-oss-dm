@@ -3,17 +3,13 @@
  * everything that reaches the app uses `@wirecatch/protocol`).
  */
 import {
-  isBrowserControls,
-  isBrowserControlsPatch,
-  isExtensionSettings,
-  isExtensionSettingsPatch,
   isMediaKind,
-  isQueueSummary,
-  type BrowserControls,
-  type BrowserControlsPatch,
-  type ExtensionSettings,
-  type ExtensionSettingsPatch,
-  type QueueSummary,
+  isOptionChange,
+  isOptionList,
+  isPageOptions,
+  type OptionChange,
+  type OptionList,
+  type PageOptions,
 } from '@wirecatch/protocol';
 import type { MediaEntry, MediaView } from './media/center';
 import { isConnectionStatus, type ConnectionStatus } from './native/status';
@@ -88,18 +84,21 @@ export const isAlert = fields<Alert>({
 /** Everything the popup shows, pushed whenever any part of it changes. */
 export interface Snapshot {
   status: ConnectionStatus;
-  /** The connected app's settings; null while it is not connected (D61). */
-  settings: ExtensionSettings | null;
-  /** The app's own settings the popup shows too; null while it is not connected, or for an app from before them. */
-  controls: BrowserControls | null;
-  queues: QueueSummary[];
+  /** The connected app's options for the popup; null while it is not connected (D61, D280). */
+  options: OptionList | null;
+  /** "Work in private windows" as far as it is known; unknown counts as off (D280). */
+  privateWindows: boolean;
   /** Newest first. */
   alerts: Alert[];
 }
 
 export type PopupCommand =
-  | { type: 'update_settings'; patch: ExtensionSettingsPatch }
-  | { type: 'update_controls'; patch: BrowserControlsPatch }
+  /** Change one of the app's options. */
+  | { type: 'set_option'; id: string; change: OptionChange }
+  /** Run an action, about the page on `site` when it names one. */
+  | { type: 'invoke_action'; id: string; site: string | null }
+  /** What the popup shows about the page on `host`; the answer carries it. */
+  | { type: 'page_options'; host: string }
   /** Start Wirecatch if it is closed, and show its browser settings. */
   | { type: 'open_settings' }
   | { type: 'pause_all' }
@@ -119,7 +118,7 @@ export interface PopupRequest {
 /** The answer to one `PopupRequest`. */
 export type ResultMessage =
   /** `message`, when present, is a sentence to show for the success (for example "Sent to Wirecatch."). */
-  | { type: 'result'; id: number; ok: true; message?: string }
+  | { type: 'result'; id: number; ok: true; message?: string; page?: PageOptions }
   | { type: 'result'; id: number; ok: false; message: string };
 
 export type BackgroundMessage =
@@ -127,9 +126,8 @@ export type BackgroundMessage =
 
 const isSnapshot = fields<Snapshot>({
   status: isConnectionStatus,
-  settings: nullable(isExtensionSettings),
-  controls: nullable(isBrowserControls),
-  queues: arrayOf(isQueueSummary),
+  options: nullable(isOptionList),
+  privateWindows: isBoolean,
   alerts: arrayOf(isAlert),
 });
 
@@ -163,6 +161,7 @@ export const isBackgroundMessage = variants<BackgroundMessage>({
       id: isNumber,
       ok: literal(true),
       message: optional(isString),
+      page: optional(isPageOptions),
     }),
     false: fields<Extract<ResultMessage, { ok: false }>>({
       type: literal('result'),
@@ -184,13 +183,19 @@ const isTabId = refine(isNumber, (id) => Number.isInteger(id) && id >= 0);
 type Command<T extends PopupCommand['type']> = Variant<PopupCommand, T>;
 
 const isCommand = variants<PopupCommand>({
-  update_settings: fields<Command<'update_settings'>>({
-    type: literal('update_settings'),
-    patch: isExtensionSettingsPatch,
+  set_option: fields<Command<'set_option'>>({
+    type: literal('set_option'),
+    id: isString,
+    change: isOptionChange,
   }),
-  update_controls: fields<Command<'update_controls'>>({
-    type: literal('update_controls'),
-    patch: isBrowserControlsPatch,
+  invoke_action: fields<Command<'invoke_action'>>({
+    type: literal('invoke_action'),
+    id: isString,
+    site: nullable(isString),
+  }),
+  page_options: fields<Command<'page_options'>>({
+    type: literal('page_options'),
+    host: isString,
   }),
   open_settings: fields<Command<'open_settings'>>({ type: literal('open_settings') }),
   pause_all: fields<Command<'pause_all'>>({ type: literal('pause_all') }),

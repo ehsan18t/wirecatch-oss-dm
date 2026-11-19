@@ -1,3 +1,4 @@
+import type { PageOptions } from '@wirecatch/protocol';
 import {
   asPopupRequest,
   type BackgroundMessage,
@@ -14,8 +15,14 @@ export type PopupChannel = Channel<BackgroundMessage, unknown>;
 export interface PopupsDeps {
   /** The popup's media list; without it the popup's media commands fail. */
   media: MediaCommands | undefined;
-  /** Runs a command other than `watch_media`; resolves with a sentence to show when there is one. */
-  run: (command: PopupCommand) => Promise<string | undefined>;
+  /** Runs a command other than `watch_media`; resolves with what to answer it with, if anything. */
+  run: (command: PopupCommand) => Promise<CommandAnswer | undefined>;
+}
+
+/** What a command answers with: a sentence to show, or what the popup shows about the page. */
+export interface CommandAnswer {
+  message?: string;
+  page?: PageOptions;
 }
 
 /** The open popups: each gets every snapshot, its own media list, and an answer to each command. */
@@ -49,13 +56,7 @@ export class Popups {
         return;
       }
       void this.#deps.run(command).then(
-        (message) =>
-          this.#post(
-            channel,
-            message === undefined
-              ? { type: 'result', id, ok: true }
-              : { type: 'result', id, ok: true, message },
-          ),
+        (answer) => this.#post(channel, { type: 'result', id, ok: true, ...answer }),
         (error: unknown) =>
           this.#post(channel, { type: 'result', id, ok: false, message: describeError(error) }),
       );

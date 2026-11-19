@@ -67,7 +67,7 @@ impl Manager {
         // Marked once the part file exists, so the finished file has the mark from its rename.
         // In the run's file work: a mark being written refuses readers, so a move copying it
         // then would leave the copy unmarked.
-        for (file_work, part, mark) in to_mark {
+        for (file_work, part, mark, span) in to_mark {
             #[cfg(test)]
             let before_marking = self.before_marking();
             file_work.spawn_blocking(move || {
@@ -75,7 +75,9 @@ impl Manager {
                 if let Some(hook) = before_marking {
                     hook();
                 }
-                wirecatch_files::zone::mark(&part, &mark.url, mark.referrer.as_deref());
+                span.in_scope(|| {
+                    wirecatch_files::zone::mark(&part, &mark.url, mark.referrer.as_deref());
+                });
             });
         }
         let running = !state.running.is_empty();
@@ -86,6 +88,7 @@ impl Manager {
                 .running
                 .iter()
                 .filter_map(|id| state.downloads.get(id))
+                .filter(|entry| !entry.row.private)
                 .map(|entry| Progress {
                     id: entry.row.id,
                     done: entry.row.done,
@@ -157,18 +160,17 @@ fn queue_report(state: &State, queue: QueueId, outcomes: &Outcomes) -> Option<Qu
 /// The engine's part file of a running download that has not been marked yet,
 /// once the server has answered (the path is final then), with the run's file
 /// work and what the mark says.
-fn part_to_mark(entry: &mut Entry) -> Option<(FileWork, std::path::PathBuf, Mark)> {
+/// A part file to mark, with the span its lines go in: the ticker's own task is no download's.
+fn part_to_mark(entry: &mut Entry) -> Option<(FileWork, std::path::PathBuf, Mark, tracing::Span)> {
     let run = entry.run.as_mut()?;
     if run.marking_done || !matches!(run.gauge, Gauge::Engine(_)) || !run.gauge.read().answered {
         return None;
     }
     run.marking_done = true;
     let [part, _] = crate::naming::partial_files(std::path::Path::new(&entry.row.path));
-    let mark = Mark {
-        url: entry.row.url.clone(),
-        referrer: crate::headers::referrer(&entry.origin.headers).map(str::to_string),
-    };
-    Some((run.file_work.clone(), part, mark))
+    let mark = Mark::of(&entry.row.url, &entry.origin);
+    let span = super::private_sessions::private_span(entry.row.private);
+    Some((run.file_work.clone(), part, mark, span))
 }
 
 /// Copies a run's engine counters into its row. Returns whether the row changed.

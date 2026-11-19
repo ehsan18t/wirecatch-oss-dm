@@ -66,7 +66,7 @@ async function openPopup(
       Promise.resolve({
         client: 'extension',
         client_version: '0.1.0',
-        browser: null,
+        private_session: null,
       }),
     backoffMs: [60_000],
   });
@@ -198,7 +198,7 @@ describe('Media on this page', () => {
     });
     const user = userEvent.setup();
     // Reach the button with Tab from the top of the popup.
-    for (let i = 0; i < 10 && document.activeElement !== button; i += 1) await user.tab();
+    for (let i = 0; i < 20 && document.activeElement !== button; i += 1) await user.tab();
     expect(document.activeElement).toBe(button);
     await user.keyboard('{Enter}');
     await waitFor(() =>

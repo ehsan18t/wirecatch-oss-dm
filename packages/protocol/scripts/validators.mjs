@@ -159,6 +159,9 @@ function check(node, subject, context) {
       return `typeof ${subject} === "boolean"`;
     case ts.SyntaxKind.NullKeyword:
       return `${subject} === null`;
+    // Raw JSON a hand-written reader checks piece by piece (an option, D280): anything passes here.
+    case ts.SyntaxKind.UnknownKeyword:
+      return 'true';
     default:
       break;
   }
