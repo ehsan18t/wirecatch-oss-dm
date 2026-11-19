@@ -34,6 +34,8 @@ interface Options {
   start?: boolean;
   /** The open private session; null once the last private window closed. */
   privateSession?: string | null;
+  /** Gets each session the app said ended. */
+  renewed?: string[];
 }
 
 interface Setup {
@@ -86,6 +88,7 @@ async function setup(options: Options = {}): Promise<Setup> {
         Promise.resolve(
           options.privateSession === undefined ? 'private-1' : options.privateSession,
         ),
+      renew: (id) => void options.renewed?.push(id),
     },
     userAgent: 'TestBrowser/1.0',
     inFlight,
@@ -1551,6 +1554,20 @@ describe('context menu', () => {
     expect(s.app.calls('check_download')[0]).toMatchObject({
       params: { private_session: 'private-1' },
     });
+  });
+
+  it('starts a new private session when the app says this one ended, with a window still open (D280)', async () => {
+    const renewed: string[] = [];
+    s = await setup({
+      renewed,
+      configure: (app) => (app.checkBehavior = { leave: 'private_session_ended' }),
+    });
+    const result = await s.hub.onMenuClick(
+      { linkUrl: 'https://example.com/a.zip' },
+      { incognito: true, cookieStoreId: null },
+    );
+    expect(result).toBe('browser');
+    expect(renewed).toEqual(['private-1']);
   });
 
   it('lets the browser download a link from a private window that has since closed (D280)', async () => {

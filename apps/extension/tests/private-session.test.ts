@@ -38,6 +38,15 @@ describe('the private session', () => {
     expect(s.ended).toEqual([]);
   });
 
+  it('starts a new session when the app says the open one ended', async () => {
+    const s = session({ open: true });
+    expect(await s.followed.current()).toBe('id-1');
+    s.followed.renew('other');
+    expect(await s.followed.current()).toBe('id-1');
+    s.followed.renew('id-1');
+    expect(await s.followed.current()).toBe('id-2');
+  });
+
   it('ends a session found at start with no private window open', async () => {
     const s = session({ open: false, stored: 'stale' });
     await flush();

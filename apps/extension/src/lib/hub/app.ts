@@ -24,8 +24,11 @@ import { log } from '../diag/log';
 import { messageOf } from '../errors';
 import type { PopupCommand } from '../popup-port';
 import type { NativeClient } from '../native/client';
-import { hubTiming, type HubDeps, type HubTiming } from './deps';
+import { hubTiming, type HubDeps, type HubTiming, type PrivateSessionDep } from './deps';
 import { KnownSettings } from './settings';
+
+/** The app's reason for leaving a capture of a private session it already forgot (D280). */
+const PRIVATE_SESSION_ENDED = 'private_session_ended';
 
 /** The popup's commands that the app carries out. */
 export type AppCommand = Extract<
@@ -54,17 +57,19 @@ export class AppCalls {
   readonly #timing: HubTiming;
   readonly #settings: KnownSettings;
   readonly #userAgent: string | null;
+  readonly #privateSession: PrivateSessionDep | undefined;
 
   constructor(
     client: NativeClient,
     timing: HubTiming,
     settings: KnownSettings,
-    userAgent: string | null,
+    browser: { userAgent: string | null; privateSession?: PrivateSessionDep },
   ) {
     this.#client = client;
     this.#timing = timing;
     this.#settings = settings;
-    this.#userAgent = userAgent;
+    this.#userAgent = browser.userAgent;
+    this.#privateSession = browser.privateSession;
   }
 
   get connected(): boolean {
@@ -154,7 +159,15 @@ export class AppCalls {
     if (reply.type !== 'download_check') {
       throw new Error(`${PRODUCT_NAME} gave an unexpected answer.`);
     }
-    return reply.data;
+    const answer = reply.data;
+    if (
+      answer.decision === 'leave' &&
+      answer.reason === PRIVATE_SESSION_ENDED &&
+      check.private_session !== null
+    ) {
+      this.#privateSession?.renew?.(check.private_session);
+    }
+    return answer;
   }
 
   /** Reads the values and the options again after connecting. */
@@ -285,11 +298,17 @@ export interface AppSide {
 }
 
 export function appSide(
-  deps: Pick<HubDeps, 'client' | 'cache' | 'mediaButtonSetting' | 'timing' | 'userAgent'>,
+  deps: Pick<
+    HubDeps,
+    'client' | 'cache' | 'mediaButtonSetting' | 'timing' | 'userAgent' | 'privateSession'
+  >,
 ): AppSide {
   const settings = new KnownSettings(deps);
   return {
     settings,
-    app: new AppCalls(deps.client, hubTiming(deps.timing), settings, deps.userAgent),
+    app: new AppCalls(deps.client, hubTiming(deps.timing), settings, {
+      userAgent: deps.userAgent,
+      privateSession: deps.privateSession,
+    }),
   };
 }

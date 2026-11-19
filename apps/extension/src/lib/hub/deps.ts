@@ -46,6 +46,13 @@ export interface Badge {
   set: (text: string, title: string) => void;
 }
 
+/** The browser's private session as the hub uses it (`PrivateSession`). */
+export interface PrivateSessionDep {
+  current: () => Promise<string | null>;
+  /** The app said session `id` ended while a private window is still open: the next capture starts a new one. */
+  renew?: (id: string) => void;
+}
+
 export interface HubDeps {
   client: NativeClient;
   cache: SettingsCache;
@@ -58,7 +65,7 @@ export interface HubDeps {
     plan: CookiePlan,
   ) => Promise<DownloadCookies>;
   /** The browser's private session, named with each private capture (D280); without it none is named. */
-  privateSession?: { current: () => Promise<string | null> };
+  privateSession?: PrivateSessionDep;
   /** True when the extension may read cookies for this address (the person can revoke site access in Firefox). */
   hasSiteAccess: (url: string) => Promise<boolean>;
   userAgent: string | null;

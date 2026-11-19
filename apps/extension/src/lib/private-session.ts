@@ -7,7 +7,7 @@
 import { fallback } from './diag/log';
 import type { StorageArea } from './cache';
 
-/** Key of the session's id in `storage.session`. */
+/** Key of the session's id in `storage.local`. */
 export const PRIVATE_SESSION_KEY = 'wirecatch.privateSession.v1';
 
 export interface PrivateSessionDeps {
@@ -46,6 +46,13 @@ export class PrivateSession {
       this.#save();
     }
     return this.#id;
+  }
+
+  /** The app said session `id` ended, after a connection lost for longer than its grace: a private window still open starts a new session. */
+  renew(id: string): void {
+    if (this.#id !== id) return;
+    this.#id = null;
+    this.#save();
   }
 
   /** A window opened or closed: once no private window is left, the session ends. */

@@ -61,7 +61,7 @@ describe('the waits', () => {
         Promise.resolve({ client: 'extension', client_version: '0.1.0', private_session: null }),
     });
     const settings = new KnownSettings({ cache: new MemoryCache() });
-    const calls = new AppCalls(client, hubTiming(), settings, null);
+    const calls = new AppCalls(client, hubTiming(), settings, { userAgent: null });
 
     const added = calls.addDownload({
       handover_id: 'h1',
