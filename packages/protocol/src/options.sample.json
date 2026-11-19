@@ -1255,10 +1255,7 @@
             "label": "Subtitle languages",
             "placeholder": "The video’s language",
             "search_placeholder": "Search languages",
-            "value": [
-              "en",
-              "pt-br"
-            ]
+            "value": ["en", "pt-br"]
           },
           {
             "disabled": null,

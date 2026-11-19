@@ -1,4 +1,4 @@
-// The popup's option lists as the app builds them, for the extension's tests and preview: written by `wirecatch-core`'s option builder (`options.sample.json`), so they never drift from it.
+// The popup's option lists as the app builds them, for the extension's tests and preview: written by `wirecatch-core`'s option builder (`options.sample.json`), whose test fails when they drift from it.
 import SAMPLES from '../options.sample.json' with { type: 'json' };
 import { isOptionList } from '../generated/validators';
 import type { OptionList } from '../generated/OptionList';

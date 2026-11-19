@@ -1,6 +1,21 @@
 # The extension as a shell
 
-Status: planned, every question settled, reviewed four times. Nothing here is built yet. After the prototype in step 2, step 3 records it as a decision in `docs/DECISIONS.md` that replaces D61.3 (the popup's fixed list of settings) and amends D32 (protocol versions), D82 (private windows) and D112 (`tldts`).
+Status: built, recorded as D279 in `docs/DECISIONS.md`. The plan below is kept as it was settled; what was built differently, and what is still open, is listed first.
+
+## As built
+
+Differences from the plan:
+
+- **Resume state of a private download.** The engine has no in-memory mode. The resume file stays beside the part file while the download runs, as a browser's own private download writes its partial file. Its partial files are listed by path alone, so the next start deletes what a crash left, and forgetting the download removes them.
+- **Logs.** A private download's work runs inside a span the log leaves out (`wirecatch_logging::PRIVATE_SPAN`), so no line naming its address, page or file is written, whichever crate logs it.
+- **Notifications.** A private download's notifications are brief and never kept in the system's list, rather than withdrawn later.
+- **The Save As deadline** is `CAPTURE_DEADLINE_MS`, 12 seconds: the bridge's start budget, the app's answer to `hello`, and room for `check_download`.
+
+Still open:
+
+- Measuring the deadline with the app connected, closed and missing in real Chromium and Firefox builds.
+- The Firefox sources zip still holds only `apps/extension`, and there is no check that rebuilds the extension from it.
+- Listing the add-on on addons.mozilla.org, which only the maintainer can do.
 
 ## What we want
 

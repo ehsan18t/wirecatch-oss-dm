@@ -2,7 +2,10 @@
 //! when it ends, whichever way it ends.
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::future::Future;
 use std::time::Duration;
+
+use tracing::Instrument as _;
 
 use wirecatch_protocol::DownloadId;
 
@@ -14,6 +17,29 @@ pub const PRIVATE_SESSION_GRACE: Duration = Duration::from_secs(60);
 
 /// Ended sessions remembered, so a capture arriving late for one is refused.
 const ENDED_KEPT: usize = 64;
+
+/// `work`, run inside the span whose lines the log leaves out when `private` (D279): a private
+/// download's addresses and file names must not outlive its session.
+pub(super) fn private_scope<F: Future>(
+    private: bool,
+    work: F,
+) -> tracing::instrument::Instrumented<F> {
+    // An error span: enabled whatever the filter, so its lines are always recognised.
+    let span = if private {
+        tracing::error_span!("private_download")
+    } else {
+        tracing::Span::none()
+    };
+    work.instrument(span)
+}
+
+/// Whether a download with `origin` comes from a private window.
+pub(super) fn is_private(origin: &crate::headers::Origin) -> bool {
+    origin
+        .browser_source
+        .as_ref()
+        .is_some_and(|source| source.private_session.is_some())
+}
 
 /// One connection's claim on a private session, released when the connection closes.
 #[derive(Debug)]
@@ -174,5 +200,18 @@ impl Manager {
         if !ids.is_empty() {
             self.remove_in_background(ids);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn the_private_span_is_the_one_the_log_leaves_out() {
+        let subscriber = tracing_subscriber::registry();
+        tracing::subscriber::with_default(subscriber, || {
+            let span = tracing::error_span!("private_download");
+            let name = span.metadata().map(tracing::Metadata::name);
+            assert_eq!(name, Some(wirecatch_logging::PRIVATE_SPAN));
+        });
     }
 }

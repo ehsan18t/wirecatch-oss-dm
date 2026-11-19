@@ -9,7 +9,7 @@ use wirecatch_media::describe;
 use wirecatch_protocol::app::{UserError, WhenFileExists};
 
 use super::{Job, disk, workdir};
-use crate::headers;
+use crate::manager::run::Mark;
 use crate::manager::run::MediaDone;
 use crate::manager::state::{Found, OnExisting};
 
@@ -64,10 +64,7 @@ pub(super) async fn finish(
 ) -> Result<MediaDone, UserError> {
     let output = &job.output;
     let (file, planned, work) = (file.to_path_buf(), output.clone(), work.to_path_buf());
-    let (url, referrer) = (
-        job.url.to_string(),
-        headers::referrer(&job.origin.headers).map(str::to_string),
-    );
+    let Mark { url, referrer } = Mark::of(job.url.as_str(), &job.origin);
     let reserve = job.reserve.clone();
     let placing = job.placing.clone();
     let sidecars = sidecars.to_vec();

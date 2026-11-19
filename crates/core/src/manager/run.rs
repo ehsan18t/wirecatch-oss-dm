@@ -163,10 +163,7 @@ impl Manager {
             None => Target::Exact,
             Some(settle) => Target::Resolve(path_resolver(settle.clone())),
         };
-        let mark = Mark {
-            url: entry.row.url.clone(),
-            referrer: headers::referrer(&entry.origin.headers).map(str::to_string),
-        };
+        let mark = Mark::of(&entry.row.url, &entry.origin);
         match engine_request(entry, policy, target) {
             #[cfg(test)]
             Ok(request) if self.fake_engine().is_some() => {
@@ -232,13 +229,17 @@ impl Manager {
         };
         let (gauge, work) = work(cancel.clone(), file_work.clone());
         let cleanup = entry.cleanup.take();
-        let task = self.spawn(async move {
-            if let Some(deleted) = cleanup {
-                deleted.cancelled().await;
-            }
-            let end = work.await;
-            guard.report(end).await;
-        });
+        let private = entry.row.private;
+        let task = self.spawn(super::private_sessions::private_scope(
+            private,
+            async move {
+                if let Some(deleted) = cleanup {
+                    deleted.cancelled().await;
+                }
+                let end = work.await;
+                guard.report(end).await;
+            },
+        ));
         entry.run = Some(Run {
             id: run_id,
             answered,
@@ -571,6 +572,23 @@ enum Target {
 pub(super) struct Mark {
     pub url: String,
     pub referrer: Option<String>,
+}
+
+impl Mark {
+    /// The mark of a download of `url` with `origin`: a private one names no address, so only
+    /// its zone is written (D279).
+    pub fn of(url: &str, origin: &crate::headers::Origin) -> Self {
+        if super::private_sessions::is_private(origin) {
+            return Self {
+                url: String::new(),
+                referrer: None,
+            };
+        }
+        Self {
+            url: url.to_owned(),
+            referrer: headers::referrer(&origin.headers).map(str::to_string),
+        }
+    }
 }
 
 /// Runs the engine on `request`. A finished file is marked as downloaded from

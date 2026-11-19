@@ -221,7 +221,7 @@ export function shownNumber(value: number, field: NumberField): number {
   return Math.round((value / field.scale) * factor) / factor;
 }
 
-/** What a number typed in `field`'s unit stands for. */
+/** What a number typed in `field`'s unit stands for: a whole number, as the app keeps it. */
 export function storedNumber(shown: number, field: NumberField): number {
-  return shown * field.scale;
+  return Math.round(shown * field.scale);
 }

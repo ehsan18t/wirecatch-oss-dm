@@ -698,12 +698,10 @@ fn extension_patch(id: &str, value: Value) -> Result<Option<ExtensionSettingsPat
 fn download_patch(id: &str, value: Value) -> Result<Option<AppSettingsPatch>> {
     Ok(Some(match id {
         ids::SPEED_LIMIT => {
-            let limit: Option<f64> = read(id, value)?;
-            let limit = match limit {
-                None => None,
-                Some(bytes) if bytes.is_finite() && bytes >= 1.0 => Some(whole_bytes(bytes)),
-                Some(_) => return Err(wrong_value(id)),
-            };
+            let limit: Option<u64> = read(id, value)?;
+            if limit == Some(0) {
+                return Err(wrong_value(id));
+            }
             AppSettingsPatch {
                 global_speed_limit: Update::Set(limit),
                 ..AppSettingsPatch::default()
@@ -803,18 +801,6 @@ fn audio_patch(settings: &AppSettings, id: &str, value: Value) -> Result<OutputD
     })
 }
 
-/// A whole number of bytes from a number the popup computed from a field in MB/s.
-fn whole_bytes(bytes: f64) -> u64 {
-    // In range: the caller keeps only finite values of at least 1, and `as` saturates above.
-    #[expect(
-        clippy::cast_possible_truncation,
-        clippy::cast_sign_loss,
-        reason = "a finite value of at least 1, rounded, saturating at u64::MAX"
-    )]
-    let whole = bytes.round() as u64;
-    whole
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -870,7 +856,7 @@ mod tests {
         let patch = option_patch(
             &settings,
             ids::SPEED_LIMIT,
-            OptionChange::Set(json!(2_621_440.4)),
+            OptionChange::Set(json!(2_621_440)),
         )
         .unwrap();
         assert_eq!(patch.global_speed_limit, Update::Set(Some(2_621_440)));
@@ -1000,19 +986,19 @@ mod tests {
                 groups: option_groups(&long, &long_queues),
             },
         });
-        let text = format!("{}
-", serde_json::to_string_pretty(&lists).unwrap());
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../packages/protocol/src/options.sample.json");
         if std::env::var_os("WIRECATCH_WRITE_FIXTURES").is_some() {
-            std::fs::write(&path, &text).unwrap();
+            std::fs::write(&path, serde_json::to_string_pretty(&lists).unwrap()).unwrap();
         }
-        let saved = std::fs::read_to_string(&path).unwrap_or_default().replace("
-", "
-");
+        // Compared as JSON: Prettier formats the file with the rest of the package.
+        let saved: Value = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or(Value::Null);
         assert!(
-            saved == text,
-            "{} is out of date: run WIRECATCH_WRITE_FIXTURES=1 cargo test -p wirecatch-core options",
+            saved == lists,
+            "{} is out of date: run WIRECATCH_WRITE_FIXTURES=1 cargo test -p wirecatch-core options, then pnpm format",
             path.display()
         );
     }

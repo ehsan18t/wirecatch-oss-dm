@@ -20,8 +20,8 @@ use wirecatch_protocol::extension::{
 };
 use wirecatch_protocol::frame::{self, MAX_FRAME_LEN};
 use wirecatch_protocol::shell::{
-    CheckAnswer, DownloadCheck, InvokeAction, OptionChange, PageOptions, PageQuery, Revision,
-    SetOption, ShellConfig, actions,
+    CheckAnswer, DownloadCheck, InvokeAction, OptionChange, PageOptions, PageQuery,
+    PrivateSessionEnded, Revision, SetOption, ShellConfig, actions,
 };
 use wirecatch_protocol::wire::{
     Call, ClientKind, ErrorCode, Event, Hello, MAX_OPEN_LINKS, Message, OpenLinks, Outcome,
@@ -448,7 +448,10 @@ async fn settings_changes_reach_every_client() -> TestResult {
         .await?
         .unwrap();
     assert!(matches!(reply, Reply::Options(_)), "{reply:?}");
-    assert_eq!(h.manager.get_settings().extension.ask_before_download, asking);
+    assert_eq!(
+        h.manager.get_settings().extension.ask_before_download,
+        asking
+    );
     let config = shell_config_event(&mut firefox).await?;
     assert!(newer(&config.revision, &first.revision));
     assert!(matches!(
@@ -1906,6 +1909,138 @@ async fn a_closed_question_is_announced_so_the_dialog_closes() -> TestResult {
         .await
         .unwrap();
     assert_eq!(closed(&mut ui).await?, asked.id);
+    Ok(())
+}
+
+/// A download from a private window lives in memory only: no row in the database, a mark of the
+/// web without its addresses, and forgotten with its partial files once its private session ends;
+/// a capture arriving late for that session is left in the browser (D279).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_private_download_is_never_stored_and_ends_with_its_session() -> TestResult {
+    let h = Harness::new().await?;
+    h.manager
+        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)
+        .unwrap();
+    let mut client = Client::connected(&h.manager).await?;
+    let private_route = || {
+        Some(Box::new(BrowserRoute {
+            private_window: true,
+            private_session: Some("session-1".into()),
+            observed_page: None,
+            page_redirect_urls: None,
+            redirect_urls: Vec::new(),
+        }))
+    };
+    let mut download = capture("https://example.com/private.zip".into());
+    download.browser_route = private_route();
+    let Reply::DownloadAdded(added) = client.call(add(download)).await?.unwrap() else {
+        panic!("not added");
+    };
+    let id = added.id.unwrap();
+    let row = h
+        .manager
+        .list_downloads()
+        .into_iter()
+        .find(|row| row.id == id)
+        .unwrap();
+    assert!(row.private);
+    // A normal download added after it is saved, so the database has caught up with both.
+    let normal = client
+        .call(add(capture("https://example.com/normal.zip".into())))
+        .await?
+        .unwrap();
+    let Reply::DownloadAdded(normal) = normal else {
+        panic!("not added");
+    };
+    wait_until_stored(&h, normal.id.unwrap(), |_| true).await;
+    assert_eq!(
+        stored_origin(&h, id),
+        None,
+        "the private download was saved"
+    );
+
+    client
+        .call(Call::PrivateSessionEnded(PrivateSessionEnded {
+            id: "session-1".into(),
+        }))
+        .await?
+        .unwrap();
+    crate::common::wait_until("the private download to be forgotten", || {
+        (!h.manager.list_downloads().iter().any(|row| row.id == id)).then_some(())
+    })
+    .await;
+
+    let late = DownloadCheck {
+        url: "https://example.com/late.zip".into(),
+        page_url: None,
+        file_name: None,
+        mime: None,
+        size: None,
+        source: CaptureSource::BrowserDownload,
+        private_session: Some("session-1".into()),
+        cookie_request: CookieRequest {
+            initiator: None,
+            original_url: None,
+            top_level: None,
+            navigation: true,
+        },
+    };
+    let reply = client
+        .call(Call::CheckDownload(Box::new(late)))
+        .await?
+        .unwrap();
+    assert!(
+        matches!(reply, Reply::DownloadCheck(CheckAnswer::Leave { ref reason }) if reason == "private_session_ended"),
+        "{reply:?}"
+    );
+    Ok(())
+}
+
+/// An extension that was updated or reloaded loses its private session's id: a new id from a
+/// connection while the old session waits to be named again is the same session, so its
+/// downloads go on (D279).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_private_session_renamed_by_an_extension_update_keeps_its_downloads() -> TestResult {
+    let h = Harness::new().await?;
+    h.manager
+        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)
+        .unwrap();
+    let in_session = |id: &str| {
+        Call::Hello(Hello {
+            private_session: Some(id.into()),
+            ..match hello(MIN_PROTOCOL_VERSION, Some(PROTOCOL_VERSION)) {
+                Call::Hello(hello) => hello,
+                _ => unreachable!(),
+            }
+        })
+    };
+    let mut before = Client::connect(&h.manager);
+    before.call(in_session("old")).await?.unwrap();
+    let mut download = capture("https://example.com/private.zip".into());
+    download.browser_route = Some(Box::new(BrowserRoute {
+        private_window: true,
+        private_session: Some("old".into()),
+        observed_page: None,
+        page_redirect_urls: None,
+        redirect_urls: Vec::new(),
+    }));
+    before.call(add(download)).await?.unwrap();
+    drop(before.stream);
+    before.server.await.unwrap().unwrap();
+
+    let mut after = Client::connect(&h.manager);
+    after.call(in_session("new")).await?.unwrap();
+    assert_eq!(h.manager.list_downloads().len(), 1);
+    after
+        .call(Call::PrivateSessionEnded(PrivateSessionEnded {
+            id: "new".into(),
+        }))
+        .await?
+        .unwrap();
+    crate::common::wait_until("the renamed session's download to be forgotten", || {
+        h.manager.list_downloads().is_empty().then_some(())
+    })
+    .await;
     Ok(())
 }
 

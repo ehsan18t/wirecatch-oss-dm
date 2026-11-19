@@ -205,7 +205,7 @@ fn finished_in(queue: Option<QueueId>, rows: &[&DownloadSummary]) -> Option<Noti
                 },
             ],
             click: show(queue, rows),
-            lasts: Lasts::Kept,
+            lasts: lasting(rows),
             important: true,
         },
         [first, ..] => Notification {
@@ -213,11 +213,24 @@ fn finished_in(queue: Option<QueueId>, rows: &[&DownloadSummary]) -> Option<Noti
             body: names(rows),
             buttons: vec![folder_or_app(rows, first.id, queue)],
             click: show(queue, rows),
-            lasts: Lasts::Kept,
+            lasts: lasting(rows),
             important: true,
         },
     };
     Some(notification)
+}
+
+/// How long a private download's notification shows: never kept in the system's list, since nothing
+/// of a private session may outlive it (D279).
+const PRIVATE_STAYS: std::time::Duration = std::time::Duration::from_secs(8);
+
+/// How long a notification about `rows` lasts: kept, unless one of them is private.
+fn lasting(rows: &[&DownloadSummary]) -> Lasts {
+    if rows.iter().any(|row| row.private) {
+        Lasts::Brief(PRIVATE_STAYS)
+    } else {
+        Lasts::Kept
+    }
 }
 
 /// Show in folder when every file is in one folder, else Show in the app.
@@ -258,7 +271,7 @@ fn failed_in(queue: Option<QueueId>, rows: &[&DownloadSummary]) -> Option<Notifi
                 .into_iter()
                 .collect(),
             click: show(queue, rows),
-            lasts: Lasts::Kept,
+            lasts: lasting(rows),
             important: true,
         },
         _ => Notification {
@@ -269,7 +282,7 @@ fn failed_in(queue: Option<QueueId>, rows: &[&DownloadSummary]) -> Option<Notifi
                 act: show(queue, rows),
             }],
             click: show(queue, rows),
-            lasts: Lasts::Kept,
+            lasts: lasting(rows),
             important: true,
         },
     };
@@ -305,7 +318,7 @@ pub fn queue_done(report: &QueueReport) -> Option<Notification> {
                 body: names(&all),
                 buttons: vec![button],
                 click: show(queue, &all),
-                lasts: Lasts::Kept,
+                lasts: lasting(&all),
                 important: true,
             })
         }
@@ -371,6 +384,15 @@ pub(crate) mod tests {
             "news, never through Do Not Disturb"
         );
         assert_eq!(finished(&[&done(2)]).unwrap().lasts, Lasts::Kept);
+        let private = DownloadSummary {
+            private: true,
+            ..done(3)
+        };
+        assert_eq!(
+            finished(&[&private]).unwrap().lasts,
+            Lasts::Brief(PRIVATE_STAYS),
+            "a private download's notification is not kept in the system's list"
+        );
 
         let video = video_added("Keynote", BRIEFLY);
         assert_eq!(

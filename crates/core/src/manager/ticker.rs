@@ -165,10 +165,7 @@ fn part_to_mark(entry: &mut Entry) -> Option<(FileWork, std::path::PathBuf, Mark
     }
     run.marking_done = true;
     let [part, _] = crate::naming::partial_files(std::path::Path::new(&entry.row.path));
-    let mark = Mark {
-        url: entry.row.url.clone(),
-        referrer: crate::headers::referrer(&entry.origin.headers).map(str::to_string),
-    };
+    let mark = Mark::of(&entry.row.url, &entry.origin);
     Some((run.file_work.clone(), part, mark))
 }
 

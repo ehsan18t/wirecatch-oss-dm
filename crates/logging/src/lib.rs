@@ -20,6 +20,10 @@
 
 pub mod redact;
 
+/// The name of the span a private download's work runs in (D279): nothing logged inside it is
+/// written, since its addresses and file names must not outlive the private session.
+pub const PRIVATE_SPAN: &str = "private_download";
+
 #[cfg(feature = "setup")]
 mod fields;
 #[cfg(feature = "setup")]
@@ -76,7 +80,7 @@ mod setup {
         let sink = Arc::new(Sink::new(name, true));
         let set = std::env::var(LOG_FILTER_VARIABLE).ok();
         let (filter, problem) = filter(set.as_deref(), default_filter);
-        match subscriber(filter, &sink).try_init() {
+        match tracing_subscriber::util::SubscriberInitExt::try_init(subscriber(filter, &sink)) {
             Ok(()) => {
                 // Set once: a second `start` fails to set up logging above.
                 let (Ok(()) | Err(_)) = PANIC_SINK.set(Arc::clone(&sink));
@@ -160,17 +164,31 @@ mod setup {
     fn subscriber(
         filter: EnvFilter,
         sink: &Arc<Sink>,
-    ) -> tracing_subscriber::fmt::SubscriberBuilder<
-        RedactedFields,
-        tracing_subscriber::fmt::format::Format,
-        EnvFilter,
-        MakeSink,
-    > {
-        tracing_subscriber::fmt()
-            .with_env_filter(filter)
+    ) -> impl tracing::Subscriber + Send + Sync + use<> {
+        use tracing_subscriber::Layer as _;
+        use tracing_subscriber::layer::SubscriberExt as _;
+
+        let lines = tracing_subscriber::fmt::layer()
             .with_ansi(false)
             .fmt_fields(RedactedFields)
             .with_writer(MakeSink(Arc::clone(sink)))
+            .with_filter(filter)
+            .with_filter(outside_private_downloads());
+        tracing_subscriber::registry().with(lines)
+    }
+
+    /// Leaves out every line logged inside a [`PRIVATE_SPAN`](crate::PRIVATE_SPAN).
+    fn outside_private_downloads<S>() -> tracing_subscriber::filter::DynFilterFn<S>
+    where
+        S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
+    {
+        tracing_subscriber::filter::DynFilterFn::new(|_, context| {
+            context.lookup_current().is_none_or(|span| {
+                !span
+                    .scope()
+                    .any(|outer| outer.name() == crate::PRIVATE_SPAN)
+            })
+        })
     }
 
     /// Where a panic is reported: the sink of the logging [`start`] set up, if it did.
@@ -226,7 +244,7 @@ mod setup {
         fn logging(filter_set: Option<&str>, default: &str) -> (Logging, impl tracing::Subscriber) {
             let sink = Arc::new(Sink::new("test", false));
             let (filter, _) = filter(filter_set, default);
-            let subscriber = subscriber(filter, &sink).finish();
+            let subscriber = subscriber(filter, &sink);
             (Logging { sink }, subscriber)
         }
 
@@ -248,6 +266,26 @@ mod setup {
             let started = text.find("started").unwrap();
             assert!(starting < started, "{text}");
             assert!(text.contains(" WARN "), "{text}");
+        }
+
+        /// A private download's lines never reach the log, however deep in its work they are logged (D279).
+        #[test]
+        fn nothing_logged_inside_a_private_download_is_written() {
+            let folder = tempfile::tempdir().unwrap();
+            let (logging, subscriber) = logging(None, "info");
+            tracing::subscriber::with_default(subscriber, || {
+                logging.write_to(Some(folder.path()));
+                tracing::info!("before");
+                tracing::error_span!("private_download").in_scope(|| {
+                    tracing::info_span!("engine").in_scope(|| {
+                        tracing::warn!("https://example.com/secret-name.zip");
+                    });
+                });
+                tracing::info!("after");
+            });
+            let text = read(folder.path());
+            assert!(text.contains("before") && text.contains("after"), "{text}");
+            assert!(!text.contains("secret-name"), "{text}");
         }
 
         /// `wirecatch-bridge --help`, or an installer's `install` under another account, logs nothing and so makes no folder.

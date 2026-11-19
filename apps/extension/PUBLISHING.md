@@ -16,7 +16,7 @@ The private key that belongs to `chromium_public_key` is kept by the maintainer 
 
 ## Chrome Web Store
 
-1. Build the package: `pnpm build:store`. It first runs `node scripts/gate.mjs release-build-extension` from the repository root, which warns while `config/product.toml` still holds a placeholder, so the package is for testing only (D49), and fails while the Public Suffix List in `tldts` is too old to ship (D35): update `tldts` to its latest release before every release, which the check needs the registry to confirm. `pnpm sign:firefox` runs `publish-extension`, which fails on a placeholder too (D29). It builds `.output/chrome-mv3-store` and zips it to `.output/wirecatchextension-<version>-chrome-store.zip`. It is the same as `pnpm build` without the `key` field.
+1. Build the package: `pnpm build:store`. It first runs `node scripts/gate.mjs release-build` from the repository root, which warns while `config/product.toml` still holds a placeholder, so the package is for testing only (D49). `pnpm sign:firefox` runs `publish`, which fails on a placeholder too (D29). The extension bundles no Public Suffix List: the app picks every cookie (D279). It builds `.output/chrome-mv3-store` and zips it to `.output/wirecatchextension-<version>-chrome-store.zip`. It is the same as `pnpm build` without the `key` field.
 2. First upload only: add the private key to the root of the zip, named `key.pem`, for example by copying it into an empty temporary folder as `key.pem` and running `zip -j .output/wirecatchextension-<version>-chrome-store.zip <that folder>/key.pem`. Upload that zip as a new item, then delete the temporary copy and that zip. The Chrome Web Store uses the key to give the item our id instead of a new one.
 3. Before publishing, check that the item's id in the developer dashboard is `chdgnmpjoipbgfeldicipccjjghmagki`. An item's id never changes, so if it shows another id, remove that item and upload again with the key.
 4. Every later update: upload the zip from step 1 as it is, without `key.pem`.
@@ -43,7 +43,7 @@ The developer dashboard's Privacy tab asks for a single purpose, a reason for ea
 
 **Remote code.** None: every script ships in the package.
 
-**Data use.** Declare _Authentication information_ (the cookies of a download's or a video's site) and _Web history_ (the addresses of downloads, of the pages they come from, and of media on a page). Both go only to the Wirecatch app on the same computer, to download what the person asked for, and are kept in the browser's session storage until it closes. Certify that the data is not sold, not used or transferred for purposes unrelated to the single purpose, and not used to determine creditworthiness or for lending. Private windows are treated like any other while the person keeps "Work in private windows" on, and the browser lets the extension run there.
+**Data use.** Declare _Authentication information_ (the cookies of a download's or a video's site) and _Web history_ (the addresses of downloads, of the pages they come from, and of media on a page). Both go only to the Wirecatch app on the same computer, to download what the person asked for, and are kept in the browser's session storage until it closes. Cookies are read only for a download the app said it takes, after a check that carries none (D279). Certify that the data is not sold, not used or transferred for purposes unrelated to the single purpose, and not used to determine creditworthiness or for lending. Private windows are treated like any other while the person keeps "Work in private windows" on, and the browser lets the extension run there; the app keeps those downloads in memory only and forgets them when the last private window closes.
 
 **Privacy policy.** Give the public address of `PRIVACY.md` at the root of the repository (on the website once it exists, or in the GitHub repository until then).
 
@@ -65,9 +65,15 @@ addons.mozilla.org asks for the source code of bundled add-ons, which is why the
 
 Self-distributed copies do not update by themselves unless the manifest gets an `update_url`; until then people install each new `.xpi` from our download page.
 
-### Listing on addons.mozilla.org later
+### Listing on addons.mozilla.org
 
-To list Wirecatch publicly, submit a version on the listed channel from the add-on's page in the Developer Hub, or with `web-ext sign --channel=listed` and an `--amo-metadata` file that has the listing details (name, summary, categories, license). Listed versions are reviewed by Mozilla and then hosted and updated by addons.mozilla.org. The add-on keeps the same id, so the bridge needs no change.
+Wirecatch is listed on addons.mozilla.org, so every copy updates by itself (D279); unlisted signing stays for test builds. Submit a version on the listed channel from the add-on's page in the Developer Hub, or with `web-ext sign --channel=listed` and an `--amo-metadata` file that has the listing details (name, summary, categories, license). Listed versions are reviewed by Mozilla and then hosted and updated by addons.mozilla.org. The add-on keeps the same id, so the bridge needs no change.
+
+**Data collection.** The manifest declares, under `required`, what reaches the app over native messaging: `browsingActivity` (the addresses of downloads, pages and media), `websiteContent` (their cookies and request headers) and `websiteActivity` (that something was downloaded). Firefox shows them at install. Implicit consent does not cover Wirecatch: it is for add-ons that send data only on a deliberate click, and never cookies (policy 6.2.2.2).
+
+**What the listing leads with.** Listed add-ons may not have the sole purpose of launching an outside application (policy 2.5). The summary and the reviewer notes lead with what runs in the browser: taking over downloads, finding the video and audio a page plays and the button over them, and the privacy gates that keep ignored sites, file types and private windows in the browser.
+
+**Reviewer notes.** Say what the companion app is and where to get it, that the popup's options come from the app as data (an option list with a closed set of control kinds, `apps/extension/src/lib/options.ts`, never markup or code), and give steps that show a capture, a video on a page and the popup with the app running and closed.
 
 ### Testing unsigned builds
 

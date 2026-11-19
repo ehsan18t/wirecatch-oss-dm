@@ -10,7 +10,7 @@ The extension reads only what it needs to hand a download to the Wirecatch app:
 - **The cookies** your browser would send with that download or that media, and the `Cookie` header it did send with the media, so Wirecatch can download what needs your sign-in.
 - **The settings** the Wirecatch app sends it.
 
-All of it goes to one place: the Wirecatch app on the same computer, through the browser's native messaging. The extension sends nothing to any server. It treats private windows like any other, if the browser lets it run there; turn off "Work in private windows" to leave them to the browser.
+All of it goes to one place: the Wirecatch app on the same computer, through the browser's native messaging. The extension sends nothing to any server. Before it reads any cookie, it asks the app whether the app takes the download, with its address, page, name, type and size only; the cookies are read and sent only for a download the app takes. It treats private windows like any other, if the browser lets it run there; turn off "Work in private windows" to leave them to the browser.
 
 While the browser is open, the extension keeps some of this in the browser's session storage, so it can pick up where it was after the browser pauses it: the settings the app sent, the downloads being handed over, each tab's list of media with the `Cookie` header sent for it, its messages to you, and its own error log, which leaves out cookies, passwords and tokens. The browser clears all of it when it closes, and web pages cannot read it.
 
@@ -19,6 +19,7 @@ While the browser is open, the extension keeps some of this in the browser's ses
 The app downloads what you asked for from the sites it comes from, with the cookies and the referring page the extension handed it, as your browser would.
 
 - **Your downloads** (addresses, file names, folders, and the cookies a download needs to resume) are kept in the app's database in your user folder, readable only by your account. A download that has not finished within a week forgets its cookies, and removing a download removes them.
+- **Downloads from private windows** are never written to that database or to the log. The app keeps them in memory, and forgets them, with their partial files, when your last private window closes or the app quits; the file you saved stays where you saved it. Their notifications are not kept in the system's list.
 - **Logs** stay on your computer and leave out cookies, passwords and tokens.
 - **Settings** stay on your computer, unless you export them to a file.
 

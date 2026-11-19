@@ -264,6 +264,9 @@ fn facts(
     if let Some(proxy) = &row.proxy {
         facts.push(("Proxy", proxy.clone()));
     }
+    if row.private {
+        facts.push(("From", "A private window".to_owned()));
+    }
     h_flex()
         .flex_wrap()
         .border_y_1()

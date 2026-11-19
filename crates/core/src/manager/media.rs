@@ -733,7 +733,13 @@ impl Manager {
 
     fn spawn_analysis(&self, id: QuestionId, token: CancellationToken) {
         let manager = self.clone();
-        self.spawn(async move { manager.analyse(id, token).await });
+        let private = self.lock().media.get(&id).is_some_and(|pending| {
+            super::private_sessions::is_private(&pending.source.fetch.origin)
+        });
+        self.spawn(super::private_sessions::private_scope(
+            private,
+            async move { manager.analyse(id, token).await },
+        ));
     }
 
     /// Reads a stream or page and offers its qualities.
