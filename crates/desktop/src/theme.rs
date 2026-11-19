@@ -142,6 +142,7 @@ pub fn apply(setting: ThemeSetting, accent: Accent, cx: &mut App) {
         theme.selection = tone.opacity(0.32);
         theme.list_active = tone.opacity(SELECTED_ROW_TINT);
         theme.list_active_border = tone.opacity(0.6);
+        theme.list_highlight_foreground = tone;
         theme.table_active = tone.opacity(SELECTED_ROW_TINT);
         theme.table_active_border = tone.opacity(0.6);
         theme.sidebar_accent = tone.opacity(SIDEBAR_CURRENT_TINT);

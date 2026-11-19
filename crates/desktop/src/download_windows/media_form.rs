@@ -78,17 +78,11 @@ struct Quality {
 }
 
 impl Quality {
-    fn row(&self) -> AnyElement {
+    fn row(&self, title: impl IntoElement) -> AnyElement {
         h_flex()
             .w_full()
             .gap_2()
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .child(self.title.clone()),
-            )
+            .child(div().flex_1().min_w_0().truncate().child(title))
             .when(self.best, |row| {
                 row.child(
                     div()
@@ -117,11 +111,25 @@ impl SearchableListItem for Quality {
     }
 
     fn display_title(&self) -> Option<AnyElement> {
-        Some(self.row())
+        Some(self.row(self.title.clone()))
     }
 
     fn render(&self, _: &mut Window, _: &mut App) -> impl IntoElement {
-        self.row()
+        self.row(self.title.clone())
+    }
+
+    fn render_highlighted(
+        &self,
+        query: &str,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> impl IntoElement {
+        // The library's highlighter is crate-private; a plain `Choice` reaches it through the default.
+        let title = Choice {
+            title: self.title.clone(),
+            value: (),
+        };
+        self.row(title.render_highlighted(query, window, cx))
     }
 
     fn value(&self) -> &String {
@@ -628,7 +636,8 @@ impl MediaForm {
                     .child(
                         Combobox::new(&self.subtitles)
                             .placeholder("None")
-                            .search_placeholder("Search languages"),
+                            .search_placeholder("Search languages")
+                            .highlight_matches(true),
                     )
                     .into_any_element(),
             );
@@ -755,7 +764,8 @@ impl Render for MediaForm {
                 "Quality",
                 Select::new(&self.quality)
                     .accessibility_label("Quality")
-                    .search_placeholder("Search qualities"),
+                    .search_placeholder("Search qualities")
+                    .highlight_matches(true),
                 cx,
             ))
             .children(self.format_row(cx))
