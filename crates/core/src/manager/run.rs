@@ -383,6 +383,7 @@ impl Manager {
             return;
         };
         let partial = entry.partial();
+        let span = super::private_sessions::private_span(entry.row.private);
         let deleted = CancellationToken::new();
         entry.cleanup = Some(deleted.clone());
         let deletion = entry.pending_deletion();
@@ -391,7 +392,8 @@ impl Manager {
         let manager = self.clone();
         #[cfg(test)]
         let before_deleting = self.before_deleting();
-        self.inner.runtime.spawn_blocking(move || {
+        wirecatch_engine::task::spawn_blocking_on(&self.inner.runtime, move || {
+            let _private = span.enter();
             #[cfg(test)]
             if let Some(hook) = before_deleting {
                 hook();

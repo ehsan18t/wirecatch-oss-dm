@@ -11,7 +11,9 @@ const WRAPPER = 'crates/engine/src/task.rs';
 const DOWNLOAD_CRATES = ['engine', 'streams', 'media', 'core'].map(
   (name) => `crates/${name}/src/*.rs`,
 );
-const BARE = /\btokio::(?:task::)?(?:spawn|spawn_blocking)\s*\(/g;
+/** tokio's own spawns, and a runtime handle's, which start in no span either. */
+const BARE =
+  /\btokio::(?:task::)?(?:spawn|spawn_blocking)\s*\(|\b(?:runtime|Handle::current\(\))\s*\.\s*(?:spawn|spawn_blocking)\s*\(/g;
 
 /** The lines of one Rust file, outside its tests, that start a task without the caller's span, as `{ line, code }`. */
 export function unwrappedSpawns(text) {

@@ -43,7 +43,6 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::Duration;
-use tracing::Instrument as _;
 
 use tokio::runtime::Handle;
 use tokio::sync::{Notify, broadcast};
@@ -703,13 +702,13 @@ impl Manager {
     }
 
     /// Starts a task on the manager's runtime, whichever thread this is called from, in the
-    /// caller's span (`wirecatch_engine::task`).
+    /// caller's span.
     fn spawn<F>(&self, task: F) -> JoinHandle<F::Output>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,
     {
-        self.inner.runtime.spawn(task.in_current_span())
+        wirecatch_engine::task::spawn_on(&self.inner.runtime, task)
     }
 
     /// Starts `work` on the manager's runtime at once and returns a wait for it. A caller that stops waiting (a timeout, a `select!`) leaves it running to the end: a method that changes state in steps across awaits makes its first change itself, then hands the rest to this, so it is never left half done (CORE-6).

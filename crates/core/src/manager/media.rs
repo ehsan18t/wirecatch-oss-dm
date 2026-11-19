@@ -241,15 +241,24 @@ impl Manager {
         if let Some(known) = state.handovers.get(&capture.handover_id) {
             return Ok(known.reply.clone());
         }
+        if let Some(refused) = self.refused_private_capture(capture) {
+            return Err(refused);
+        }
         let reply = AddedDownload {
             id: None,
             action: AddAction::AwaitingConfirmation,
         };
-        // The same media captured again joins the one already waiting.
+        // The same media captured again, in the same private session or none, joins the one already waiting.
+        let session = super::private_sessions::capture_session(capture);
         if let Some(&id) = state
             .media
             .iter()
-            .find(|(_, m)| m.source.fetch.url == url && m.source.kind == kind)
+            .find(|(_, m)| {
+                m.source.fetch.url == url
+                    && m.source.kind == kind
+                    && super::private_sessions::session_of(&m.source.fetch.origin).as_deref()
+                        == session
+            })
             .map(|(id, _)| id)
         {
             state.media.join(id, &capture.handover_id)?;

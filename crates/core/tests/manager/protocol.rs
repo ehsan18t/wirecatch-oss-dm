@@ -2104,6 +2104,36 @@ async fn a_private_capture_waiting_to_be_confirmed_ends_with_its_session() -> Te
     Ok(())
 }
 
+/// A normal window's capture of a link a private download already has never joins it, nor the
+/// other way round: the session's end would take the normal one with it (D280).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_link_in_a_private_and_a_normal_window_stays_two_downloads() -> TestResult {
+    let h = Harness::new().await?;
+    h.manager
+        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)
+        .unwrap();
+    let mut private = capture("https://example.com/same.zip".into());
+    private.handover_id = "private".into();
+    private.browser_route = Some(Box::new(private_route(Some("session-1"))));
+    h.manager.add_capture(private).await.unwrap();
+    let mut normal = capture("https://example.com/same.zip".into());
+    normal.handover_id = "normal".into();
+    let normal = h.manager.add_capture(normal).await.unwrap().id.unwrap();
+    assert_eq!(h.manager.list_downloads().len(), 2);
+    h.manager.end_private_session("session-1");
+    crate::common::wait_until("only the normal download to stay", || {
+        let ids: Vec<_> = h
+            .manager
+            .list_downloads()
+            .iter()
+            .map(|row| row.id)
+            .collect();
+        (ids == [normal]).then_some(())
+    })
+    .await;
+    Ok(())
+}
+
 /// A capture for a private session that ended, or from a private window with no session at all,
 /// stays in the browser: the app would have nothing to forget it with (D280).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

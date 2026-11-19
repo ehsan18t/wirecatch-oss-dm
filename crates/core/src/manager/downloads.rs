@@ -254,16 +254,20 @@ impl Manager {
     pub async fn remove(&self, ids: &[DownloadId], completed: RemoveFiles) -> Result<usize> {
         // From here on nothing can resume, move or start them, so once their runs
         // have stopped they stay stopped.
-        let under_way = {
+        let (under_way, private) = {
             let mut state = self.lock_open()?;
+            let private = any_private(&state, ids);
             self.begin_removing(&mut state, ids);
-            removal_under_way(&mut state)
+            (removal_under_way(&mut state), private)
         };
         let (manager, ids) = (self.clone(), ids.to_vec());
-        self.to_the_end(async move {
-            let _under_way = under_way;
-            manager.finish_removing(&ids, completed).await
-        })
+        self.to_the_end(super::private_sessions::private_scope(
+            private,
+            async move {
+                let _under_way = under_way;
+                manager.finish_removing(&ids, completed).await
+            },
+        ))
         .await
     }
 
@@ -419,18 +423,22 @@ impl Manager {
     /// Hides downloads at once, as [`remove`](Self::remove) does, and finishes
     /// removing them in the background.
     pub(super) fn remove_in_background(&self, ids: Vec<DownloadId>) {
-        let under_way = {
+        let (under_way, private) = {
             let mut state = self.lock();
+            let private = any_private(&state, &ids);
             self.begin_removing(&mut state, &ids);
-            removal_under_way(&mut state)
+            (removal_under_way(&mut state), private)
         };
         let manager = self.clone();
-        self.spawn(async move {
-            let _under_way = under_way;
-            if let Err(e) = manager.finish_removing(&ids, RemoveFiles::Keep).await {
-                warn!(error = %e, "could not finish removing a download");
-            }
-        });
+        self.spawn(super::private_sessions::private_scope(
+            private,
+            async move {
+                let _under_way = under_way;
+                if let Err(e) = manager.finish_removing(&ids, RemoveFiles::Keep).await {
+                    warn!(error = %e, "could not finish removing a download");
+                }
+            },
+        ));
     }
 
     /// Gives a download a fresh link, for example after the old one expired, from `from`, which
@@ -702,9 +710,15 @@ impl Manager {
                 return Ok(None);
             }
             // Two captures of one link can both have found no download to join, off the lock.
+            let session = super::private_sessions::session_of(&new.fetch.origin);
             if let Some(handover) = new.kind.handover()
                 && self
-                    .join_unfinished_locked(&mut state, handover, new.fetch.url.as_str())
+                    .join_unfinished_locked(
+                        &mut state,
+                        handover,
+                        new.fetch.url.as_str(),
+                        session.as_deref(),
+                    )
                     .is_some()
             {
                 return Ok(None);
@@ -754,6 +768,7 @@ impl Manager {
         } = new;
         let (handover, expect, media, video_check) = kind.into_parts();
         let private_session = super::private_sessions::session_of(&fetch.origin);
+        self.refused_private_session(private_session.as_deref())?;
         let id = state.ids.download();
         self.inner.store.save_last_ids(state.ids.last());
         let position = state.ids.position();
@@ -825,6 +840,16 @@ impl Manager {
         }
         Ok(row)
     }
+}
+
+/// Whether any of `ids` is a private download: removing it then logs nothing about its files (D280).
+fn any_private(state: &State, ids: &[DownloadId]) -> bool {
+    ids.iter().any(|id| {
+        state
+            .downloads
+            .get(id)
+            .is_some_and(|entry| entry.row.private)
+    })
 }
 
 /// Parses a link, accepting http, https and the FTP family (`ftp`, `ftps` for

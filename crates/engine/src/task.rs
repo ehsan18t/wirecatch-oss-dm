@@ -26,6 +26,25 @@ where
     tokio::task::spawn_blocking(move || span.in_scope(work))
 }
 
+/// [`spawn`] on `runtime`, for a caller that may be on no runtime's thread.
+pub fn spawn_on<F>(runtime: &tokio::runtime::Handle, future: F) -> JoinHandle<F::Output>
+where
+    F: Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    runtime.spawn(future.in_current_span())
+}
+
+/// [`spawn_blocking`] on `runtime`, for a caller that may be on no runtime's thread.
+pub fn spawn_blocking_on<T, F>(runtime: &tokio::runtime::Handle, work: F) -> JoinHandle<T>
+where
+    F: FnOnce() -> T + Send + 'static,
+    T: Send + 'static,
+{
+    let span = tracing::Span::current();
+    runtime.spawn_blocking(move || span.in_scope(work))
+}
+
 /// `run`, on a thread of its own in the caller's span.
 pub fn in_thread<T>(run: impl FnOnce() -> T + Send + 'static) -> impl FnOnce() -> T + Send + 'static
 where

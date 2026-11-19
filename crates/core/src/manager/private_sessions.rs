@@ -27,13 +27,17 @@ pub(super) fn private_scope<F: Future>(
     private: bool,
     work: F,
 ) -> tracing::instrument::Instrumented<F> {
+    work.instrument(private_span(private))
+}
+
+/// The span whose lines the log leaves out when `private`, for work outside a download's task.
+pub(super) fn private_span(private: bool) -> tracing::Span {
     // An error span: enabled whatever the filter, so its lines are always recognised.
-    let span = if private {
+    if private {
         tracing::error_span!("private_download")
     } else {
         tracing::Span::none()
-    };
-    work.instrument(span)
+    }
 }
 
 /// The private session a download with `origin` comes from, `None` for a normal window.
@@ -133,7 +137,7 @@ impl Manager {
         };
         let weak = std::sync::Arc::downgrade(&self.inner);
         let wait = self.inner.private_session_grace;
-        self.inner.runtime.spawn(async move {
+        self.spawn(async move {
             tokio::time::sleep(wait).await;
             let Some(inner) = weak.upgrade() else { return };
             let manager = Manager { inner };
@@ -218,14 +222,36 @@ impl Manager {
     }
 
     /// Why a capture from a private window is refused: its session ended, or it names none (D280).
+    /// Asked again under the state lock where the capture is added: a session that ends between
+    /// the two marks itself ended before it looks through the state.
     pub(super) fn refused_private_capture(&self, capture: &NewDownload) -> Option<CoreError> {
         let route = capture.browser_route.as_deref()?;
         let refused = match route.private_session.as_deref() {
             Some(session) => self.private_session_ended(session),
             None => route.private_window,
         };
-        refused.then(|| CoreError::NotStarted(wirecatch_messages::private_session_ended()))
+        refused.then(ended_refusal)
     }
+
+    /// The refusal of a download from private session `session` when that session has ended.
+    pub(super) fn refused_private_session(&self, session: Option<&str>) -> Result<(), CoreError> {
+        match session {
+            Some(session) if self.private_session_ended(session) => Err(ended_refusal()),
+            _ => Ok(()),
+        }
+    }
+}
+
+fn ended_refusal() -> CoreError {
+    CoreError::NotStarted(wirecatch_messages::private_session_ended())
+}
+
+/// The private session a capture names, `None` for a normal window.
+pub(super) fn capture_session(capture: &NewDownload) -> Option<&str> {
+    capture
+        .browser_route
+        .as_deref()
+        .and_then(|route| route.private_session.as_deref())
 }
 
 #[cfg(test)]
