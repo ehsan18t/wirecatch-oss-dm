@@ -170,7 +170,7 @@ impl Origin {
         let (mut driver, send) = h3::client::new(h3_quinn::Connection::new(quic))
             .await
             .map_err(|e| Error::transport("setting up HTTP/3 failed", e, true))?;
-        let driver = tokio::spawn(async move {
+        let driver = crate::task::spawn(async move {
             // A request on a broken connection fails with its own error; this
             // says why the connection ended.
             let closed = std::future::poll_fn(|cx| driver.poll_close(cx)).await;

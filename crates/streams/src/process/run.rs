@@ -522,7 +522,7 @@ fn read_outputs(child: &mut Child, mode: StdoutMode) -> Readers {
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
     let stop = CancellationToken::new();
-    let collected = tokio::spawn({
+    let collected = wirecatch_engine::task::spawn({
         let tx = tx.clone();
         let stop = stop.clone();
         async move {
@@ -540,7 +540,9 @@ fn read_outputs(child: &mut Child, mode: StdoutMode) -> Readers {
         }
     });
     let stderr = stderr.map(|err| {
-        tokio::spawn(async move { forward(BufReader::new(err), Output::Stderr, &tx).await })
+        wirecatch_engine::task::spawn(async move {
+            forward(BufReader::new(err), Output::Stderr, &tx).await;
+        })
     });
     Readers {
         collected,

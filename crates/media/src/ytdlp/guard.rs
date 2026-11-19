@@ -7,6 +7,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
+use tracing::Instrument as _;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt, copy_bidirectional};
 use tokio::net::{TcpListener, TcpStream};
@@ -56,7 +57,7 @@ impl Guard {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
         let address = listener.local_addr()?;
         let refused = Arc::new(AtomicBool::new(false));
-        let serving = tokio::spawn(serve(listener, kept_off, refused.clone()));
+        let serving = wirecatch_engine::task::spawn(serve(listener, kept_off, refused.clone()));
         Ok(Self {
             address,
             refused,
@@ -88,7 +89,8 @@ async fn serve(listener: TcpListener, kept_off: fn(IpAddr) -> bool, refused: Arc
         tokio::select! {
             accepted = listener.accept() => match accepted {
                 Ok((client, _)) => {
-                    connections.spawn(carry(client, kept_off, refused.clone()));
+                    // In the caller's span, like every task (`wirecatch_engine::task`).
+                    connections.spawn(carry(client, kept_off, refused.clone()).in_current_span());
                 }
                 Err(e) => {
                     tracing::debug!(error = %e, "the local network guard missed a connection");

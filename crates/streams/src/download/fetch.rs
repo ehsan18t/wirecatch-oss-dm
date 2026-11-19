@@ -7,6 +7,7 @@ use std::fs::{self, File};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use tracing::Instrument as _;
 
 use tokio::sync::OnceCell;
 use tokio::task::JoinSet;
@@ -106,7 +107,8 @@ pub(super) fn queue(plan: &mut Plan, work: &WorkDir) -> Queue {
 async fn fetch_all(shared: Arc<Shared>, workers: usize) -> Result<()> {
     let mut set = JoinSet::new();
     for _ in 0..workers {
-        set.spawn(worker(shared.clone()));
+        // In the caller's span, like every task (`wirecatch_engine::task`).
+        set.spawn(worker(shared.clone()).in_current_span());
     }
     let mut first_error = None;
     while let Some(joined) = set.join_next().await {

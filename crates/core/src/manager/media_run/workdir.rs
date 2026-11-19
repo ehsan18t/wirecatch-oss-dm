@@ -50,9 +50,10 @@ const LINK: &str = "link.digest";
 /// Removes `work`, if it is there.
 async fn clear(work: &Path) -> std::io::Result<()> {
     let folder = work.to_owned();
-    let removed = tokio::task::spawn_blocking(move || wirecatch_files::remove_own_folder(&folder))
-        .await
-        .map_err(std::io::Error::other)?;
+    let removed =
+        wirecatch_engine::task::spawn_blocking(move || wirecatch_files::remove_own_folder(&folder))
+            .await
+            .map_err(std::io::Error::other)?;
     match removed {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
         _ => Ok(()),
@@ -79,7 +80,7 @@ pub(super) async fn claim_for_link(work: &Path, url: &Url) -> std::io::Result<()
 pub(super) async fn hide(work: &Path) {
     let work = work.to_path_buf();
     let hiding = move || wirecatch_engine::naming::set_hidden(&work, true);
-    if let Err(error) = tokio::task::spawn_blocking(hiding).await {
+    if let Err(error) = wirecatch_engine::task::spawn_blocking(hiding).await {
         tracing::debug!(%error, "could not hide a work folder");
     }
 }

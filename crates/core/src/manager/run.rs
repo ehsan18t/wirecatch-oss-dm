@@ -605,7 +605,7 @@ async fn download_marked(
     let result = wirecatch_engine::download(request, progress, cancel).await;
     if let Ok(Outcome::Completed { path, .. }) = &result {
         let path = path.clone();
-        let marking = tokio::task::spawn_blocking(move || {
+        let marking = wirecatch_engine::task::spawn_blocking(move || {
             wirecatch_files::zone::mark(&path, &mark.url, mark.referrer.as_deref());
         });
         if let Err(e) = marking.await {

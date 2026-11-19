@@ -122,7 +122,7 @@ async fn download_once(
         });
     }
     let work = work.to_path_buf();
-    let found = tokio::task::spawn_blocking(move || {
+    let found = wirecatch_engine::task::spawn_blocking(move || {
         printed
             .and_then(|p| confirmed_output(&p, &work))
             .or_else(|| largest_result(&work))

@@ -31,7 +31,7 @@ impl CookiesFile {
             return Ok(None);
         };
         let dir = ctx.temp_dir.to_path_buf();
-        let written = tokio::task::spawn_blocking(move || Self::write(&dir, &text))
+        let written = wirecatch_engine::task::spawn_blocking(move || Self::write(&dir, &text))
             .await
             .map_err(YtDlpError::Task)?;
         written.map(Some).map_err(YtDlpError::Cookies)
