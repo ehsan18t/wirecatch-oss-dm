@@ -43,6 +43,7 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::Duration;
+use tracing::Instrument as _;
 
 use tokio::runtime::Handle;
 use tokio::sync::{Notify, broadcast};
@@ -97,6 +98,8 @@ pub struct ManagerConfig {
     /// the app gives up and the browser keeps the download. Shorter than the
     /// extension's own wait for the app's reply.
     pub capture_timeout: Duration,
+    /// How long a private session no connection names stays open (D279).
+    pub private_session_grace: Duration,
     /// Where the media add-on comes from: the pinned official releases, or a
     /// local server in tests.
     pub addon_sources: MediaAddonSources,
@@ -165,6 +168,7 @@ impl ManagerConfig {
             clock: Arc::new(SystemClock),
             stop_timeout: DEFAULT_STOP_TIMEOUT,
             capture_timeout: DEFAULT_CAPTURE_TIMEOUT,
+            private_session_grace: private_sessions::PRIVATE_SESSION_GRACE,
             addon_sources: MediaAddonSources::official(),
             media_timeout: DEFAULT_MEDIA_TIMEOUT,
             media_refresh_delays: DEFAULT_MEDIA_REFRESH_DELAYS.to_vec(),
@@ -294,6 +298,13 @@ impl ManagerConfig {
         self.stop_timeout = timeout;
         self
     }
+
+    /// Uses `grace` as the [`private_session_grace`](Self::private_session_grace).
+    #[must_use]
+    pub fn with_private_session_grace(mut self, grace: Duration) -> Self {
+        self.private_session_grace = grace;
+        self
+    }
 }
 
 /// The download manager. Cheap to clone; every clone is the same manager.
@@ -318,6 +329,7 @@ struct Inner {
     clock: Arc<dyn Clock>,
     stop_timeout: Duration,
     capture_timeout: Duration,
+    private_session_grace: Duration,
     folders: KnownFolders,
     /// The media add-on's folder.
     addon_dir: PathBuf,
@@ -389,6 +401,22 @@ fn storage_news(ui_events: broadcast::Sender<UiEvent>) -> SaveWatcher {
     })
 }
 
+/// What the person is told about a start: lists recovered, and a data folder others may read.
+fn startup_notices(recoveries: &[Recovery], not_private: bool) -> Vec<StartupNotice> {
+    startup::list_recovered(recoveries)
+        .into_iter()
+        .chain(not_private.then(startup::not_private))
+        .collect()
+}
+
+/// Where a damaged download list was set aside at start, if one was.
+fn set_aside_list(recoveries: &[Recovery]) -> Option<PathBuf> {
+    recoveries.iter().find_map(|r| match r {
+        Recovery::Damaged { kept_at } => Some(kept_at.clone()),
+        _ => None,
+    })
+}
+
 /// What the state holds besides the download list, read from the disk and the system at start.
 fn load_beside_the_list(state: &mut State, dir: &Path, addon_dir: &Path, computer: ComputerProxy) {
     state.addon = addons::AddonSlot::load(addon_dir);
@@ -448,6 +476,7 @@ impl Manager {
             clock: config.clock,
             stop_timeout: config.stop_timeout,
             capture_timeout: config.capture_timeout,
+            private_session_grace: config.private_session_grace,
             folders: config.folders,
             addon_dir,
             addon_sources: config.addon_sources,
@@ -470,14 +499,8 @@ impl Manager {
             rows_changed: Arc::new(Notify::new()),
             queues_changed: Arc::new(Notify::new()),
             stopped: CancellationToken::new(),
-            startup_notices: startup::list_recovered(&recoveries)
-                .into_iter()
-                .chain(not_private.then(startup::not_private))
-                .collect(),
-            set_aside_list: recoveries.iter().find_map(|r| match r {
-                Recovery::Damaged { kept_at } => Some(kept_at.clone()),
-                _ => None,
-            }),
+            startup_notices: startup_notices(&recoveries, not_private),
+            set_aside_list: set_aside_list(&recoveries),
             #[cfg(test)]
             fake_engine: Mutex::new(None),
             #[cfg(test)]
@@ -679,13 +702,14 @@ impl Manager {
         true
     }
 
-    /// Starts a task on the manager's runtime, whichever thread this is called from.
+    /// Starts a task on the manager's runtime, whichever thread this is called from, in the
+    /// caller's span (`wirecatch_engine::task`).
     fn spawn<F>(&self, task: F) -> JoinHandle<F::Output>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,
     {
-        self.inner.runtime.spawn(task)
+        self.inner.runtime.spawn(task.in_current_span())
     }
 
     /// Starts `work` on the manager's runtime at once and returns a wait for it. A caller that stops waiting (a timeout, a `select!`) leaves it running to the end: a method that changes state in steps across awaits makes its first change itself, then hands the rest to this, so it is never left half done (CORE-6).

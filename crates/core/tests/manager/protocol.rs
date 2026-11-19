@@ -5,6 +5,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::io;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll, ready};
 use std::time::Duration;
 
@@ -724,6 +725,7 @@ async fn the_app_decides_a_capture_before_its_cookies_are_read() -> TestResult {
     let check = |url: &str| DownloadCheck {
         url: url.into(),
         page_url: Some("https://www.example.com/page".into()),
+        frame_url: None,
         file_name: None,
         mime: None,
         size: Some(10_000),
@@ -780,6 +782,24 @@ async fn the_app_decides_a_capture_before_its_cookies_are_read() -> TestResult {
         matches!(reply, Reply::DownloadCheck(CheckAnswer::Leave { ref reason }) if reason == "too_small"),
         "{reply:?}"
     );
+
+    // The capture filters are about the browser's own downloads: what the person sends from the
+    // menu or the media button goes even with capture off.
+    tune(&h.manager, |s| s.extension.capture_enabled = false)?;
+    for source in [CaptureSource::ContextMenu, CaptureSource::MediaButton] {
+        let sent = DownloadCheck {
+            source,
+            ..check("https://cdn.example.com/a.zip")
+        };
+        let reply = client
+            .call(Call::CheckDownload(Box::new(sent)))
+            .await?
+            .unwrap();
+        assert!(
+            matches!(reply, Reply::DownloadCheck(CheckAnswer::Take { .. })),
+            "{reply:?}"
+        );
+    }
     Ok(())
 }
 
@@ -1248,6 +1268,24 @@ async fn ignored_site_edits_from_two_browsers_merge() -> TestResult {
     assert_eq!(
         h.manager.get_settings().extension.ignored_sites,
         ["b.example"]
+    );
+
+    // An entry typed in the app for the `www.` host alone is found from the page's whole host.
+    tune(&h.manager, |s| {
+        s.extension.ignored_sites = vec!["www.c.example".into()];
+    })?;
+    let page = chrome
+        .call(Call::PageOptions(PageQuery {
+            host: "www.c.example".into(),
+        }))
+        .await?
+        .unwrap();
+    assert_eq!(
+        page,
+        Reply::PageOptions(PageOptions {
+            site: "www.c.example".into(),
+            ignored: true
+        })
     );
     Ok(())
 }
@@ -1804,7 +1842,7 @@ async fn unsafe_or_private_source_pages_do_not_open_a_watch() -> TestResult {
         );
         download.browser_route = Some(Box::new(BrowserRoute {
             private_window,
-            private_session: None,
+            private_session: private_window.then(|| "session-1".into()),
             observed_page: Some(page.into()),
             page_redirect_urls: None,
             redirect_urls: Vec::new(),
@@ -1922,17 +1960,8 @@ async fn a_private_download_is_never_stored_and_ends_with_its_session() -> TestR
         .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)
         .unwrap();
     let mut client = Client::connected(&h.manager).await?;
-    let private_route = || {
-        Some(Box::new(BrowserRoute {
-            private_window: true,
-            private_session: Some("session-1".into()),
-            observed_page: None,
-            page_redirect_urls: None,
-            redirect_urls: Vec::new(),
-        }))
-    };
     let mut download = capture("https://example.com/private.zip".into());
-    download.browser_route = private_route();
+    download.browser_route = Some(Box::new(private_route(Some("session-1"))));
     let Reply::DownloadAdded(added) = client.call(add(download)).await?.unwrap() else {
         panic!("not added");
     };
@@ -1973,6 +2002,7 @@ async fn a_private_download_is_never_stored_and_ends_with_its_session() -> TestR
     let late = DownloadCheck {
         url: "https://example.com/late.zip".into(),
         page_url: None,
+        frame_url: None,
         file_name: None,
         mime: None,
         size: None,
@@ -1996,51 +2026,103 @@ async fn a_private_download_is_never_stored_and_ends_with_its_session() -> TestR
     Ok(())
 }
 
-/// An extension that was updated or reloaded loses its private session's id: a new id from a
-/// connection while the old session waits to be named again is the same session, so its
-/// downloads go on (D279).
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_private_session_renamed_by_an_extension_update_keeps_its_downloads() -> TestResult {
-    let h = Harness::new().await?;
-    h.manager
-        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)
-        .unwrap();
-    let in_session = |id: &str| {
-        Call::Hello(Hello {
-            private_session: Some(id.into()),
-            ..match hello(MIN_PROTOCOL_VERSION, Some(PROTOCOL_VERSION)) {
-                Call::Hello(hello) => hello,
-                _ => unreachable!(),
-            }
-        })
-    };
-    let mut before = Client::connect(&h.manager);
-    before.call(in_session("old")).await?.unwrap();
-    let mut download = capture("https://example.com/private.zip".into());
-    download.browser_route = Some(Box::new(BrowserRoute {
+/// A private route naming `session`.
+fn private_route(session: Option<&str>) -> BrowserRoute {
+    BrowserRoute {
         private_window: true,
-        private_session: Some("old".into()),
+        private_session: session.map(Into::into),
         observed_page: None,
         page_redirect_urls: None,
         redirect_urls: Vec::new(),
-    }));
-    before.call(add(download)).await?.unwrap();
-    drop(before.stream);
-    before.server.await.unwrap().unwrap();
+    }
+}
 
-    let mut after = Client::connect(&h.manager);
-    after.call(in_session("new")).await?.unwrap();
-    assert_eq!(h.manager.list_downloads().len(), 1);
-    after
-        .call(Call::PrivateSessionEnded(PrivateSessionEnded {
-            id: "new".into(),
-        }))
-        .await?
+/// A browser that connected before its first private window opened names the session only on a
+/// capture: the session still ends once that connection closes and no other names it (D279).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_session_first_named_on_a_capture_ends_with_its_connection() -> TestResult {
+    let h = Harness::configured(Arc::new(|config| {
+        config.with_private_session_grace(Duration::ZERO)
+    }))
+    .await?;
+    h.manager
+        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)
         .unwrap();
-    crate::common::wait_until("the renamed session's download to be forgotten", || {
+    let mut client = Client::connected(&h.manager).await?;
+    let mut download = capture("https://example.com/private.zip".into());
+    download.browser_route = Some(Box::new(private_route(Some("opened-later"))));
+    client.call(add(download)).await?.unwrap();
+    assert_eq!(h.manager.list_downloads().len(), 1);
+    drop(client.stream);
+    client.server.await.unwrap().unwrap();
+    crate::common::wait_until("the session's download to be forgotten", || {
         h.manager.list_downloads().is_empty().then_some(())
     })
     .await;
+    Ok(())
+}
+
+/// Completion clears a download's cookies and headers, not its session: a finished private
+/// download leaves the list when its session ends, and its file stays (D279).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_finished_private_download_is_forgotten_with_its_session() -> TestResult {
+    let server = fast_server(1024).await?;
+    let h = Harness::new().await?;
+    let mut download = capture(server.url("private.bin").to_string());
+    download.browser_route = Some(Box::new(private_route(Some("session-1"))));
+    let added = h.manager.add_capture(download).await.unwrap();
+    let done = h
+        .wait_status(added.id.unwrap(), DownloadStatus::Completed)
+        .await;
+    h.manager.end_private_session("session-1");
+    crate::common::wait_until("the finished download to leave the list", || {
+        h.manager.list_downloads().is_empty().then_some(())
+    })
+    .await;
+    assert!(
+        std::path::Path::new(&done.path).exists(),
+        "the file was deleted"
+    );
+    Ok(())
+}
+
+/// A private capture waiting for the person to confirm it goes with its session, so confirming it
+/// later cannot add a download for a session that ended (D279).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_private_capture_waiting_to_be_confirmed_ends_with_its_session() -> TestResult {
+    let h = Harness::new().await?;
+    tune(&h.manager, |s| s.extension.ask_before_download = true)?;
+    let mut download = capture("https://example.com/private.zip".into());
+    download.browser_route = Some(Box::new(private_route(Some("session-1"))));
+    h.manager.add_capture(download).await.unwrap();
+    assert_eq!(h.manager.pending_confirmations().len(), 1);
+    h.manager.end_private_session("session-1");
+    assert_eq!(
+        h.manager.pending_confirmations(),
+        [] as [wirecatch_protocol::app::PendingCapture; 0]
+    );
+    Ok(())
+}
+
+/// A capture for a private session that ended, or from a private window with no session at all,
+/// stays in the browser: the app would have nothing to forget it with (D279).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_private_capture_without_an_open_session_is_refused() -> TestResult {
+    let h = Harness::new().await?;
+    h.manager.end_private_session("ended");
+    for session in [Some("ended"), None] {
+        let mut download = capture("https://example.com/private.zip".into());
+        download.browser_route = Some(Box::new(private_route(session)));
+        let refused = h.manager.add_capture(download).await;
+        assert!(
+            matches!(refused, Err(wirecatch_core::CoreError::NotStarted(_))),
+            "{session:?}: {refused:?}"
+        );
+    }
+    assert_eq!(
+        h.manager.list_downloads(),
+        [] as [wirecatch_protocol::app::DownloadSummary; 0]
+    );
     Ok(())
 }
 

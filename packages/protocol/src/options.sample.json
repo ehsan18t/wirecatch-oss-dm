@@ -1334,5 +1334,34 @@
       "counter": 1,
       "instance": "sample"
     }
+  },
+  "shell_config": {
+    "capture_enabled": true,
+    "capture_extensions": [],
+    "ignored_sites": [],
+    "media": {
+      "audio_extensions": ["mp3", "m4a", "ogg", "oga", "opus", "wav", "flac", "aac", "weba"],
+      "dash_extensions": ["mpd"],
+      "dash_types": ["application/dash+xml", "video/vnd.mpeg.dash.mpd"],
+      "hls_extensions": ["m3u8"],
+      "hls_types": [
+        "application/vnd.apple.mpegurl",
+        "application/x-mpegurl",
+        "audio/mpegurl",
+        "audio/x-mpegurl"
+      ],
+      "min_direct_bytes": 102400,
+      "segment_extensions": ["ts", "m4s", "m4f", "m4v-seg", "cmfv", "cmfa", "aac-seg"],
+      "segment_types": ["video/mp2t", "video/iso.segment", "audio/iso.segment"],
+      "video_extensions": ["mp4", "m4v", "webm", "mkv", "mov", "ogv", "avi", "flv", "3gp"]
+    },
+    "min_capture_size": 0,
+    "private_windows": true,
+    "revision": {
+      "counter": 1,
+      "instance": "sample"
+    },
+    "show_media_button": true,
+    "video_sites": []
   }
 }

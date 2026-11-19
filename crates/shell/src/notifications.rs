@@ -57,6 +57,9 @@ pub struct Notification {
     /// Whether it matters enough to show during the system's Do Not Disturb, while the person
     /// allows it (D64): what ended and what went wrong do; news does not.
     pub important: bool,
+    /// About a download from a private window (D279): told by the system briefly, never in a
+    /// browser, where another window or browser could show it.
+    pub private: bool,
 }
 
 /// A notification with words only about something the person must know; a click shows the main
@@ -76,6 +79,7 @@ pub fn plain(title: String, body: String) -> Notification {
         }),
         lasts: Lasts::Kept,
         important: true,
+        private: false,
     }
 }
 
@@ -165,13 +169,14 @@ pub fn started(rows: &[DownloadSummary], stays: std::time::Duration) -> Notifica
         click: show(None, &rows),
         lasts: Lasts::Brief(stays),
         important: false,
+        private: is_private(&rows),
     }
 }
 
 /// For a video from the browser read for its qualities without a window (D67): told as soon as
 /// it is handed over, by its `title`, before its file has a name.
 #[must_use]
-pub fn video_added(title: &str, stays: std::time::Duration) -> Notification {
+pub fn video_added(title: &str, private: bool, stays: std::time::Duration) -> Notification {
     Notification {
         title: ADDED.to_owned(),
         body: format!("{title}: getting video details"),
@@ -179,6 +184,7 @@ pub fn video_added(title: &str, stays: std::time::Duration) -> Notification {
         click: show(None, &[]),
         lasts: Lasts::Brief(stays),
         important: false,
+        private,
     }
 }
 
@@ -207,6 +213,7 @@ fn finished_in(queue: Option<QueueId>, rows: &[&DownloadSummary]) -> Option<Noti
             click: show(queue, rows),
             lasts: lasting(rows),
             important: true,
+            private: is_private(rows),
         },
         [first, ..] => Notification {
             title: format!("{} finished", downloads(rows.len())),
@@ -215,6 +222,7 @@ fn finished_in(queue: Option<QueueId>, rows: &[&DownloadSummary]) -> Option<Noti
             click: show(queue, rows),
             lasts: lasting(rows),
             important: true,
+            private: is_private(rows),
         },
     };
     Some(notification)
@@ -224,9 +232,14 @@ fn finished_in(queue: Option<QueueId>, rows: &[&DownloadSummary]) -> Option<Noti
 /// of a private session may outlive it (D279).
 const PRIVATE_STAYS: std::time::Duration = std::time::Duration::from_secs(8);
 
+/// Whether any of `rows` comes from a private window.
+fn is_private(rows: &[&DownloadSummary]) -> bool {
+    rows.iter().any(|row| row.private)
+}
+
 /// How long a notification about `rows` lasts: kept, unless one of them is private.
 fn lasting(rows: &[&DownloadSummary]) -> Lasts {
-    if rows.iter().any(|row| row.private) {
+    if is_private(rows) {
         Lasts::Brief(PRIVATE_STAYS)
     } else {
         Lasts::Kept
@@ -273,6 +286,7 @@ fn failed_in(queue: Option<QueueId>, rows: &[&DownloadSummary]) -> Option<Notifi
             click: show(queue, rows),
             lasts: lasting(rows),
             important: true,
+            private: is_private(rows),
         },
         _ => Notification {
             title: format!("{} failed", downloads(rows.len())),
@@ -284,6 +298,7 @@ fn failed_in(queue: Option<QueueId>, rows: &[&DownloadSummary]) -> Option<Notifi
             click: show(queue, rows),
             lasts: lasting(rows),
             important: true,
+            private: is_private(rows),
         },
     };
     Some(notification)
@@ -320,6 +335,7 @@ pub fn queue_done(report: &QueueReport) -> Option<Notification> {
                 click: show(queue, &all),
                 lasts: lasting(&all),
                 important: true,
+                private: is_private(&all),
             })
         }
     }
@@ -388,13 +404,16 @@ pub(crate) mod tests {
             private: true,
             ..done(3)
         };
+        let told = finished(&[&private]).unwrap();
         assert_eq!(
-            finished(&[&private]).unwrap().lasts,
+            told.lasts,
             Lasts::Brief(PRIVATE_STAYS),
             "a private download's notification is not kept in the system's list"
         );
+        assert!(told.private, "never shown in a browser");
+        assert!(!finished(&[&done(2)]).unwrap().private);
 
-        let video = video_added("Keynote", BRIEFLY);
+        let video = video_added("Keynote", false, BRIEFLY);
         assert_eq!(
             (video.title.as_str(), video.body.as_str()),
             ("Download added", "Keynote: getting video details")

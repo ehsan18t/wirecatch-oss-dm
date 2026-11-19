@@ -283,6 +283,8 @@ pub struct DownloadCheck {
     pub url: String,
     /// The address of the page it comes from, when known.
     pub page_url: Option<String>,
+    /// For media, the address of the frame that requested it, when known.
+    pub frame_url: Option<String>,
     /// The file name the browser chose, when known.
     pub file_name: Option<String>,
     /// The media type the server sent, when known.
@@ -303,6 +305,7 @@ impl fmt::Debug for DownloadCheck {
         let Self {
             url,
             page_url,
+            frame_url,
             file_name,
             mime,
             size,
@@ -313,6 +316,7 @@ impl fmt::Debug for DownloadCheck {
         f.debug_struct("DownloadCheck")
             .field("url", &Address(url))
             .field("page_url", &OptionalAddress(page_url.as_deref()))
+            .field("frame_url", &OptionalAddress(frame_url.as_deref()))
             .field("file_name", file_name)
             .field("mime", mime)
             .field("size", size)

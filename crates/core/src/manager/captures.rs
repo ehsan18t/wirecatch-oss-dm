@@ -472,6 +472,9 @@ impl Manager {
 
     /// How a capture arrives, read from the state in one go.
     fn arrival(&self, capture: &NewDownload) -> Result<Arrival> {
+        if let Some(refused) = self.refused_private_capture(capture) {
+            return Err(refused);
+        }
         let state = self.lock_open()?;
         Ok(Arrival {
             known: state.handovers.get(&capture.handover_id).is_some(),

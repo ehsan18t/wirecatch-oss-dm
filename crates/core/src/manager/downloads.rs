@@ -753,7 +753,7 @@ impl Manager {
             kind,
         } = new;
         let (handover, expect, media, video_check) = kind.into_parts();
-        let private = super::private_sessions::is_private(&fetch.origin);
+        let private_session = super::private_sessions::session_of(&fetch.origin);
         let id = state.ids.download();
         self.inner.store.save_last_ids(state.ids.last());
         let position = state.ids.position();
@@ -782,7 +782,7 @@ impl Manager {
             media: media.as_ref().map(|m| m.summary.clone()),
             processing: None,
             proxy: None,
-            private,
+            private: private_session.is_some(),
         };
         let media_job = media.and_then(|m| m.job);
         // The path is a guess until the server answers with its own name; a
@@ -815,6 +815,7 @@ impl Manager {
             media_job,
             video_check,
             activity: Activity::default(),
+            private_session,
         });
         self.save(state, id);
         self.reconcile(state);

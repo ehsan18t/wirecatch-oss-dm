@@ -42,10 +42,11 @@ where
     // change made from then on, even one made before this task runs again.
     let mut events = manager.subscribe_events();
     // Released when this returns, however it returns: a session no connection names ends (D279).
-    let claim = PrivateClaim {
+    let mut claim = PrivateClaim {
         manager: &manager,
-        claim: Some(manager.claim_private_session(hello.private_session.as_deref())),
+        claims: Vec::new(),
     };
+    claim.name(hello.private_session.as_deref());
     send(&mut stream, ok(id, hello_reply(version)), version).await?;
     debug!(
         client = ?hello.client,
@@ -65,6 +66,7 @@ where
                     Some(Frame::TooLarge(len)) => Some(too_large(len)),
                     Some(Frame::Body(body)) => match parse_request(&body, version) {
                         Ok((id, call)) => {
+                            claim.follow(&call);
                             start_request(&manager, &slots, &responder, version, id, call)
                         }
                         Err(reply) => Some(*reply),
@@ -98,17 +100,50 @@ where
     Ok(())
 }
 
-/// A connection's private session, released when the connection ends.
+/// The private sessions a connection named, released when the connection ends.
 struct PrivateClaim<'a> {
     manager: &'a Manager,
-    claim: Option<SessionClaim>,
+    claims: Vec<(String, SessionClaim)>,
+}
+
+impl PrivateClaim<'_> {
+    /// Claims the session `call` names, and lets go of one it says ended.
+    fn follow(&mut self, call: &Call) {
+        if let Call::PrivateSessionEnded(ended) = call {
+            self.claims.retain(|(named, _)| *named != ended.id);
+        }
+        self.name(private_session_of(call));
+    }
+
+    /// A session first named after the hello is claimed too: a browser that connected before its
+    /// first private window opened still has the session end when the connection does.
+    fn name(&mut self, session: Option<&str>) {
+        let Some(session) = session else { return };
+        if self.claims.iter().any(|(named, _)| named == session) {
+            return;
+        }
+        let claim = self.manager.claim_private_session(Some(session));
+        self.claims.push((session.to_owned(), claim));
+    }
 }
 
 impl Drop for PrivateClaim<'_> {
     fn drop(&mut self) {
-        if let Some(claim) = self.claim.take() {
+        for (_, claim) in self.claims.drain(..) {
             self.manager.release_private_session(claim);
         }
+    }
+}
+
+/// The private session a call names, if any.
+fn private_session_of(call: &Call) -> Option<&str> {
+    match call {
+        Call::CheckDownload(check) => check.private_session.as_deref(),
+        Call::AddDownload(capture) => capture
+            .browser_route
+            .as_deref()
+            .and_then(|route| route.private_session.as_deref()),
+        _ => None,
     }
 }
 
@@ -566,9 +601,13 @@ mod tests {
             "an event older clients cannot read was sent"
         );
 
-        send(&mut written, unsupported_call(3, CallMethod::Unknown), 1)
-            .await
-            .unwrap();
+        send(
+            &mut written,
+            unsupported_call(3, CallMethod::Unknown),
+            wirecatch_protocol::MIN_PROTOCOL_VERSION,
+        )
+        .await
+        .unwrap();
         let sent: Message = frame::read_async(&mut written.as_slice())
             .await
             .unwrap()
@@ -579,7 +618,7 @@ mod tests {
                 Message::Response {
                     id: 3,
                     outcome: Outcome::Err(ProtocolError {
-                        code: ErrorCode::InvalidRequest,
+                        code: ErrorCode::UnsupportedCall,
                         ..
                     })
                 }

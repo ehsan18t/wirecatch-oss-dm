@@ -500,6 +500,16 @@ impl OutputFormat {
         }
     }
 
+    /// The bit rate among [`kbps_choices`](Self::kbps_choices) nearest `wanted`, the lower on a
+    /// tie; `None` when the format has no choice.
+    #[must_use]
+    pub fn nearest_kbps(self, wanted: u32) -> Option<u32> {
+        self.kbps_choices()
+            .iter()
+            .copied()
+            .min_by_key(|choice| (choice.abs_diff(wanted), *choice))
+    }
+
     /// The audio bit rate, in kbps, used when the audio must be re-encoded for this format
     /// and none was picked; `None` when the format has no [`kbps_choices`](Self::kbps_choices).
     #[must_use]
@@ -1933,6 +1943,9 @@ pub enum UiEvent {
         id: QuestionId,
         /// Its title, or its address with any password removed.
         title: String,
+        /// From a private window (D279).
+        #[serde(default)]
+        private: bool,
     },
     /// Wirecatch started reading a captured page or stream to find its qualities, which can
     /// take a few seconds. It ends with a [`MediaChoiceRequested`](Self::MediaChoiceRequested)
@@ -2194,6 +2207,14 @@ impl Question {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_nearest_bit_rate_takes_the_lower_on_a_tie() {
+        assert_eq!(OutputFormat::Opus.nearest_kbps(112), Some(96));
+        assert_eq!(OutputFormat::Opus.nearest_kbps(320), Some(192));
+        assert_eq!(OutputFormat::Mp3.nearest_kbps(200), Some(192));
+        assert_eq!(OutputFormat::Flac.nearest_kbps(200), None);
+    }
 
     // A link pasted into the app may carry a sign-in (`ftp://me:pw@host`), and printing the
     // request printed it (W4I review L2).

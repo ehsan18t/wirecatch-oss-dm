@@ -272,11 +272,12 @@ impl Manager {
                 wirecatch_logging::redact::url_for_display(source.fetch.url.as_str())
             });
         let held = Held::capture(capture.handover_id.clone(), capture.queue);
+        let private = super::private_sessions::is_private(&source.fetch.origin);
         let id = self.hold_media(&mut state, source, placed, held);
         // Read without a window: the person hears it was added now, not seconds later when its
         // download starts (D67).
         if state.media.get(&id).is_some_and(|m| m.quiet) {
-            self.emit(UiEvent::MediaCaptured { id, title });
+            self.emit(UiEvent::MediaCaptured { id, title, private });
         }
         state.handovers.insert(
             &capture.handover_id,
@@ -310,6 +311,7 @@ impl Manager {
             MediaStage::Analysing(token.clone())
         };
         let shown = wirecatch_logging::redact::url_for_display(source.fetch.url.as_str());
+        let private = super::private_sessions::is_private(&source.fetch.origin);
         state.media.insert(
             id,
             MediaPending {
@@ -336,7 +338,7 @@ impl Manager {
                 id,
             });
         } else {
-            self.spawn_analysis(id, token);
+            self.spawn_analysis(id, token, private);
         }
         id
     }
@@ -662,12 +664,13 @@ impl Manager {
                 if matches!(pending.stage, MediaStage::NeedsAddon) {
                     let token = self.inner.stopped.child_token();
                     pending.stage = MediaStage::Analysing(token.clone());
-                    started.push((*id, token));
+                    let private = super::private_sessions::is_private(&pending.source.fetch.origin);
+                    started.push((*id, token, private));
                 }
             }
         }
-        for (id, token) in started {
-            self.spawn_analysis(id, token);
+        for (id, token, private) in started {
+            self.spawn_analysis(id, token, private);
         }
     }
 
@@ -731,11 +734,9 @@ impl Manager {
         }
     }
 
-    fn spawn_analysis(&self, id: QuestionId, token: CancellationToken) {
+    /// Called with the state locked: `private` comes from the caller, never from a second lock.
+    fn spawn_analysis(&self, id: QuestionId, token: CancellationToken, private: bool) {
         let manager = self.clone();
-        let private = self.lock().media.get(&id).is_some_and(|pending| {
-            super::private_sessions::is_private(&pending.source.fetch.origin)
-        });
         self.spawn(super::private_sessions::private_scope(
             private,
             async move { manager.analyse(id, token).await },
@@ -967,12 +968,15 @@ impl Manager {
             .await
             .map_err(|e| describe::ytdlp(&e, tools))?;
         let info = Arc::new(info);
-        self.inner.page_readings.put(
-            &source.fetch.url,
-            self.inner.clock.unix_millis(),
-            info.clone(),
-            token,
-        );
+        // A private page's reading (signed addresses, its cookies) is never shared (D279).
+        if !super::private_sessions::is_private(&source.fetch.origin) {
+            self.inner.page_readings.put(
+                &source.fetch.url,
+                self.inner.clock.unix_millis(),
+                info.clone(),
+                token,
+            );
+        }
         Ok(Found {
             title: info.title.clone(),
             offers: choice::from_page(&info)?,

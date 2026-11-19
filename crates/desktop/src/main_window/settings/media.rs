@@ -16,7 +16,7 @@ use wirecatch_protocol::languages::LANGUAGES;
 use wirecatch_shell::host;
 
 use super::{Typing, change, choice, current, list_field, switch};
-use crate::download_windows::media_output::{nearest_kbps, subtitle_toggle};
+use crate::download_windows::media_output::subtitle_toggle;
 use crate::library::Library;
 use crate::text::{ASK_EACH_VIDEO, AUDIO_FORMATS, REMEMBER_CHOICES, VIDEO_FORMATS};
 
@@ -597,7 +597,7 @@ fn audio_quality(library: &Entity<Library>, format: OutputFormat) -> SettingFiel
 /// The bit rate to keep when the audio format becomes `format`: the one nearest `kbps` when the
 /// format has a choice, else the format's usual one.
 fn kbps_for(format: OutputFormat, kbps: Option<u32>) -> Option<u32> {
-    nearest_kbps(format, kbps?)
+    format.nearest_kbps(kbps?)
 }
 
 /// A language to pick subtitles in, found by its name, its code or another name.

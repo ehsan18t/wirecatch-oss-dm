@@ -80,10 +80,22 @@ impl Manager {
     /// [`CoreError::Closed`] once the manager has shut down. Nothing changes on an
     /// error.
     pub fn change_settings(&self, patch: AppSettingsPatch) -> Result<()> {
+        // Before the lock: a list of sites may be long to check.
         if let Some(extension) = &patch.extension {
             wirecatch_settings::check_site_patch(extension)?;
         }
+        self.change_settings_by(|_| Ok(patch))
+    }
+
+    /// [`change_settings`](Self::change_settings) with the patch `patch_of` derives from the
+    /// current settings, under the same lock: a change derived from them (an edit of a list) never
+    /// overwrites one made meanwhile. `patch_of` checks any sites it adds itself.
+    pub(super) fn change_settings_by(
+        &self,
+        patch_of: impl FnOnce(&AppSettings) -> Result<AppSettingsPatch>,
+    ) -> Result<()> {
         let mut state = self.lock_open()?;
+        let patch = patch_of(&state.settings)?;
         let mut new = state.settings.clone();
         new.apply(patch);
         wirecatch_settings::proxy::check_use(new.proxy.proxy, &state.proxy_servers)?;
@@ -291,8 +303,8 @@ impl Manager {
         self.inner.store.retry_kept();
     }
 
-    /// Stores checked settings and tells the UI and, if their part changed, every
-    /// socket client.
+    /// Stores checked settings and tells the UI, and every socket client when what the extension
+    /// shows or checks changed.
     pub(super) fn apply_settings(&self, state: &mut State, new: AppSettings) {
         if state.settings == new {
             return;
@@ -303,7 +315,9 @@ impl Manager {
             self.inner.global_limiter.set_limit(new.global_speed_limit);
         }
         self.inner.store.save_settings(new.clone());
-        self.publish_shell(state);
+        if self.shell_differs(&old, state) {
+            self.publish_shell(state);
+        }
         self.emit(UiEvent::SettingsChanged(Box::new(state.settings.clone())));
         self.reconcile(state);
     }

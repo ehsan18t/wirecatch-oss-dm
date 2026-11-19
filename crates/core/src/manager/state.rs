@@ -267,6 +267,9 @@ pub(super) struct Entry {
     pub activity: Activity,
     /// The row as its last save left it.
     pub seen: Seen,
+    /// The private session it comes from (D279): kept apart from `origin`, which completion
+    /// clears, so the session's end still finds it.
+    pub private_session: Option<String>,
 }
 
 /// What [`Entry::note_changes`] compares a row with (D236).
@@ -981,6 +984,7 @@ pub(super) fn idle_entry(url: &str, chosen_by: ChosenBy) -> Entry {
         media_job: None,
         video_check: false,
         activity: Activity::default(),
+        private_session: None,
     }
 }
 
@@ -1031,6 +1035,7 @@ mod tests {
                 status: DownloadStatus::Downloading,
                 url: wirecatch_test_support::downloads::download(1).url,
             },
+            private_session: None,
         }
     }
 

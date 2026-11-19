@@ -16,6 +16,10 @@ export type DownloadCheck = {
    */
   page_url: string | null;
   /**
+   * For media, the address of the frame that requested it, when known.
+   */
+  frame_url: string | null;
+  /**
    * The file name the browser chose, when known.
    */
   file_name: string | null;

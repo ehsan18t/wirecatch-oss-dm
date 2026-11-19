@@ -525,6 +525,7 @@ export function isDownloadCheck(value: unknown): value is DownloadCheck {
     isRecord(value1) &&
     typeof value1['url'] === 'string' &&
     (typeof value1['page_url'] === 'string' || value1['page_url'] === null) &&
+    (typeof value1['frame_url'] === 'string' || value1['frame_url'] === null) &&
     (typeof value1['file_name'] === 'string' || value1['file_name'] === null) &&
     (typeof value1['mime'] === 'string' || value1['mime'] === null) &&
     (typeof value1['size'] === 'number' || value1['size'] === null) &&
@@ -1800,9 +1801,10 @@ export function isUiEvent(value: unknown): value is UiEvent {
       isRecord(value1) &&
       value1['type'] === 'media_captured' &&
       ((value2: unknown): boolean =>
-        isRecord(value2) && isQuestionId(value2['id']) && typeof value2['title'] === 'string')(
-        value1['data'],
-      ))(value) ||
+        isRecord(value2) &&
+        isQuestionId(value2['id']) &&
+        typeof value2['title'] === 'string' &&
+        typeof value2['private'] === 'boolean')(value1['data']))(value) ||
     ((value1: unknown): boolean =>
       isRecord(value1) &&
       value1['type'] === 'media_analysing' &&

@@ -295,6 +295,12 @@ pub fn describe_run(
     }
 }
 
+/// Why a capture from a private window that has since closed stays in the browser.
+#[must_use]
+pub fn private_session_ended() -> String {
+    "The private window it came from has closed.".to_owned()
+}
+
 /// Why a website's link to the local network is not taken over, for the
 /// browser's notice: there is no download in the app to act on.
 #[must_use]

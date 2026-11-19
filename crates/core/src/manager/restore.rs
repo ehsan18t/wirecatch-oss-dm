@@ -363,6 +363,7 @@ fn restore_entry(
         stranded: stored.stranded,
         files: stored.files,
         activity: stored.activity,
+        private_session: None,
     };
     if let Some(plain) = &entry.plain_name {
         entry.row.file_name.clone_from(plain);

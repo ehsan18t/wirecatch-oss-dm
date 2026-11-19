@@ -7,12 +7,15 @@ use std::time::Duration;
 
 use tracing::Instrument as _;
 
-use wirecatch_protocol::DownloadId;
+use wirecatch_protocol::extension::NewDownload;
+use wirecatch_protocol::{DownloadId, QuestionId};
 
 use super::Manager;
+use crate::error::CoreError;
 
-/// How long a session no connection names stays open: long enough for a background the browser
-/// restarted, or an extension that was updated, to connect again and name it.
+/// The default [`ManagerConfig::private_session_grace`](crate::ManagerConfig::private_session_grace):
+/// long enough for a background the browser restarted, or an extension that was updated, to
+/// connect again and name the session.
 pub const PRIVATE_SESSION_GRACE: Duration = Duration::from_secs(60);
 
 /// Ended sessions remembered, so a capture arriving late for one is refused.
@@ -31,6 +34,14 @@ pub(super) fn private_scope<F: Future>(
         tracing::Span::none()
     };
     work.instrument(span)
+}
+
+/// The private session a download with `origin` comes from, `None` for a normal window.
+pub(super) fn session_of(origin: &crate::headers::Origin) -> Option<String> {
+    origin
+        .browser_source
+        .as_ref()
+        .and_then(|source| source.private_session.clone())
 }
 
 /// Whether a download with `origin` comes from a private window.
@@ -74,50 +85,31 @@ impl PrivateSessions {
 }
 
 impl Manager {
-    /// A connection says which private session it is in, `None` when no private window is open
-    /// (D279). A new id while another session waits for a connection to name it again is that
-    /// session under its new id: an extension that was updated or reloaded loses its id.
+    /// A connection names private session `id`, in its hello or on a capture (D279). An ended
+    /// session stays ended.
     #[must_use]
     pub fn claim_private_session(&self, id: Option<&str>) -> SessionClaim {
         let Some(id) = id else {
             return SessionClaim { id: None };
         };
-        let renamed = {
-            let mut sessions = self
-                .inner
-                .private
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let known = sessions.claims.contains_key(id) || sessions.unclaimed.contains_key(id);
-            let waiting: Vec<String> = if known {
-                Vec::new()
-            } else {
-                sessions.unclaimed.drain().map(|(old, _)| old).collect()
-            };
-            sessions.unclaimed.remove(id);
-            *sessions.claims.entry(id.to_owned()).or_insert(0) += 1;
-            waiting
-        };
-        if !renamed.is_empty() {
-            let mut state = self.lock();
-            for row in state.downloads.values_mut() {
-                if let Some(source) = row.origin.browser_source.as_mut()
-                    && source
-                        .private_session
-                        .as_ref()
-                        .is_some_and(|old| renamed.contains(old))
-                {
-                    source.private_session = Some(id.to_owned());
-                }
-            }
+        let mut sessions = self
+            .inner
+            .private
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if sessions.ended_set.contains(id) {
+            return SessionClaim { id: None };
         }
+        sessions.unclaimed.remove(id);
+        *sessions.claims.entry(id.to_owned()).or_insert(0) += 1;
         SessionClaim {
             id: Some(id.to_owned()),
         }
     }
 
     /// The connection that held `claim` closed. A session no connection names any more ends
-    /// once [`PRIVATE_SESSION_GRACE`] passes without one naming it again.
+    /// once [`private_session_grace`](crate::ManagerConfig::private_session_grace) passes
+    /// without one naming it again.
     pub fn release_private_session(&self, claim: SessionClaim) {
         let Some(id) = claim.id else { return };
         let grace = {
@@ -140,8 +132,9 @@ impl Manager {
             grace
         };
         let weak = std::sync::Arc::downgrade(&self.inner);
+        let wait = self.inner.private_session_grace;
         self.inner.runtime.spawn(async move {
-            tokio::time::sleep(PRIVATE_SESSION_GRACE).await;
+            tokio::time::sleep(wait).await;
             let Some(inner) = weak.upgrade() else { return };
             let manager = Manager { inner };
             let still_waiting = {
@@ -178,28 +171,60 @@ impl Manager {
             .contains(id)
     }
 
-    /// Stops and removes every private download whose session `ended` says has ended, with its
-    /// partial files; finished files stay where they were saved.
+    /// Stops and removes every private download, waiting capture and media question whose
+    /// session `ended` says has ended, with their partial files; finished files stay where they
+    /// were saved.
     fn forget_private_downloads(&self, ended: impl Fn(&str) -> bool) {
-        let ids: Vec<DownloadId> = {
+        let ended = |session: Option<&str>| session.is_some_and(&ended);
+        let (downloads, captures, media) = {
             let state = self.lock();
-            state
+            let downloads: Vec<DownloadId> = state
                 .downloads
                 .values()
-                .filter(|entry| {
-                    entry
-                        .origin
-                        .browser_source
-                        .as_ref()
-                        .and_then(|source| source.private_session.as_deref())
-                        .is_some_and(&ended)
-                })
+                .filter(|entry| ended(entry.private_session.as_deref()))
                 .map(|entry| entry.row.id)
-                .collect()
+                .collect();
+            let captures: Vec<QuestionId> = state
+                .pending
+                .iter()
+                .filter(|(_, pending)| {
+                    let route = pending.request.browser_route.as_deref();
+                    ended(route.and_then(|route| route.private_session.as_deref()))
+                })
+                .map(|(id, _)| *id)
+                .collect();
+            let media: Vec<QuestionId> = state
+                .media
+                .iter()
+                .filter(|(_, pending)| ended(session_of(&pending.source.fetch.origin).as_deref()))
+                .map(|(id, _)| *id)
+                .collect();
+            (downloads, captures, media)
         };
-        if !ids.is_empty() {
-            self.remove_in_background(ids);
+        // A question the person answered meanwhile is gone already, so its error is no failure.
+        for id in captures {
+            if let Err(e) = self.reject_capture(id) {
+                tracing::debug!(error = %e, "a private capture was answered as its session ended");
+            }
         }
+        for id in media {
+            if let Err(e) = self.dismiss_media_choice(id) {
+                tracing::debug!(error = %e, "private media was answered as its session ended");
+            }
+        }
+        if !downloads.is_empty() {
+            self.remove_in_background(downloads);
+        }
+    }
+
+    /// Why a capture from a private window is refused: its session ended, or it names none (D279).
+    pub(super) fn refused_private_capture(&self, capture: &NewDownload) -> Option<CoreError> {
+        let route = capture.browser_route.as_deref()?;
+        let refused = match route.private_session.as_deref() {
+            Some(session) => self.private_session_ended(session),
+            None => route.private_window,
+        };
+        refused.then(|| CoreError::NotStarted(wirecatch_messages::private_session_ended()))
     }
 }
 

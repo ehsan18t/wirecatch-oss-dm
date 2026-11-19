@@ -4,8 +4,10 @@
 use std::sync::atomic::Ordering;
 
 use wirecatch_product::PRODUCT_NAME;
-use wirecatch_protocol::app::AppSettingsPatch;
-use wirecatch_protocol::extension::{ExtensionSettingsPatch, normalize_file_type, normalize_site};
+use wirecatch_protocol::app::{AppSettings, AppSettingsPatch};
+use wirecatch_protocol::extension::{
+    CaptureSource, ExtensionSettingsPatch, normalize_file_type, normalize_site,
+};
 use wirecatch_protocol::hosts::host_on_site;
 use wirecatch_protocol::shell::{
     CheckAnswer, CookiePlan, DownloadCheck, InvokeAction, OptionList, PageOptions, PageQuery,
@@ -48,6 +50,15 @@ impl Manager {
         }
     }
 
+    /// Whether settings going from `old` to those in `state` change what the extension shows or
+    /// checks.
+    pub(super) fn shell_differs(&self, old: &AppSettings, state: &State) -> bool {
+        let revision = self.revision();
+        let queues = state.queue_summaries();
+        shell_config(old, revision.clone()) != shell_config(&state.settings, revision)
+            || option_groups(old, &queues) != option_groups(&state.settings, &queues)
+    }
+
     /// Tells every connected browser that the options, and the values its checks use, may have
     /// changed: under a new revision, so a late answer from before never wins.
     pub(super) fn publish_shell(&self, state: &State) {
@@ -67,8 +78,7 @@ impl Manager {
     /// [`CoreError::Invalid`] for an unknown option or a value that does not fit it, and the
     /// errors of [`change_settings`](Self::change_settings).
     pub fn set_option(&self, set: SetOption) -> Result<OptionList> {
-        let patch = option_patch(&self.lock().settings, &set.id, set.change)?;
-        self.change_settings(patch)?;
+        self.change_settings_by(|settings| option_patch(settings, &set.id, set.change))?;
         Ok(self.options())
     }
 
@@ -86,16 +96,20 @@ impl Manager {
                 .and_then(normalize_site)
                 .ok_or_else(|| CoreError::Invalid("That page has no site to ignore.".into()))
         };
-        let patch = match action.id.as_str() {
-            actions::IGNORE_SITE => ExtensionSettingsPatch {
-                add_ignored_sites: Some(vec![page_site(&site()?)]),
-                ..ExtensionSettingsPatch::default()
-            },
-            actions::TAKE_SITE => {
-                let host = site()?;
-                let state = self.lock();
-                let entries = state
-                    .settings
+        let take = match action.id.as_str() {
+            actions::IGNORE_SITE => false,
+            actions::TAKE_SITE => true,
+            other => {
+                return Err(CoreError::Invalid(format!(
+                    "This version of {PRODUCT_NAME} cannot do \"{other}\". Update {PRODUCT_NAME}."
+                )));
+            }
+        };
+        let host = site()?;
+        self.change_settings_by(|settings| {
+            let patch = if take {
+                // Every entry that covers the page, so the page is taken whichever entry ignored it.
+                let entries = settings
                     .extension
                     .ignored_sites
                     .iter()
@@ -106,16 +120,17 @@ impl Manager {
                     remove_ignored_sites: Some(entries),
                     ..ExtensionSettingsPatch::default()
                 }
-            }
-            other => {
-                return Err(CoreError::Invalid(format!(
-                    "This version of {PRODUCT_NAME} cannot do \"{other}\". Update {PRODUCT_NAME}."
-                )));
-            }
-        };
-        self.change_settings(AppSettingsPatch {
-            extension: Some(patch),
-            ..AppSettingsPatch::default()
+            } else {
+                ExtensionSettingsPatch {
+                    add_ignored_sites: Some(vec![page_site(&host)]),
+                    ..ExtensionSettingsPatch::default()
+                }
+            };
+            wirecatch_settings::check_site_patch(&patch)?;
+            Ok(AppSettingsPatch {
+                extension: Some(patch),
+                ..AppSettingsPatch::default()
+            })
         })
     }
 
@@ -191,13 +206,18 @@ fn page_site(host: &str) -> String {
 }
 
 /// Why the settings leave a capture in the browser, the same checks the extension makes first.
+/// The capture filters are about the browser's own downloads: a link the person sends from the
+/// menu or the media button goes whatever they say.
 fn leave_reason(state: &State, check: &DownloadCheck) -> Option<&'static str> {
     let extension = &state.settings.extension;
-    if !extension.capture_enabled {
-        return Some("capture_off");
-    }
     if check.private_session.is_some() && !extension.private_windows {
         return Some("private_window");
+    }
+    if check.source != CaptureSource::BrowserDownload {
+        return None;
+    }
+    if !extension.capture_enabled {
+        return Some("capture_off");
     }
     let addresses = [
         Some(check.url.as_str()),

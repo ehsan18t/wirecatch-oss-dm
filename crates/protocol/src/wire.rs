@@ -645,6 +645,7 @@ mod tests {
             CallMethod::CheckDownload => Call::CheckDownload(Box::new(DownloadCheck {
                 url: "https://example.com/a.zip".into(),
                 page_url: None,
+                frame_url: None,
                 file_name: Some("a.zip".into()),
                 mime: None,
                 size: None,

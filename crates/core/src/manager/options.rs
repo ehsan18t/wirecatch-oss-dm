@@ -178,7 +178,7 @@ fn capture_group(settings: &AppSettings) -> OptionGroup {
             toggle(
                 ids::PRIVATE_WINDOWS,
                 "Work in private windows",
-                "The browser must also allow Wirecatch there.",
+                &format!("The browser must also allow {PRODUCT_NAME} there."),
                 extension.private_windows,
             ),
             browser_row(ids::PAGE_SITE, "page_site"),
@@ -189,7 +189,9 @@ fn capture_group(settings: &AppSettings) -> OptionGroup {
 /// A speed as the popup's summary shows it: `5 MB/s`, `1.5 MB/s`, `512 KB/s`.
 fn rate_text(bytes_per_second: u64) -> String {
     if bytes_per_second >= MIB {
-        let tenths = (bytes_per_second * 10 + MIB / 2) / MIB;
+        // In u128: the settings take a limit up to `i64::MAX`, past what `* 10` fits in a u64.
+        let mib = u128::from(MIB);
+        let tenths = (u128::from(bytes_per_second) * 10 + mib / 2) / mib;
         let (whole, tenth) = (tenths / 10, tenths % 10);
         if tenth == 0 {
             format!("{whole} MB/s")
@@ -410,20 +412,6 @@ fn kbps_choices(format: OutputFormat) -> Vec<OptionChoice> {
         keywords: None,
     }));
     choices
-}
-
-/// The audio quality to keep when the format becomes `format`: the offered one nearest `kbps`
-/// (the lower on a tie), or the format's usual one.
-fn kbps_for_format(format: OutputFormat, kbps: Option<u32>) -> Option<u32> {
-    let list = format.kbps_choices();
-    let wanted = kbps?;
-    list.iter().copied().reduce(|best, c| {
-        if c.abs_diff(wanted) < best.abs_diff(wanted) {
-            c
-        } else {
-            best
-        }
-    })
 }
 
 fn media_group(settings: &AppSettings) -> OptionGroup {
@@ -784,7 +772,7 @@ fn audio_patch(settings: &AppSettings, id: &str, value: Value) -> Result<OutputD
         }
         return Ok(OutputDefaultsPatch {
             format: Some(format),
-            audio_kbps: Update::Set(kbps_for_format(format, audio.audio_kbps)),
+            audio_kbps: Update::Set(audio.audio_kbps.and_then(|kbps| format.nearest_kbps(kbps))),
             ..OutputDefaultsPatch::default()
         });
     }
@@ -876,7 +864,7 @@ mod tests {
         .unwrap();
         let audio = patch.media.unwrap().audio.unwrap();
         assert_eq!(audio.format, Some(OutputFormat::Opus));
-        let expected = kbps_for_format(OutputFormat::Opus, Some(320));
+        let expected = OutputFormat::Opus.nearest_kbps(320);
         assert_eq!(audio.audio_kbps, Update::Set(expected));
         assert!(expected.is_some_and(|k| OutputFormat::Opus.kbps_choices().contains(&k)));
         assert!(
@@ -957,7 +945,7 @@ mod tests {
     /// never drift from it: `WIRECATCH_WRITE_FIXTURES=1 cargo test -p wirecatch-core options`
     /// writes them again.
     #[test]
-    fn the_extension_samples_match_the_option_lists() {
+    fn the_extension_samples_match_what_the_app_sends() {
         let revision = || Revision {
             instance: "sample".into(),
             counter: 1,
@@ -977,6 +965,7 @@ mod tests {
         ];
         long.extension.default_queue = wirecatch_protocol::QueueId(2);
         let lists = json!({
+            "shell_config": shell_config(&wirecatch_settings::default_settings(), revision()),
             "default": wirecatch_protocol::shell::OptionList {
                 revision: revision(),
                 groups: option_groups(&wirecatch_settings::default_settings(), &queues()),
@@ -1008,5 +997,6 @@ mod tests {
         assert_eq!(rate_text(5 * MIB), "5 MB/s");
         assert_eq!(rate_text(3 * MIB / 2), "1.5 MB/s");
         assert_eq!(rate_text(512 * 1024), "512 KB/s");
+        assert_eq!(rate_text(u64::MAX), "17592186044416 MB/s");
     }
 }

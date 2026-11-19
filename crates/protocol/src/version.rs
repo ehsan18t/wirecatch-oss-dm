@@ -273,24 +273,11 @@ impl ErrorCode {
         }
     }
 
-    /// The code a connection older than [`ErrorCode::since`] gets for the same failure: an
-    /// older code, or this one for a code from the oldest version.
-    fn older_equivalent(self) -> ErrorCode {
-        match self {
-            ErrorCode::UnsupportedVersion
-            | ErrorCode::InvalidRequest
-            | ErrorCode::InvalidUrl
-            | ErrorCode::NotFound
-            | ErrorCode::AppUnavailable
-            | ErrorCode::AppNotRunning
-            | ErrorCode::Internal
-            | ErrorCode::NotStarted
-            | ErrorCode::AddonRequired => self,
-            ErrorCode::LimitReached
-            | ErrorCode::WrongState
-            | ErrorCode::UpdateCheckFailed
-            | ErrorCode::UnsupportedCall => ErrorCode::InvalidRequest,
-        }
+    /// The code a connection older than [`ErrorCode::since`] gets for the same failure. Every
+    /// code exists in [`MIN_PROTOCOL_VERSION`]; a code a later version adds maps here to the code
+    /// that version had for it.
+    const fn older_equivalent(self) -> ErrorCode {
+        self
     }
 
     /// The code a connection on protocol `version` is sent for this failure: this code, or for
