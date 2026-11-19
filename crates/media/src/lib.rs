@@ -10,6 +10,7 @@ pub mod describe;
 pub mod ffmpeg;
 pub mod merge;
 pub mod output;
+pub mod phantomjs;
 mod tools;
 pub mod ytdlp;
 

@@ -52,6 +52,14 @@ pub fn ytdlp(error: &YtDlpError, tools: &MediaTools) -> UserError {
             limit.as_secs()
         )),
         YtDlpError::Stalled(_) => retry("The media add-on stopped answering. Try again.".into()),
+        YtDlpError::Refused { reason } | YtDlpError::AddressRefused { reason, .. }
+            if reason.to_ascii_lowercase().contains("phantomjs not found") =>
+        {
+            // The app installs a stand-in for it (D281).
+            retry(format!(
+                "This site asks for a browser check, and the program {PRODUCT_NAME} answers it with is missing. Reinstall {PRODUCT_NAME}, then try again."
+            ))
+        }
         YtDlpError::Refused { reason } | YtDlpError::AddressRefused { reason, .. } => {
             retry(ytdlp_refusal(reason).to_owned())
         }
@@ -81,8 +89,16 @@ fn ytdlp_refusal(reason: &str) -> &'static str {
     let says = |words: &[&str]| words.iter().any(|w| reason.contains(w));
     if says(&["http error 5"]) {
         "The site is having trouble right now. Wait a while, then try again."
-    } else if says(&["http error 404", "http error 410"]) {
+    } else if says(&["unable to run phantomjs"])
+        || (says(&["executing js", "executing signature"]) && says(&["failed with returncode"]))
+    {
+        // yt-dlp's words when the PhantomJS stand-in's script fails (D281).
+        "The site asked for a browser check that the media add-on could not pass. Open the page in your browser and let it finish loading, then send the video from the browser again."
+    } else if says(&["http error 404"]) {
         "This page could not be found. Check the link in your browser, then try again."
+    } else if says(&["http error 410"]) {
+        // Also some sites' answer to a client they take for a bot (D281).
+        "The site says this page is gone. Some sites answer this way to automated downloads: if the video plays in your browser, wait a few minutes, then try again."
     } else if says(&["http error 401", "http error 403"]) {
         "The site refused the request for this video. Check that the video plays in your browser, then try again."
     } else if says(&["http error 429", "too many requests"]) {
@@ -100,6 +116,13 @@ fn ytdlp_refusal(reason: &str) -> &'static str {
         "This video is no longer available on the site."
     } else if says(&["unsupported url", "no video formats"]) {
         "The media add-on found no video on this page. Check that the video plays in your browser; if it does, update the media add-on in Settings > Media, then try again."
+    } else if says(&[
+        "connection closed abruptly",
+        "ssl_error_syscall",
+        "connection reset",
+    ]) {
+        // Before "connection": a reset after the TLS hello, from a VPN, a network filter or the site (D281).
+        "The site closed the connection before answering. A VPN, a network filter or the site's check against automated downloads can do this. Check that the video plays in your browser, then try again in a few minutes."
     } else if says(&[
         "timed out",
         "unable to connect",
@@ -373,6 +396,22 @@ mod tests {
                 "connection",
             ),
             ("HTTP Error 429: Too Many Requests", "too many requests"),
+            (
+                "[site] x: Unable to download webpage: Failed to perform, curl: (35) BoringSSL SSL_connect: Connection closed abruptly (SSL_ERROR_SYSCALL; error queue empty) in connection to www.example.com:443",
+                "closed the connection",
+            ),
+            (
+                "[site] x: Unable to download webpage: HTTP Error 410: Gone (caused by <HTTPError 410: 'Gone'>)",
+                "automated downloads",
+            ),
+            (
+                "[site] x: PhantomJS not found, Please download it from https://phantomjs.org/download.html",
+                "reinstall",
+            ),
+            (
+                "[site] x: Executing JS on webpage failed with returncode 1: TypeError: x is not a function",
+                "browser check",
+            ),
             (
                 "something no one has seen before",
                 "could not get the video",

@@ -3,7 +3,7 @@ import { dirname } from 'node:path';
 import { capture, cargoMetadata } from '../gate/process.mjs';
 
 /** What `scripts/package.mjs` builds into an installer. No feature is turned on (D22). */
-export const INSTALLER_CRATES = ['wirecatch-desktop', 'wirecatch-bridge'];
+export const INSTALLER_CRATES = ['wirecatch-desktop', 'wirecatch-bridge', 'wirecatch-media'];
 
 /** `name vVERSION`, then what cargo tree appends: a path, `(proc-macro)`, `(*)`. */
 const TREE_LINE = /^(\S+) v(\S+)/;
