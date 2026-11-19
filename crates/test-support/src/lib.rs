@@ -111,13 +111,13 @@ pub const PATIENCE: Duration = Duration::from_secs(120);
 /// A window in which something must not happen: a test that checks nothing came (no request, no event, no rerun) waits this long first. Short, since it can only miss a fault, never fail a correct run (docs/ENGINEERING.md, section 7).
 pub const QUIET: Duration = Duration::from_millis(300);
 
-/// A real ffmpeg from `WIRECATCH_TEST_FFMPEG` or the `PATH` (see [`real_program`]).
+/// A real ffmpeg from `WIRECATCH_TEST_FFMPEG` or the `PATH`; without one the test is skipped, or fails under `WIRECATCH_REQUIRE_FFMPEG=1`.
 #[must_use]
 pub fn real_ffmpeg() -> Option<PathBuf> {
     real_program("ffmpeg", "FFMPEG")
 }
 
-/// A real Deno from `WIRECATCH_TEST_DENO` or the `PATH` (see [`real_program`]).
+/// A real Deno from `WIRECATCH_TEST_DENO` or the `PATH`; without one the test is skipped, or fails under `WIRECATCH_REQUIRE_DENO=1`.
 #[must_use]
 pub fn real_deno() -> Option<PathBuf> {
     real_program("deno", "DENO")
