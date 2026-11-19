@@ -1,4 +1,4 @@
-//! The browsers' private sessions (D279): which are open, and forgetting a session's downloads
+//! The browsers' private sessions (D280): which are open, and forgetting a session's downloads
 //! when it ends, whichever way it ends.
 
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -21,7 +21,7 @@ pub const PRIVATE_SESSION_GRACE: Duration = Duration::from_secs(60);
 /// Ended sessions remembered, so a capture arriving late for one is refused.
 const ENDED_KEPT: usize = 64;
 
-/// `work`, run inside the span whose lines the log leaves out when `private` (D279): a private
+/// `work`, run inside the span whose lines the log leaves out when `private` (D280): a private
 /// download's addresses and file names must not outlive its session.
 pub(super) fn private_scope<F: Future>(
     private: bool,
@@ -85,7 +85,7 @@ impl PrivateSessions {
 }
 
 impl Manager {
-    /// A connection names private session `id`, in its hello or on a capture (D279). An ended
+    /// A connection names private session `id`, in its hello or on a capture (D280). An ended
     /// session stays ended.
     #[must_use]
     pub fn claim_private_session(&self, id: Option<&str>) -> SessionClaim {
@@ -217,7 +217,7 @@ impl Manager {
         }
     }
 
-    /// Why a capture from a private window is refused: its session ended, or it names none (D279).
+    /// Why a capture from a private window is refused: its session ended, or it names none (D280).
     pub(super) fn refused_private_capture(&self, capture: &NewDownload) -> Option<CoreError> {
         let route = capture.browser_route.as_deref()?;
         let refused = match route.private_session.as_deref() {

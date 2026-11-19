@@ -2,7 +2,7 @@ import { isShellConfig, type ShellConfig } from '@wirecatch/protocol';
 import { isUnknown, object } from './validate';
 
 /**
- * The copy of the values the extension's checks use, kept for the browser session (D61, D279): read from
+ * The copy of the values the extension's checks use, kept for the browser session (D61, D280): read from
  * the app when it connects, kept in `storage.session` so a background the browser stopped still
  * knows it, and gone when the browser closes. The app is the only store of settings (D5).
  */

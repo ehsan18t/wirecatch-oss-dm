@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The keyboard shortcut that sends a page's video or audio: the browser's own, which the app only places in the list (D70, D279).
+  // The keyboard shortcut that sends a page's video or audio: the browser's own, which the app only places in the list (D70, D280).
   import { PRODUCT_NAME } from '@wirecatch/product';
   import { Button, Kbd, SettingRow } from '@wirecatch/ui';
 

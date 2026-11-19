@@ -558,7 +558,7 @@ mod tests {
                 "DEFAULT_MEDIA_TABLES",
                 &[
                     " The tables the extension finds media with before the app first sends its own",
-                    " (`MediaTables::default`, D279).",
+                    " (`MediaTables::default`, D280).",
                 ],
                 "MediaTables",
                 &["MediaTables"],

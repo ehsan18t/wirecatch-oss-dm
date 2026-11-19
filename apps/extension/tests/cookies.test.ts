@@ -17,7 +17,7 @@ function names(cookies: CookieLike[]): string[] {
   return cookies.map((c) => c.name);
 }
 
-/** The sites the app names (D279), here for these addresses. */
+/** The sites the app names (D280), here for these addresses. */
 function plan(
   site: string | null,
   topLevel: string | null,
@@ -115,7 +115,7 @@ describe('mergeCookies', () => {
 });
 
 describe('downloadCookies', () => {
-  it('sends the app every cookie the request can reach, with the request, and no header of its own choosing (D279)', () => {
+  it('sends the app every cookie the request can reach, with the request, and no header of its own choosing (D280)', () => {
     const request: CookieRequest = { initiator: 'https://other.test/links', navigation: true };
     const framed: CookieLike = {
       name: 'framed',

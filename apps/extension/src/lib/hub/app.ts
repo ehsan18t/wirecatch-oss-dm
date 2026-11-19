@@ -113,7 +113,7 @@ export class AppCalls {
   /**
    * Offers something the person picked (the menu, the media button) to the app: first asks
    * whether it takes it, with no cookies, then reads the cookies for the sites it named and hands
-   * it over (D279). The person acted, so this may start the app.
+   * it over (D280). The person acted, so this may start the app.
    */
   async submitChecked(
     handoverId: string,

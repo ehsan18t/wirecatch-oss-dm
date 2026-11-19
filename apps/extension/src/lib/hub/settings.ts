@@ -14,7 +14,7 @@ export function isNewer(next: Revision, held: Revision | null): boolean {
 }
 
 /**
- * What the app told the background (D279): the values the extension's own checks use, live from
+ * What the app told the background (D280): the values the extension's own checks use, live from
  * a connected app and kept for the browser session, and the popup's options, live only. The popup
  * shows only live values, so it never shows a setting the app may have changed since.
  */

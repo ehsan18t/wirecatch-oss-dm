@@ -576,7 +576,7 @@ pub(super) struct Mark {
 
 impl Mark {
     /// The mark of a download of `url` with `origin`: a private one names no address, so only
-    /// its zone is written (D279).
+    /// its zone is written (D280).
     pub fn of(url: &str, origin: &crate::headers::Origin) -> Self {
         if super::private_sessions::is_private(origin) {
             return Self {

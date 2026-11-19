@@ -1,5 +1,5 @@
 <script lang="ts">
-  // A number in its unit, or a switch with one under it where off means no limit (`limit`). The field shows the value divided by the unit's scale; what is sent is the value itself (D279).
+  // A number in its unit, or a switch with one under it where off means no limit (`limit`). The field shows the value divided by the unit's scale; what is sent is the value itself (D280).
   import { NumberInput, SettingRow, SettingSwitch } from '@wirecatch/ui';
   import { shownNumber, storedNumber, type ParsedOption } from '../../../lib/options';
   import type { PopupModel } from '../../../lib/popup/model.svelte';

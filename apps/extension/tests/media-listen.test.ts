@@ -234,7 +234,7 @@ describe('the Cookie header sent with media', () => {
     ]);
   });
 
-  it('is never held for a tab not yet known to be in a normal window (D279)', async () => {
+  it('is never held for a tab not yet known to be in a normal window (D280)', async () => {
     const { requests, responses, registry } = setup();
     requests[1]?.listener(request('7', 'sid=2'));
     responses[1]?.listener(manifest('https://cdn.example.com/a/manifest.mpd', '7'));

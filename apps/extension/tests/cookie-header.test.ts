@@ -1,4 +1,4 @@
-/** The cookies read for a request from a browser's cookie store, the way each browser answers, for the sites the app names (D279). */
+/** The cookies read for a request from a browser's cookie store, the way each browser answers, for the sites the app names (D280). */
 import type { CookieRequest } from '@wirecatch/protocol';
 import { describe, expect, it, vi } from 'vitest';
 import { browser } from 'wxt/browser';
@@ -11,7 +11,7 @@ function site(address: string | null | undefined): string | null {
   return address === null || address === undefined ? null : new URL(address).origin;
 }
 
-/** The cookies read for a request, as a header would carry them, with the sites the app would name (D279); null for none. */
+/** The cookies read for a request, as a header would carry them, with the sites the app would name (D280); null for none. */
 async function header(
   url: string,
   store: Parameters<typeof cookiesFor>[1],

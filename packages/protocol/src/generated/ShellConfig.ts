@@ -3,7 +3,7 @@ import type { MediaTables } from './MediaTables';
 import type { Revision } from './Revision';
 
 /**
- * The values the extension's own checks use (D279): it gates captures, private windows and
+ * The values the extension's own checks use (D280): it gates captures, private windows and
  * media watching with them before anything reaches the app.
  */
 export type ShellConfig = {

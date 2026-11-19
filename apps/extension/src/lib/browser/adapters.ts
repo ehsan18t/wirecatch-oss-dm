@@ -67,7 +67,7 @@ export async function browserInfo(): Promise<BrowserInfo> {
   });
 }
 
-/** What this extension says about itself in `hello`: its version, and the private session while a private window is open (D279). */
+/** What this extension says about itself in `hello`: its version, and the private session while a private window is open (D280). */
 export async function helloFromExtension(
   session: Pick<PrivateSession, 'current'> | null,
 ): Promise<HelloIdentity> {

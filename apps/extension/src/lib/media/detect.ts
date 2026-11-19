@@ -66,7 +66,7 @@ export interface Detection {
   audio: boolean;
 }
 
-/** The app's media tables (D279) as sets, for lookups. */
+/** The app's media tables (D280) as sets, for lookups. */
 export interface MediaRules {
   hlsExtensions: ReadonlySet<string>;
   hlsTypes: ReadonlySet<string>;
@@ -209,7 +209,7 @@ export function isNavigation(response: ObservedResponse): boolean {
  *   the capture flow handles), anything outside a tab, or addresses longer than
  *   `MAX_MEDIA_URL_LENGTH`, nor direct files smaller than `rules.minDirectBytes`.
  *
- * The tables are the app's (D279); the order of the checks stays here.
+ * The tables are the app's (D280); the order of the checks stays here.
  */
 export function classifyResponse(
   response: ObservedResponse,

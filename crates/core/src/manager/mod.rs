@@ -98,7 +98,7 @@ pub struct ManagerConfig {
     /// the app gives up and the browser keeps the download. Shorter than the
     /// extension's own wait for the app's reply.
     pub capture_timeout: Duration,
-    /// How long a private session no connection names stays open (D279).
+    /// How long a private session no connection names stays open (D280).
     pub private_session_grace: Duration,
     /// Where the media add-on comes from: the pinned official releases, or a
     /// local server in tests.
@@ -354,7 +354,7 @@ struct Inner {
     wire_events: broadcast::Sender<Event>,
     /// New at every start, so the extension tells this run's answers from an earlier run's.
     instance: String,
-    /// Raised by every change sent to the extension (D279).
+    /// Raised by every change sent to the extension (D280).
     revision: std::sync::atomic::AtomicU64,
     /// The browsers' private sessions.
     private: Mutex<private_sessions::PrivateSessions>,
@@ -778,7 +778,7 @@ impl Manager {
         entry.note_changes(now);
         let completed = entry.row.status == wirecatch_protocol::app::DownloadStatus::Completed;
         if entry.row.private {
-            // A private download lives in memory only (D279); its partial files are listed by
+            // A private download lives in memory only (D280); its partial files are listed by
             // path alone, so the next start deletes what a crash left of them.
             let deletion = (!completed).then(|| entry.pending_deletion());
             match deletion {

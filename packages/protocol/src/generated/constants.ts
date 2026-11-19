@@ -1440,7 +1440,7 @@ export const SUBTITLE_LANGUAGES: readonly {
 
 /**
  * The tables the extension finds media with before the app first sends its own
- * (`MediaTables::default`, D279).
+ * (`MediaTables::default`, D280).
  */
 export const DEFAULT_MEDIA_TABLES: MediaTables = {
   audio_extensions: ['mp3', 'm4a', 'ogg', 'oga', 'opus', 'wav', 'flac', 'aac', 'weba'],
@@ -1487,7 +1487,7 @@ export const MAX_OPTION_TEXT_CHARS = 500;
 export const CAPTURE_DEADLINE_MS = 12000;
 
 /**
- * The control kinds an option may name (`shell::kinds`, D279).
+ * The control kinds an option may name (`shell::kinds`, D280).
  */
 export const OPTION_KINDS: Readonly<
   Record<

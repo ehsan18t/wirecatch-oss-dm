@@ -968,7 +968,7 @@ impl Manager {
             .await
             .map_err(|e| describe::ytdlp(&e, tools))?;
         let info = Arc::new(info);
-        // A private page's reading (signed addresses, its cookies) is never shared (D279).
+        // A private page's reading (signed addresses, its cookies) is never shared (D280).
         if !super::private_sessions::is_private(&source.fetch.origin) {
             self.inner.page_readings.put(
                 &source.fetch.url,

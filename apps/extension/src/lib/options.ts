@@ -1,5 +1,5 @@
 /**
- * The popup's options as the app describes them (D279). Each option is read on its own: one this
+ * The popup's options as the app describes them (D280). Each option is read on its own: one this
  * version cannot read is left out, and one of a kind it does not know shows as its label and an
  * "Open in Wirecatch" button, so an app newer than the extension never breaks the popup.
  */

@@ -31,7 +31,7 @@ import { hasAccess, newHandoverId } from './media-sender';
 import type { KnownSettings } from './settings';
 
 /** What a context menu click hands over, besides its cookies. */
-/** What the app is asked before it takes a link from the menu, with no cookies (D279). */
+/** What the app is asked before it takes a link from the menu, with no cookies (D280). */
 function menuCheck(
   url: string,
   click: MenuClick,
@@ -182,7 +182,7 @@ export class Hub {
    */
   async onDownload(item: DownloadItemLike): Promise<HandoverResult | null> {
     if (this.#inFlight.has(item.id)) return null;
-    // One deadline from the browser's event bounds every wait for the app (D279).
+    // One deadline from the browser's event bounds every wait for the app (D280).
     const deadline = this.#now() + this.#app.timing.captureDeadlineMs;
     this.#inFlight.set(item.id, null);
     let persisted = false;
@@ -273,7 +273,7 @@ export class Hub {
     const request = { initiator: page, navigation: true };
     const store = cookieStoreOf(tab ?? {});
     const privateSession = await this.#privateSession(tab?.incognito === true);
-    // Its private window closed: the app would have no session to forget it with (D279).
+    // Its private window closed: the app would have no session to forget it with (D280).
     if (tab?.incognito === true && privateSession === null) return this.#browserFallback(url, null);
     const result = await this.#app.submitChecked(
       handoverId,
@@ -342,7 +342,7 @@ export class Hub {
     this.#alerts.recovered(recovered, entry.id);
   }
 
-  /** The private session a capture from a private window comes from; null for a normal window (D279). */
+  /** The private session a capture from a private window comes from; null for a normal window (D280). */
   async #privateSession(incognito: boolean): Promise<string | null> {
     if (!incognito) return null;
     return (await this.#deps.privateSession?.current()) ?? null;

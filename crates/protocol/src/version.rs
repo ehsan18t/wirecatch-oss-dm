@@ -409,7 +409,7 @@ mod tests {
         codes: &'static str,
     }
 
-    /// Every released protocol version, frozen. A released version never changes: what it has is what peers built for it can read. Releasing a new version copies its generated types into `released/v<version>` and adds its entry here (D32); the `protocol` gate check fails when a snapshot already on main changes. A version below `MIN_PROTOCOL_VERSION` stays only as a record (D279): no build speaks it.
+    /// Every released protocol version, frozen. A released version never changes: what it has is what peers built for it can read. Releasing a new version copies its generated types into `released/v<version>` and adds its entry here (D32); the `protocol` gate check fails when a snapshot already on main changes. A version below `MIN_PROTOCOL_VERSION` stays only as a record (D280): no build speaks it.
     const RELEASED: &[Released] = &[Released {
         version: 1,
         calls: include_str!("../released/v1/Call.ts"),

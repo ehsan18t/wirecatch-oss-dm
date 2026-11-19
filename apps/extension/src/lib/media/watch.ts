@@ -24,7 +24,7 @@ export interface WatchDeps {
   privateWindowsOn: () => Promise<boolean>;
   /** The same, as far as it is known this moment; unknown counts as off. Without it, a request's `Cookie` header is held until its answer says whether the tab may be watched. */
   privateWindowsNow?: () => boolean;
-  /** The app's media tables as last known (D279); the ones the extension ships with until then. */
+  /** The app's media tables as last known (D280); the ones the extension ships with until then. */
   mediaTables?: () => MediaTables | null;
   /**
    * Settles once the lists saved by a previous run are restored (`MediaCenter.start`).
@@ -83,7 +83,7 @@ export class MediaWatcher {
   /** A request is about to go out (`webRequest.onSendHeaders`): holds its `Cookie` header for its answer. */
   onRequest(request: ObservedRequest): void {
     if (request.tabId < 0) return;
-    // A private tab's header is not read while private windows are off or not known (D279); a tab
+    // A private tab's header is not read while private windows are off or not known (D280); a tab
     // not yet asked about counts as private, so Chromium's first request in a tab is left out.
     const fromPrivate = request.incognito ?? this.#private.get(request.tabId) ?? true;
     if (fromPrivate && this.#deps.privateWindowsNow?.() !== true) return;

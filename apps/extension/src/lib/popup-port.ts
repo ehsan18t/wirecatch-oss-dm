@@ -84,9 +84,9 @@ export const isAlert = fields<Alert>({
 /** Everything the popup shows, pushed whenever any part of it changes. */
 export interface Snapshot {
   status: ConnectionStatus;
-  /** The connected app's options for the popup; null while it is not connected (D61, D279). */
+  /** The connected app's options for the popup; null while it is not connected (D61, D280). */
   options: OptionList | null;
-  /** "Work in private windows" as far as it is known; unknown counts as off (D279). */
+  /** "Work in private windows" as far as it is known; unknown counts as off (D280). */
   privateWindows: boolean;
   /** Newest first. */
   alerts: Alert[];

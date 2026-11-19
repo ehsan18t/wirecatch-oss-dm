@@ -50,14 +50,14 @@ export interface HubDeps {
   client: NativeClient;
   cache: SettingsCache;
   downloads: BrowserDownloads;
-  /** The cookies the browser holds for a URL in this context, read for the sites the app named (D279). Never rejects. */
+  /** The cookies the browser holds for a URL in this context, read for the sites the app named (D280). Never rejects. */
   cookies: (
     url: string,
     store: CookieStore,
     request: CookieRequest,
     plan: CookiePlan,
   ) => Promise<DownloadCookies>;
-  /** The browser's private session, named with each private capture (D279); without it none is named. */
+  /** The browser's private session, named with each private capture (D280); without it none is named. */
   privateSession?: { current: () => Promise<string | null> };
   /** True when the extension may read cookies for this address (the person can revoke site access in Firefox). */
   hasSiteAccess: (url: string) => Promise<boolean>;
@@ -109,7 +109,7 @@ export interface HubTiming {
   requestTimeoutMs: number;
   /** How long to wait for the answer to `withdraw_download`. */
   withdrawTimeoutMs: number;
-  /** How long a browser download waits for the app, from the browser's event to the answer to `check_download` (D279). */
+  /** How long a browser download waits for the app, from the browser's event to the answer to `check_download` (D280). */
   captureDeadlineMs: number;
 }
 

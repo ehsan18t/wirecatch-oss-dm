@@ -273,7 +273,7 @@ async fn a_client_sharing_no_protocol_version_is_refused_and_closed() -> TestRes
 }
 
 /// An extension from before version ranges sends only `protocol_version: 1`, which no build
-/// speaks since D279: it is refused and told to update.
+/// speaks since D280: it is refused and told to update.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_client_from_before_version_ranges_is_told_to_update() -> TestResult {
     let h = Harness::new().await?;
@@ -429,7 +429,7 @@ async fn a_client_vanishing_mid_frame_does_not_hurt_the_server() -> TestResult {
     Ok(())
 }
 
-/// The options and the values the extension's checks use are the app's (D279): a change from one
+/// The options and the values the extension's checks use are the app's (D280): a change from one
 /// browser is stored and reaches the other browser and the UI, and a change in the app reaches
 /// every browser under a newer revision.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -645,7 +645,7 @@ async fn a_note_reaches_the_browsers_and_their_answers_reach_the_app() -> TestRe
     Ok(())
 }
 
-/// The popup's options (D279) come from the app: a change from one browser is stored and reaches
+/// The popup's options (D280) come from the app: a change from one browser is stored and reaches
 /// the other browser, and one that moves another value (the audio format and its quality) moves
 /// both at once.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -717,7 +717,7 @@ async fn options_out_of_range_or_unknown_are_refused() -> TestResult {
 }
 
 /// Before any cookie is read, the app decides on a capture with the same settings the extension
-/// checks, and names the sites whose cookies the extension reads (D279).
+/// checks, and names the sites whose cookies the extension reads (D280).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_app_decides_a_capture_before_its_cookies_are_read() -> TestResult {
     let h = Harness::new().await?;
@@ -803,7 +803,7 @@ async fn the_app_decides_a_capture_before_its_cookies_are_read() -> TestResult {
     Ok(())
 }
 
-/// A client that speaks only version 1 is refused and told to update (D279).
+/// A client that speaks only version 1 is refused and told to update (D280).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_version_1_client_is_told_to_update() -> TestResult {
     let h = Harness::new().await?;
@@ -1224,7 +1224,7 @@ async fn withdraw_drops_only_what_the_server_has_not_answered() -> TestResult {
 }
 
 /// "Ignore this site" from two browsers at once keeps both, and taking a page back removes the
-/// entry that covers it, a parent site included (D279).
+/// entry that covers it, a parent site included (D280).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn ignored_site_edits_from_two_browsers_merge() -> TestResult {
     let h = Harness::new().await?;
@@ -1952,7 +1952,7 @@ async fn a_closed_question_is_announced_so_the_dialog_closes() -> TestResult {
 
 /// A download from a private window lives in memory only: no row in the database, a mark of the
 /// web without its addresses, and forgotten with its partial files once its private session ends;
-/// a capture arriving late for that session is left in the browser (D279).
+/// a capture arriving late for that session is left in the browser (D280).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_private_download_is_never_stored_and_ends_with_its_session() -> TestResult {
     let h = Harness::new().await?;
@@ -2038,7 +2038,7 @@ fn private_route(session: Option<&str>) -> BrowserRoute {
 }
 
 /// A browser that connected before its first private window opened names the session only on a
-/// capture: the session still ends once that connection closes and no other names it (D279).
+/// capture: the session still ends once that connection closes and no other names it (D280).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_session_first_named_on_a_capture_ends_with_its_connection() -> TestResult {
     let h = Harness::configured(Arc::new(|config| {
@@ -2063,7 +2063,7 @@ async fn a_session_first_named_on_a_capture_ends_with_its_connection() -> TestRe
 }
 
 /// Completion clears a download's cookies and headers, not its session: a finished private
-/// download leaves the list when its session ends, and its file stays (D279).
+/// download leaves the list when its session ends, and its file stays (D280).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_finished_private_download_is_forgotten_with_its_session() -> TestResult {
     let server = fast_server(1024).await?;
@@ -2087,7 +2087,7 @@ async fn a_finished_private_download_is_forgotten_with_its_session() -> TestResu
 }
 
 /// A private capture waiting for the person to confirm it goes with its session, so confirming it
-/// later cannot add a download for a session that ended (D279).
+/// later cannot add a download for a session that ended (D280).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_private_capture_waiting_to_be_confirmed_ends_with_its_session() -> TestResult {
     let h = Harness::new().await?;
@@ -2105,7 +2105,7 @@ async fn a_private_capture_waiting_to_be_confirmed_ends_with_its_session() -> Te
 }
 
 /// A capture for a private session that ended, or from a private window with no session at all,
-/// stays in the browser: the app would have nothing to forget it with (D279).
+/// stays in the browser: the app would have nothing to forget it with (D280).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_private_capture_without_an_open_session_is_refused() -> TestResult {
     let h = Harness::new().await?;

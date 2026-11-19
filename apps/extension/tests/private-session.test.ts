@@ -19,7 +19,7 @@ function session(options: { open: boolean; stored?: string }) {
 }
 
 describe('the private session', () => {
-  it('starts with the first private window and ends with the last (D279)', async () => {
+  it('starts with the first private window and ends with the last (D280)', async () => {
     const s = session({ open: false });
     expect(await s.followed.current()).toBeNull();
     s.windows.open = true;

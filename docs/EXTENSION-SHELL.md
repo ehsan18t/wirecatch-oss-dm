@@ -1,6 +1,6 @@
 # The extension as a shell
 
-Status: built, recorded as D279 in `docs/DECISIONS.md`. The plan below is kept as it was settled; what was built differently, and what is still open, is listed first.
+Status: built, recorded as D280 in `docs/DECISIONS.md`. The plan below is kept as it was settled; what was built differently, and what is still open, is listed first.
 
 ## As built
 

@@ -1,4 +1,4 @@
-//! The extension as a shell (D279): the options its popup shows and the values its own checks
+//! The extension as a shell (D280): the options its popup shows and the values its own checks
 //! use, built from the settings, and a change to one option turned into a settings patch.
 
 use serde_json::{Map, Value, json};

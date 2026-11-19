@@ -23,7 +23,7 @@ export type Hello = {
   max_protocol_version?: number;
   /**
    * The extension's private session while a private window is open, `None` otherwise
-   * (D279): the app forgets a session's private downloads once no connection names it.
+   * (D280): the app forgets a session's private downloads once no connection names it.
    */
   private_session: string | null;
   /**

@@ -1,5 +1,5 @@
 <script lang="ts">
-  // One of a list, or several (`choices`), as a menu. Several are sent as what to add and remove, so an edit made at the same time in another browser stays (D279).
+  // One of a list, or several (`choices`), as a menu. Several are sent as what to add and remove, so an edit made at the same time in another browser stays (D280).
   import { MultiSelect, Select, SettingRow } from '@wirecatch/ui';
   import { menuOf, type MenuValue, type ParsedOption } from '../../../lib/options';
   import type { PopupModel } from '../../../lib/popup/model.svelte';

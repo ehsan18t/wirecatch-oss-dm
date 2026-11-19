@@ -36,7 +36,7 @@ export default wirecatch({
       },
     },
     {
-      // Text the app sends is data, never markup: a store reviewer must find no path from it to the page (D279).
+      // Text the app sends is data, never markup: a store reviewer must find no path from it to the page (D280).
       files: ['src/**', 'entrypoints/**'],
       rules: {
         'no-restricted-properties': [

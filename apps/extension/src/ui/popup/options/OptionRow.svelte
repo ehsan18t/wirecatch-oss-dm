@@ -1,5 +1,5 @@
 <script lang="ts">
-  // One of the app's options, drawn with the popup's own controls (D279). A kind this version does not know shows its name and a way to the app's settings, so a newer app never breaks the popup.
+  // One of the app's options, drawn with the popup's own controls (D280). A kind this version does not know shows its name and a way to the app's settings, so a newer app never breaks the popup.
   import { PRODUCT_NAME } from '@wirecatch/product';
   import { Button, SettingRow, SettingSwitch } from '@wirecatch/ui';
   import type { ParsedOption } from '../../../lib/options';

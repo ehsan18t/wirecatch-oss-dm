@@ -41,7 +41,7 @@ where
     // Subscribed before the hello is answered: a client told it is connected gets every
     // change made from then on, even one made before this task runs again.
     let mut events = manager.subscribe_events();
-    // Released when this returns, however it returns: a session no connection names ends (D279).
+    // Released when this returns, however it returns: a session no connection names ends (D280).
     let mut claim = PrivateClaim {
         manager: &manager,
         claims: Vec::new(),

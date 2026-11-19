@@ -104,7 +104,7 @@ export function shouldCapture(item: CaptureCandidate, settings: ShellConfig): Ca
   return rule === undefined ? { capture: true } : { capture: false, reason: rule.reason };
 }
 
-/** The rules that need no setting: what only the browser knows. A download they keep is never paused, and nothing about it is sent (D279). */
+/** The rules that need no setting: what only the browser knows. A download they keep is never paused, and nothing about it is sent (D280). */
 export function browserKeeps(item: CaptureCandidate): SkipReason | null {
   return BROWSER_RULES.find(({ keeps }) => keeps(item))?.reason ?? null;
 }

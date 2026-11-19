@@ -64,7 +64,7 @@ async function unfold(label: 'Downloads' | 'Video and audio'): Promise<void> {
 const captureSwitch = (): HTMLElement => screen.getByRole('switch', { name: 'Capture downloads' });
 const siteSwitch = (): HTMLElement => screen.getByRole('switch', { name: /^Ignore / });
 
-/** The page's own row, once the app named its site (D279). */
+/** The page's own row, once the app named its site (D280). */
 async function siteRow(name: string | RegExp = /^Ignore .+\./): Promise<HTMLElement> {
   const row = await screen.findByRole('switch', { name });
   await waitFor(() => expect(isUnavailable(row)).toBe(false));
@@ -170,7 +170,7 @@ describe('popup', () => {
     await waitFor(() => expect(siteSwitch().getAttribute('aria-checked')).toBe('true'));
     await user.click(siteSwitch());
     await waitFor(() => expect(app.settings.ignored_sites).toEqual([]));
-    // An action about the page's whole host alone, never the whole list; the app picks the site (D279).
+    // An action about the page's whole host alone, never the whole list; the app picks the site (D280).
     expect(app.calls('invoke_action')).toEqual([
       { method: 'invoke_action', params: { id: 'ignore_site', site: 'www.example.com' } },
       { method: 'invoke_action', params: { id: 'take_site', site: 'www.example.com' } },
@@ -335,7 +335,7 @@ describe('popup', () => {
     );
   });
 
-  it('draws an option of a kind it does not know as its name and a way to the app (D279)', async () => {
+  it('draws an option of a kind it does not know as its name and a way to the app (D280)', async () => {
     const { app } = await openPopup({
       configure: (fake) => {
         const [first, ...rest] = fake.options.groups;

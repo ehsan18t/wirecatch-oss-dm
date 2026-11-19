@@ -62,7 +62,7 @@ pub struct DownloadSummary {
     /// computer's proxy, or no proxy (D73.3). `None` before its first run.
     #[serde(default)]
     pub proxy: Option<String>,
-    /// From a private window (D279): kept in memory only, and forgotten when its private
+    /// From a private window (D280): kept in memory only, and forgotten when its private
     /// session ends.
     #[serde(default)]
     pub private: bool,
@@ -1943,7 +1943,7 @@ pub enum UiEvent {
         id: QuestionId,
         /// Its title, or its address with any password removed.
         title: String,
-        /// From a private window (D279).
+        /// From a private window (D280).
         #[serde(default)]
         private: bool,
     },

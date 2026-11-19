@@ -145,10 +145,10 @@ pub enum Call {
     /// second launch of the app handing over its command line (D103); answered with
     /// [`Reply::Done`].
     OpenLinks(OpenLinks),
-    /// Asks for the values the extension's own checks use (D279); answered with
+    /// Asks for the values the extension's own checks use (D280); answered with
     /// [`Reply::ShellConfig`].
     GetShellConfig,
-    /// Asks for the options the popup shows (D279); answered with [`Reply::Options`].
+    /// Asks for the options the popup shows (D280); answered with [`Reply::Options`].
     GetOptions,
     /// Changes one option; answered with the new [`Reply::Options`], and every client also gets
     /// [`Event::OptionsChanged`] and, when it moved, [`Event::ShellConfigChanged`].
@@ -358,7 +358,7 @@ pub enum Event {
     /// applies, its downloads removed or tried again (D97.4): it leaves the page wherever it shows.
     NoticeWithdrawn(NoticeId),
     /// Sent to every connected client whenever the values the extension's checks use change,
-    /// from any side (D279).
+    /// from any side (D280).
     ShellConfigChanged(Box<ShellConfig>),
     /// Sent to every connected client whenever the popup's options change, from any side.
     OptionsChanged(Box<OptionList>),
@@ -410,7 +410,7 @@ pub struct Hello {
     #[ts(optional)]
     pub max_protocol_version: Option<u32>,
     /// The extension's private session while a private window is open, `None` otherwise
-    /// (D279): the app forgets a session's private downloads once no connection names it.
+    /// (D280): the app forgets a session's private downloads once no connection names it.
     #[serde(default)]
     pub private_session: Option<String>,
     /// Whether the bridge may start the app when it is not running. The extension sets it only when the person did something that needs the app, such as a download from the browser; its checks on waking and its reconnects leave it off, so a Wirecatch the person closed stays closed (D25). Missing means yes, as before.

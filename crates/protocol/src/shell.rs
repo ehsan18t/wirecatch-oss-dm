@@ -1,4 +1,4 @@
-//! What the browser extension draws and acts on, as the app describes it (D279): the options its
+//! What the browser extension draws and acts on, as the app describes it (D280): the options its
 //! popup shows, the values its own checks use, and the app's answer on each capture.
 
 use std::fmt;
@@ -37,7 +37,7 @@ pub struct Revision {
     pub counter: u64,
 }
 
-/// The values the extension's own checks use (D279): it gates captures, private windows and
+/// The values the extension's own checks use (D280): it gates captures, private windows and
 /// media watching with them before anything reaches the app.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
@@ -122,7 +122,7 @@ impl Default for MediaTables {
     }
 }
 
-/// The options the popup shows, in groups (D279). Each option travels as raw JSON so an
+/// The options the popup shows, in groups (D280). Each option travels as raw JSON so an
 /// extension skips one it cannot read and still shows the rest; [`OptionSpec`] is its shape.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
@@ -389,7 +389,7 @@ pub(crate) fn name_tables() -> Vec<crate::exported::Constant> {
     vec![
         Constant::json(
             "OPTION_KINDS",
-            &[" The control kinds an option may name (`shell::kinds`, D279)."],
+            &[" The control kinds an option may name (`shell::kinds`, D280)."],
             "Readonly<Record<'toggle' | 'choice' | 'choices' | 'number' | 'limit' | 'action' | 'note' | 'browser', string>>",
             &[],
             &kinds,

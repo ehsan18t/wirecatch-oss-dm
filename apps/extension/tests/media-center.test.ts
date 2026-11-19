@@ -657,7 +657,7 @@ describe('media button messages', () => {
     expect(cookieCalls).toHaveLength(1);
   });
 
-  it("sends nothing of a private tab's media once private windows are off, whatever the list showed (D279)", async () => {
+  it("sends nothing of a private tab's media once private windows are off, whatever the list showed (D280)", async () => {
     const { app, sender } = await setup({
       configure: (fake) => (fake.settings = { ...fake.settings, private_windows: false }),
     });

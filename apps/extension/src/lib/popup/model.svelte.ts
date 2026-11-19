@@ -86,7 +86,7 @@ export class PopupModel {
   mediaStatus = $state<Record<string, MediaStatus>>({});
   #pending = $state<Pending[]>([]);
 
-  /** The options to show: the app's, with changes still on their way applied on top; null while the app is not connected (D61, D279). */
+  /** The options to show: the app's, with changes still on their way applied on top; null while the app is not connected (D61, D280). */
   groups = $derived.by((): ParsedGroup[] | null => {
     const list = this.snapshot?.options ?? null;
     if (list === null) return null;

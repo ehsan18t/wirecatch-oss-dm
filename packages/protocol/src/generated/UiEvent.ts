@@ -46,7 +46,7 @@ export type UiEvent =
          */
         title: string;
         /**
-         * From a private window (D279).
+         * From a private window (D280).
          */
         private: boolean;
       };

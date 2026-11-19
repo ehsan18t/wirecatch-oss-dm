@@ -45,7 +45,7 @@ export class MediaSender {
     if (!(await hasAccess(this.#deps, target.url))) {
       return { ok: false, message: MEDIA_NO_SITE_ACCESS };
     }
-    // Nothing from a private tab reaches the app while private windows are off or unknown (D279).
+    // Nothing from a private tab reaches the app while private windows are off or unknown (D280).
     let privateSession: string | null = null;
     if (request.cookieStore.private) {
       privateSession = (await app.privateWindowsOn())
@@ -100,7 +100,7 @@ export class MediaSender {
         source: 'media_button',
         media: { kind: target.kind, title: request.title },
       },
-      // Media from another site goes with the cookies its own request carried, when it was seen: no cookie read can tell whether the browser sends its unpartitioned cookies to another site (D59). The app says whether it is from another site (D279).
+      // Media from another site goes with the cookies its own request carried, when it was seen: no cookie read can tell whether the browser sends its unpartitioned cookies to another site (D59). The app says whether it is from another site (D280).
       async (plan) =>
         target.sentCookies !== undefined && plan.cross_site
           ? { cookies: target.sentCookies }

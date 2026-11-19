@@ -1,5 +1,5 @@
 /**
- * The browser's private session (D279): an id held while a private window is open, named in
+ * The browser's private session (D280): an id held while a private window is open, named in
  * `hello` and with every private capture, so the app forgets the session's downloads once it
  * ends. Kept in `storage.local`, so an update or a reload of the extension keeps the session; an
  * id found at start with no private window open belongs to a session that ended meanwhile.

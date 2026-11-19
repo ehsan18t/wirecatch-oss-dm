@@ -1,4 +1,4 @@
-//! What the extension asks of the app as a shell (D279): the values its checks use, the popup's
+//! What the extension asks of the app as a shell (D280): the values its checks use, the popup's
 //! options and page row, its actions, and the app's decision on each capture.
 
 use std::sync::atomic::Ordering;

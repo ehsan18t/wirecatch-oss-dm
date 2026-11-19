@@ -739,7 +739,7 @@ fn text_column(
                         .text_role(Role::Strong, cx)
                         .child(row.file_name.clone()),
                 )
-                // Kept in memory only, and forgotten when its private window closes (D279).
+                // Kept in memory only, and forgotten when its private window closes (D280).
                 .when(row.private, |line| {
                     line.child(
                         div()

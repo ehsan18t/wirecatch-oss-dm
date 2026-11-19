@@ -57,7 +57,7 @@ pub struct Notification {
     /// Whether it matters enough to show during the system's Do Not Disturb, while the person
     /// allows it (D64): what ended and what went wrong do; news does not.
     pub important: bool,
-    /// About a download from a private window (D279): told by the system briefly, never in a
+    /// About a download from a private window (D280): told by the system briefly, never in a
     /// browser, where another window or browser could show it.
     pub private: bool,
 }
@@ -229,7 +229,7 @@ fn finished_in(queue: Option<QueueId>, rows: &[&DownloadSummary]) -> Option<Noti
 }
 
 /// How long a private download's notification shows: never kept in the system's list, since nothing
-/// of a private session may outlive it (D279).
+/// of a private session may outlive it (D280).
 const PRIVATE_STAYS: std::time::Duration = std::time::Duration::from_secs(8);
 
 /// Whether any of `rows` comes from a private window.

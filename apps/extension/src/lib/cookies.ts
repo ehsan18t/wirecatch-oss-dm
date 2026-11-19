@@ -44,7 +44,7 @@ function reachedBy<T extends CookieLike>(cookies: readonly T[], request: CookieR
   );
 }
 
-/** The cookies sent with a download: the browser's whole jar for its address, from which the app picks with its own Public Suffix List (D112, D279). `cookies`, the header itself, goes only with media whose own request was seen. */
+/** The cookies sent with a download: the browser's whole jar for its address, from which the app picks with its own Public Suffix List (D112, D280). `cookies`, the header itself, goes only with media whose own request was seen. */
 export type DownloadCookies = Pick<NewDownload, 'cookies' | 'cookie_jar'>;
 
 export const NO_COOKIES: DownloadCookies = { cookies: null };
@@ -98,7 +98,7 @@ export function cookieReads(
   plan: Pick<CookiePlan, 'site' | 'top_level_site'>,
 ): CookieQuery[][] {
   const base: CookieQuery = storeId === null ? { url } : { url, storeId };
-  // The app names the sites with its own Public Suffix List, so the extension carries none (D279).
+  // The app names the sites with its own Public Suffix List, so the extension carries none (D280).
   const site = plan.site;
   const topLevel = plan.top_level_site;
   const firstParty = topLevel ?? site;

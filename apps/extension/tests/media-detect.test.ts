@@ -428,7 +428,7 @@ describe('addresses', () => {
     expect(classifyUrl('https://e.com/watch')).toBeNull();
   });
 
-  it("follows the app's tables, so a new type needs no extension release (D279)", () => {
+  it("follows the app's tables, so a new type needs no extension release (D280)", () => {
     const rules = mediaRules({
       ...DEFAULT_MEDIA_TABLES,
       video_extensions: [...DEFAULT_MEDIA_TABLES.video_extensions, 'm2ts'],

@@ -241,7 +241,7 @@ fn a_repeated_handover_id_adds_one_download() {
 }
 
 /// Scenario 4: a change from the extension's popup is the app's setting at once and reaches the
-/// other browser; a change in the app reaches both browsers (D279).
+/// other browser; a change in the app reaches both browsers (D280).
 #[test]
 fn extension_settings_sync_both_ways() {
     run(|sandbox| async move {

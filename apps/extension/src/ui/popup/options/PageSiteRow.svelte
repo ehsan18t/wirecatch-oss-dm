@@ -1,5 +1,5 @@
 <script lang="ts">
-  // "Ignore this site" for the tab's page (D279). The app names the site: the page's own, or the entry that already ignores it, a parent site included, which turning the switch off removes. Only the page's host name is sent, and never from a private tab while private windows are not known to be on.
+  // "Ignore this site" for the tab's page (D280). The app names the site: the page's own, or the entry that already ignores it, a parent site included, which turning the switch off removes. Only the page's host name is sent, and never from a private tab while private windows are not known to be on.
   import { SHELL_ACTIONS, type PageOptions } from '@wirecatch/protocol';
   import { SettingSwitch } from '@wirecatch/ui';
   import type { PopupModel } from '../../../lib/popup/model.svelte';

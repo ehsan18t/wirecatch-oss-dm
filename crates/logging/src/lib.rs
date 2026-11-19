@@ -20,7 +20,7 @@
 
 pub mod redact;
 
-/// The name of the span a private download's work runs in (D279): nothing logged inside it is
+/// The name of the span a private download's work runs in (D280): nothing logged inside it is
 /// written, since its addresses and file names must not outlive the private session.
 pub const PRIVATE_SPAN: &str = "private_download";
 
@@ -268,7 +268,7 @@ mod setup {
             assert!(text.contains(" WARN "), "{text}");
         }
 
-        /// A private download's lines never reach the log, however deep in its work they are logged (D279).
+        /// A private download's lines never reach the log, however deep in its work they are logged (D280).
         #[test]
         fn nothing_logged_inside_a_private_download_is_written() {
             let folder = tempfile::tempdir().unwrap();

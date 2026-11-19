@@ -139,7 +139,7 @@ impl fmt::Debug for NewDownload {
 pub struct BrowserRoute {
     /// A private page must never be reopened in the regular browser profile.
     pub private_window: bool,
-    /// The private session the download comes from (D279): the app keeps such a download in
+    /// The private session the download comes from (D280): the app keeps such a download in
     /// memory only and forgets it when the session ends.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional = nullable)]

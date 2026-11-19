@@ -267,7 +267,7 @@ pub(super) struct Entry {
     pub activity: Activity,
     /// The row as its last save left it.
     pub seen: Seen,
-    /// The private session it comes from (D279): kept apart from `origin`, which completion
+    /// The private session it comes from (D280): kept apart from `origin`, which completion
     /// clears, so the session's end still finds it.
     pub private_session: Option<String>,
 }

@@ -166,7 +166,7 @@ function noticeCenter({ settings, app }: AppSide): NoticeCenter {
   });
 }
 
-/** The browser's private session (D279), told when its last private window closes; `ended` is set once the app side exists. */
+/** The browser's private session (D280), told when its last private window closes; `ended` is set once the app side exists. */
 function followPrivateSession(): {
   session: PrivateSession;
   ended: { tell: (id: string) => void };
@@ -224,7 +224,7 @@ export default defineBackground(() => {
     ignoredSites: () => settings.known()?.ignored_sites ?? [],
     videoSites: () => settings.known()?.video_sites ?? [],
     mediaButtonOn: () => settings.mediaButtonOnceLoaded(),
-    // Unasked work reads only the values held: a page never starts the app (D25.6, D279).
+    // Unasked work reads only the values held: a page never starts the app (D25.6, D280).
     privateWindowsOn: () => settings.privateWindowsKnownOn(),
     liveTabs,
   });

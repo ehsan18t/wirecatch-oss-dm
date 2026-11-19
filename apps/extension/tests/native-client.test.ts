@@ -535,7 +535,7 @@ describe('NativeClient', () => {
     expect(client.status.state).toBe('connected');
   });
 
-  it('refuses an app that speaks only version 1, which no build speaks since D279, and says to update it', async () => {
+  it('refuses an app that speaks only version 1, which no build speaks since D280, and says to update it', async () => {
     app.versions = { oldest: 1, newest: 1 };
     app.readsVersionRanges = false;
     client = makeClient(app);

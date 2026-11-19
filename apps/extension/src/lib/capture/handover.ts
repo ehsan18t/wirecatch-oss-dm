@@ -108,7 +108,7 @@ export interface HandoverDeps extends SubmitDeps {
    * when needed), or the session copy when the app cannot be reached; null if neither.
    */
   liveSettings: (timeoutMs: number) => Promise<JudgingSettings | null>;
-  /** Asks whether the app takes the capture, with no cookies; rejects when no answer comes within `timeoutMs` (D279). */
+  /** Asks whether the app takes the capture, with no cookies; rejects when no answer comes within `timeoutMs` (D280). */
   check: (check: DownloadCheck, timeoutMs: number) => Promise<CheckAnswer>;
   /** The cookies the browser holds for a URL in this context, read for the sites the app named. Never rejects. */
   cookies: (
@@ -119,7 +119,7 @@ export interface HandoverDeps extends SubmitDeps {
   ) => Promise<DownloadCookies>;
   /** The private session the download comes from; null for a normal window. */
   privateSession: (incognito: boolean) => Promise<string | null>;
-  /** When the wait for the app ends, in the clock of `now`: one deadline from the browser's event (D279). */
+  /** When the wait for the app ends, in the clock of `now`: one deadline from the browser's event (D280). */
   deadline: number;
   now: () => number;
   userAgent: string | null;
@@ -135,7 +135,7 @@ export type KeptReason =
   | SkipReason
   /** The app answered with an error. */
   | 'app_refused'
-  /** The app said to leave it in the browser (D279). */
+  /** The app said to leave it in the browser (D280). */
   | 'app_left'
   /** No answer came back, and the app then withdrew it (or could not be asked). */
   | 'no_answer'
@@ -187,7 +187,7 @@ export interface HandoverInput {
  * 1. Pause the browser download. If that fails, leave it alone.
  * 2. Check the settings again (the app's, fetched first when not known) and ask the app with
  *    `check_download`, which carries no cookies, whether it takes the download; one deadline from
- *    the browser's event bounds both (D279).
+ *    the browser's event bounds both (D280).
  * 3. Read the cookies for the sites the app named, and send `add_download` under the handover id the caller chose and saved before pausing; if
  *    no answer comes back, withdraw it (see `submit`).
  * 4. Only when the app has it (started, queued or awaiting confirmation): cancel and erase the browser copy,
@@ -260,7 +260,7 @@ function navigationOf(candidate: CaptureCandidate): CookieRequest {
 }
 
 /**
- * Asks the app with `check_download` whether it takes the download, with no cookies (D279): the
+ * Asks the app with `check_download` whether it takes the download, with no cookies (D280): the
  * sites to read cookies for when it does, or why it stays in the browser. Nothing with credentials
  * was sent when the answer does not come, so there is nothing to withdraw.
  */
@@ -274,7 +274,7 @@ async function askApp(
 > {
   const request = navigationOf(candidate);
   const privateSession = await deps.privateSession(candidate.incognito);
-  // Its private window closed: the app would have no session to forget it with (D279).
+  // Its private window closed: the app would have no session to forget it with (D280).
   if (candidate.incognito && privateSession === null) {
     return { reason: 'private_window', detail: null };
   }

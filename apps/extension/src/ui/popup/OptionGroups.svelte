@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The app's option groups (D279): a group without a title is a card that does not fold, one with a title folds under a line that says what it is set to, and opens folded when the app says so. Opening one is a view of the moment, not a setting (D61).
+  // The app's option groups (D280): a group without a title is a card that does not fold, one with a title folds under a line that says what it is set to, and opens folded when the app says so. Opening one is a view of the moment, not a setting (D61).
   import { Card, Disclosure } from '@wirecatch/ui';
   import type { ParsedGroup } from '../../lib/options';
   import type { PopupModel } from '../../lib/popup/model.svelte';

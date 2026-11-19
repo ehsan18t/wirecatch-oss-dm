@@ -124,7 +124,7 @@ impl Manager {
             timeout: self.inner.media_timeout,
             refresh_delays: self.inner.media_refresh_delays.clone(),
             clock: self.inner.clock.clone(),
-            // A private page's reading (signed addresses, its cookies) is never shared (D279).
+            // A private page's reading (signed addresses, its cookies) is never shared (D280).
             readings: if entry.private_session.is_some() {
                 Arc::default()
             } else {

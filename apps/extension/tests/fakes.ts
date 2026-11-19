@@ -39,7 +39,7 @@ import type { CachedSettings, SettingsCache } from '../src/lib/cache';
 import type { Channel, Alert } from '../src/lib/popup-port';
 import type { NativePort, NativeTransport } from '../src/lib/native/client';
 
-/** The values the extension's checks use, as a fresh install has them (D279), from the fake app. */
+/** The values the extension's checks use, as a fresh install has them (D280), from the fake app. */
 export const DEFAULT_SETTINGS: ShellConfig = {
   ...DEFAULT_SHELL_CONFIG,
   revision: { instance: 'fake', counter: 1 },

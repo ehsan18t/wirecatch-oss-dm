@@ -1,4 +1,4 @@
-// `task-span`: refuses a task or blocking work started with tokio's own functions in the shipped code of the crates a download's work runs in. They start it in no span, so the log filter that keeps a private download's lines out of the log (D279) would let that task's lines through; `wirecatch_engine::task` keeps the caller's span.
+// `task-span`: refuses a task or blocking work started with tokio's own functions in the shipped code of the crates a download's work runs in. They start it in no span, so the log filter that keeps a private download's lines out of the log (D280) would let that task's lines through; `wirecatch_engine::task` keeps the caller's span.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { filesMatching, GateError, ROOT } from './process.mjs';
@@ -37,7 +37,7 @@ function taskSpan() {
     );
   if (hits.length > 0) {
     throw new GateError(
-      `Tasks started outside the caller's span, which the log filter for private downloads cannot see (D279). Use \`wirecatch_engine::task::spawn\` or \`spawn_blocking\`:\n${hits.join('\n')}`,
+      `Tasks started outside the caller's span, which the log filter for private downloads cannot see (D280). Use \`wirecatch_engine::task::spawn\` or \`spawn_blocking\`:\n${hits.join('\n')}`,
     );
   }
 }

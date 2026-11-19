@@ -3,7 +3,7 @@ import type { OptionGroup } from './OptionGroup';
 import type { Revision } from './Revision';
 
 /**
- * The options the popup shows, in groups (D279). Each option travels as raw JSON so an
+ * The options the popup shows, in groups (D280). Each option travels as raw JSON so an
  * extension skips one it cannot read and still shows the rest; [`OptionSpec`] is its shape.
  */
 export type OptionList = {

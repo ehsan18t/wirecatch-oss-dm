@@ -181,7 +181,7 @@ describe('handover', () => {
         user_agent: 'TestBrowser/1.0',
         extra_headers: [],
         source: 'browser_download',
-        // The app picks the queue (D279).
+        // The app picks the queue (D280).
         queue: null,
       },
     ]);
@@ -1553,7 +1553,7 @@ describe('context menu', () => {
     });
   });
 
-  it('lets the browser download a link from a private window that has since closed (D279)', async () => {
+  it('lets the browser download a link from a private window that has since closed (D280)', async () => {
     s = await setup({ privateSession: null });
     const result = await s.hub.onMenuClick(
       { linkUrl: 'https://example.com/a.zip' },

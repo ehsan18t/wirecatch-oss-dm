@@ -98,7 +98,7 @@ export type DownloadSummary = {
    */
   proxy: string | null;
   /**
-   * From a private window (D279): kept in memory only, and forgotten when its private
+   * From a private window (D280): kept in memory only, and forgotten when its private
    * session ends.
    */
   private: boolean;
