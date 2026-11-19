@@ -134,9 +134,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # What a store upload needs on top of the release checks: the bundled Public Suffix List is current.
       - name: Check the extension release
-        run: node scripts/gate.mjs release-build-extension
+        run: node scripts/gate.mjs release-build
 
       - name: Build the store packages
         run: pnpm --filter @wirecatch/extension zip
