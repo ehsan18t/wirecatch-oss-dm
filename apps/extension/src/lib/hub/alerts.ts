@@ -9,6 +9,7 @@ export const NO_SITE_ACCESS = `${PRODUCT_NAME} needs access to websites to captu
 
 export const MEDIA_NO_SITE_ACCESS = `${PRODUCT_NAME} needs access to websites to send media with their cookies. Open the ${PRODUCT_NAME} popup and click Allow access.`;
 
+export const MEDIA_PRIVATE_WINDOW = `${PRODUCT_NAME} is turned off in private windows. Turn on "Work in private windows" in the ${PRODUCT_NAME} popup.`;
 export const MENU_PRIVATE_WINDOW = `${PRODUCT_NAME} is turned off in private windows. Turn on "Work in private windows" in the ${PRODUCT_NAME} popup, or use the browser's own "Save as" option.`;
 
 export const MENU_NOT_WEB = `${PRODUCT_NAME} can only capture web links, so the browser is downloading this item instead.`;

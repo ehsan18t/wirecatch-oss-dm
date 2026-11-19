@@ -1,8 +1,8 @@
 /**
  * The browser's private session (D279): an id held while a private window is open, named in
  * `hello` and with every private capture, so the app forgets the session's downloads once it
- * ends. Kept in session storage, which an update or reload clears; the app then takes the new
- * id from a connection with private windows still open as the same session.
+ * ends. Kept in `storage.local`, so an update or a reload of the extension keeps the session; an
+ * id found at start with no private window open belongs to a session that ended meanwhile.
  */
 import { fallback } from './diag/log';
 import type { StorageArea } from './cache';
@@ -28,9 +28,11 @@ export class PrivateSession {
     this.#deps = deps;
     this.#loaded = deps.area
       .get(PRIVATE_SESSION_KEY)
-      .then((items) => {
+      .then(async (items) => {
         const id = items[PRIVATE_SESSION_KEY];
-        if (typeof id === 'string' && id !== '') this.#id = id;
+        if (typeof id !== 'string' || id === '') return;
+        this.#id = id;
+        if (!(await deps.anyPrivateWindow())) this.#end();
       })
       .catch(fallback('settings', 'Could not read the private session', undefined));
   }
@@ -50,7 +52,12 @@ export class PrivateSession {
   async windowsChanged(): Promise<void> {
     await this.#loaded;
     if (this.#id === null || (await this.#deps.anyPrivateWindow())) return;
+    this.#end();
+  }
+
+  #end(): void {
     const ended = this.#id;
+    if (ended === null) return;
     this.#id = null;
     this.#save();
     this.#deps.ended(ended);

@@ -1,9 +1,10 @@
+import { DEFAULT_MEDIA_TABLES } from '@wirecatch/protocol';
 import { describe, expect, it } from 'vitest';
 import {
   classifyResponse,
   classifyUrl,
   isNavigation,
-  MIN_DIRECT_MEDIA_BYTES,
+  mediaRules,
   rejectionOf,
   type ObservedResponse,
 } from '../src/lib/media/detect';
@@ -160,11 +161,10 @@ describe('classifyResponse', () => {
           headers,
         }),
       );
-    expect(MIN_DIRECT_MEDIA_BYTES).toBe(102_400);
-    expect(file({ 'Content-Length': String(MIN_DIRECT_MEDIA_BYTES - 1) })).toBeNull();
-    expect(file({ 'Content-Length': String(MIN_DIRECT_MEDIA_BYTES) })?.size).toBe(
-      MIN_DIRECT_MEDIA_BYTES,
-    );
+    const least = DEFAULT_MEDIA_TABLES.min_direct_bytes;
+    expect(least).toBe(102_400);
+    expect(file({ 'Content-Length': String(least - 1) })).toBeNull();
+    expect(file({ 'Content-Length': String(least) })?.size).toBe(least);
     expect(file({})).toMatchObject({ kind: 'direct', size: null });
   });
 
@@ -426,6 +426,24 @@ describe('addresses', () => {
     expect(classifyUrl('https://e.com/a/b.flac')).toEqual({ kind: 'direct', audio: true });
     expect(classifyUrl('https://e.com/a/page.html')).toBeNull();
     expect(classifyUrl('https://e.com/watch')).toBeNull();
+  });
+
+  it("follows the app's tables, so a new type needs no extension release (D279)", () => {
+    const rules = mediaRules({
+      ...DEFAULT_MEDIA_TABLES,
+      video_extensions: [...DEFAULT_MEDIA_TABLES.video_extensions, 'm2ts'],
+      min_direct_bytes: 10,
+    });
+    expect(classifyUrl('https://e.com/a.m2ts')).toBeNull();
+    expect(classifyUrl('https://e.com/a.m2ts', rules)).toEqual({ kind: 'direct', audio: false });
+    const small = response({
+      url: 'https://e.com/a.m2ts',
+      type: 'media',
+      contentType: 'application/octet-stream',
+      headers: { 'Content-Length': '20' },
+    });
+    expect(classifyResponse(small)).toBeNull();
+    expect(classifyResponse(small, rules)).toMatchObject({ kind: 'direct', size: 20 });
   });
 
   it('treats a successful page load in a tab as a navigation, but not a download or a frame', () => {

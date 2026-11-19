@@ -34,14 +34,18 @@ export function firstState(model: PopupModel, media: boolean): Promise<void> {
   });
 }
 
-/** The tab the popup was opened over. */
-export async function activeTab(): Promise<{ id: number | null; url: string | null }> {
+/** The tab the popup was opened over; one that cannot be read counts as private. */
+export async function activeTab(): Promise<{
+  id: number | null;
+  url: string | null;
+  incognito: boolean;
+}> {
   try {
     const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-    return { id: tab?.id ?? null, url: tab?.url ?? null };
+    return { id: tab?.id ?? null, url: tab?.url ?? null, incognito: tab?.incognito ?? true };
   } catch (error) {
     log.warn('popup', 'Could not read the active tab', error);
-    return { id: null, url: null };
+    return { id: null, url: null, incognito: true };
   }
 }
 

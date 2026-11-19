@@ -1,5 +1,5 @@
 import { PRODUCT_NAME } from '@wirecatch/product';
-import type { Call, Event, Outcome } from '@wirecatch/protocol';
+import type { Call, CookieRequest, DownloadCheck, Event, Outcome } from '@wirecatch/protocol';
 import { candidateFromItem, type DownloadItemLike } from '../capture/candidate';
 import {
   handOver,
@@ -31,6 +31,26 @@ import { hasAccess, newHandoverId } from './media-sender';
 import type { KnownSettings } from './settings';
 
 /** What a context menu click hands over, besides its cookies. */
+/** What the app is asked before it takes a link from the menu, with no cookies (D279). */
+function menuCheck(
+  url: string,
+  click: MenuClick,
+  request: CookieRequest,
+  privateSession: string | null,
+): DownloadCheck {
+  return {
+    url,
+    page_url: click.pageUrl ?? null,
+    frame_url: click.frameUrl ?? null,
+    file_name: null,
+    mime: null,
+    size: null,
+    source: 'context_menu',
+    private_session: privateSession,
+    cookie_request: request,
+  };
+}
+
 function menuFields(
   url: string,
   click: MenuClick,
@@ -253,18 +273,11 @@ export class Hub {
     const request = { initiator: page, navigation: true };
     const store = cookieStoreOf(tab ?? {});
     const privateSession = await this.#privateSession(tab?.incognito === true);
+    // Its private window closed: the app would have no session to forget it with (D279).
+    if (tab?.incognito === true && privateSession === null) return this.#browserFallback(url, null);
     const result = await this.#app.submitChecked(
       handoverId,
-      {
-        url,
-        page_url: click.pageUrl ?? null,
-        file_name: null,
-        mime: null,
-        size: null,
-        source: 'context_menu',
-        private_session: privateSession,
-        cookie_request: request,
-      },
+      menuCheck(url, click, request, privateSession),
       menuFields(url, click, tab, privateSession),
       (plan) => this.#deps.cookies(url, store, request, plan),
     );

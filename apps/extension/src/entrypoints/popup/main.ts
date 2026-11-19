@@ -55,7 +55,8 @@ async function start(): Promise<void> {
     props: {
       model,
       currentUrl: tab.url,
-      privateTab: browser.extension.inIncognitoContext,
+      // The tab's own window: `inIncognitoContext` is false for a popup over a private tab in Chromium's default (spanning) mode.
+      privateTab: tab.incognito,
       siteAccess,
       requestSiteAccess,
       mediaShortcut: shortcut,

@@ -1,7 +1,9 @@
+import type { MediaTables } from '@wirecatch/protocol';
 import { fallback } from '../diag/log';
 import {
   classifyResponse,
   isNavigation,
+  mediaRules,
   requestedBy,
   sentCookies,
   type ObservedRequest,
@@ -22,6 +24,8 @@ export interface WatchDeps {
   privateWindowsOn: () => Promise<boolean>;
   /** The same, as far as it is known this moment; unknown counts as off. Without it, a request's `Cookie` header is held until its answer says whether the tab may be watched. */
   privateWindowsNow?: () => boolean;
+  /** The app's media tables as last known (D279); the ones the extension ships with until then. */
+  mediaTables?: () => MediaTables | null;
   /**
    * Settles once the lists saved by a previous run are restored (`MediaCenter.start`).
    * Responses wait for it, in order, so a navigation that woke the background clears
@@ -71,11 +75,17 @@ export class MediaWatcher {
     this.#deps = deps;
   }
 
+  /** The browser said whether tab `tabId` is private (`tabs.onUpdated`), so its requests need not wait to be asked about. */
+  knowTab(tabId: number, incognito: boolean): void {
+    this.#private.set(tabId, incognito);
+  }
+
   /** A request is about to go out (`webRequest.onSendHeaders`): holds its `Cookie` header for its answer. */
   onRequest(request: ObservedRequest): void {
     if (request.tabId < 0) return;
-    // A private tab's header is not read while private windows are off or not known (D279).
-    const fromPrivate = request.incognito ?? this.#private.get(request.tabId) ?? false;
+    // A private tab's header is not read while private windows are off or not known (D279); a tab
+    // not yet asked about counts as private, so Chromium's first request in a tab is left out.
+    const fromPrivate = request.incognito ?? this.#private.get(request.tabId) ?? true;
     if (fromPrivate && this.#deps.privateWindowsNow?.() !== true) return;
     // Sent again after a redirect: the last hop's header is the one its answer came to.
     this.#sent.delete(request.requestId);
@@ -96,7 +106,8 @@ export class MediaWatcher {
       this.#newPage(tabId, page);
       this.#urls.set(tabId, page);
     }
-    const detection = classifyResponse(response);
+    const tables = this.#deps.mediaTables?.() ?? null;
+    const detection = classifyResponse(response, tables === null ? undefined : mediaRules(tables));
     if (detection === null || (await this.#leftOut(response))) return;
     this.#registry.add(
       tabId,

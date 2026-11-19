@@ -22,16 +22,16 @@ import {
 } from '../src/lib/native/status';
 import { BADGE_TOKEN, cssColor } from '../src/lib/theme';
 import { originPattern } from '../src/lib/site-access';
-import { matchingSite, siteForPage } from '../src/lib/sites';
+import { matchingSite, pageHost } from '../src/lib/sites';
 import { TOKENS_CSS } from '../build-values';
 import { DEFAULT_SETTINGS } from './fakes';
 
 describe('sites', () => {
-  it('gives the site for "Ignore this site" without www', () => {
-    expect(siteForPage('https://www.example.com/a')).toBe('example.com');
-    expect(siteForPage('http://sub.example.com/')).toBe('sub.example.com');
-    expect(siteForPage('chrome://newtab/')).toBeNull();
-    expect(siteForPage(null)).toBeNull();
+  it('gives the page host the app is asked about, www included', () => {
+    expect(pageHost('https://www.example.com/a')).toBe('www.example.com');
+    expect(pageHost('http://sub.example.com/')).toBe('sub.example.com');
+    expect(pageHost('chrome://newtab/')).toBeNull();
+    expect(pageHost(null)).toBeNull();
   });
 
   it('matches a host and its subdomains only', () => {

@@ -32,6 +32,8 @@ interface Options {
   cache?: SettingsCache;
   downloads?: FakeDownloads;
   start?: boolean;
+  /** The open private session; null once the last private window closed. */
+  privateSession?: string | null;
 }
 
 interface Setup {
@@ -79,6 +81,12 @@ async function setup(options: Options = {}): Promise<Setup> {
       return Promise.resolve({ cookies: url.includes('example.com') ? 'session=abc' : null });
     },
     hasSiteAccess: () => Promise.resolve(options.siteAccess ?? true),
+    privateSession: {
+      current: () =>
+        Promise.resolve(
+          options.privateSession === undefined ? 'private-1' : options.privateSession,
+        ),
+    },
     userAgent: 'TestBrowser/1.0',
     inFlight,
     alert,
@@ -1540,6 +1548,20 @@ describe('context menu', () => {
     );
     expect(result).toBe('handed_over');
     expect(s.cookieCalls).toEqual([['https://example.com/a.zip', { id: null, private: true }]]);
+    expect(s.app.calls('check_download')[0]).toMatchObject({
+      params: { private_session: 'private-1' },
+    });
+  });
+
+  it('lets the browser download a link from a private window that has since closed (D279)', async () => {
+    s = await setup({ privateSession: null });
+    const result = await s.hub.onMenuClick(
+      { linkUrl: 'https://example.com/a.zip' },
+      { incognito: true, cookieStoreId: null },
+    );
+    expect(result).toBe('browser');
+    expect(s.app.calls('check_download')).toHaveLength(0);
+    expect(s.cookieCalls).toEqual([]);
   });
 
   it('asks the app before taking a private window while the settings are not known yet', async () => {

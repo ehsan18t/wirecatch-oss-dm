@@ -8,11 +8,10 @@
 import { hostOnSite, normalizeSite } from '@wirecatch/protocol';
 import { hostOf, parseWebUrl } from './url';
 
-/** The site to ignore when the person clicks "Ignore this site" on a page: its host without `www.`. */
-export function siteForPage(url: string | null): string | null {
+/** The host of a web page, as the app is asked about it ("Ignore this site"): whole, `www.` included, so an entry for `www.example.com` alone still matches; the app picks the site to add. */
+export function pageHost(url: string | null): string | null {
   const host = url === null ? null : parseWebUrl(url)?.hostname.toLowerCase();
-  if (host === undefined || host === null) return null;
-  return host.replace(/^www\./, '');
+  return host === undefined || host === null || host === '' ? null : host;
 }
 
 /** The ignored-site entry that covers `url`, if any. */

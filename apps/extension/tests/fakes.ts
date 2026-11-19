@@ -3,7 +3,6 @@
  * flows run end to end in tests without a browser, a bridge or an app.
  */
 import {
-  DEFAULT_MEDIA_TABLES,
   downloadId,
   MIN_PROTOCOL_VERSION,
   PROTOCOL_VERSION,
@@ -23,7 +22,7 @@ import {
   type QueueSummary,
   type WithdrawOutcome,
 } from '@wirecatch/protocol';
-import { DEFAULT_OPTIONS } from '@wirecatch/protocol/testing/options';
+import { DEFAULT_OPTIONS, DEFAULT_SHELL_CONFIG } from '@wirecatch/protocol/testing/options';
 import { vi } from 'vitest';
 import { browser } from 'wxt/browser';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
@@ -40,17 +39,10 @@ import type { CachedSettings, SettingsCache } from '../src/lib/cache';
 import type { Channel, Alert } from '../src/lib/popup-port';
 import type { NativePort, NativeTransport } from '../src/lib/native/client';
 
-/** The values the extension's checks use, as a fresh install has them (D279). */
+/** The values the extension's checks use, as a fresh install has them (D279), from the fake app. */
 export const DEFAULT_SETTINGS: ShellConfig = {
+  ...DEFAULT_SHELL_CONFIG,
   revision: { instance: 'fake', counter: 1 },
-  capture_enabled: true,
-  private_windows: true,
-  show_media_button: true,
-  ignored_sites: [],
-  capture_extensions: [],
-  min_capture_size: 0,
-  video_sites: [],
-  media: DEFAULT_MEDIA_TABLES,
 };
 
 /** `config` under the next revision, as the app sends a change. */

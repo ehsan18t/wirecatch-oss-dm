@@ -237,7 +237,7 @@ export async function handOver(input: HandoverInput, deps: HandoverDeps): Promis
   if (!decision.capture) return keep(null, decision.reason, null);
   if (!judging.fromApp) return keep(null, 'app_unreachable', null);
 
-  const asked = await askApp(candidate, deps, left());
+  const asked = await askApp(candidate, deps, left);
   if ('reason' in asked) return keep(null, asked.reason, asked.detail);
   const { handoverId } = input;
   const download = newDownload(handoverId, deps.userAgent, {
@@ -267,19 +267,24 @@ function navigationOf(candidate: CaptureCandidate): CookieRequest {
 async function askApp(
   candidate: CaptureCandidate,
   deps: HandoverDeps,
-  timeoutMs: number,
+  left: () => number,
 ): Promise<
   | { plan: CookiePlan; request: CookieRequest; privateSession: string | null }
   | { reason: KeptReason; detail: string | null }
 > {
   const request = navigationOf(candidate);
   const privateSession = await deps.privateSession(candidate.incognito);
+  // Its private window closed: the app would have no session to forget it with (D279).
+  if (candidate.incognito && privateSession === null) {
+    return { reason: 'private_window', detail: null };
+  }
   let answer: CheckAnswer;
   try {
     answer = await deps.check(
       {
         url: candidate.url,
         page_url: candidate.referrer,
+        frame_url: null,
         file_name: candidate.fileName,
         mime: candidate.mime,
         size: candidate.size,
@@ -287,7 +292,7 @@ async function askApp(
         private_session: privateSession,
         cookie_request: request,
       },
-      timeoutMs,
+      left(),
     );
   } catch (error) {
     const unsent = error instanceof RequestError && error.kind === 'too_large';

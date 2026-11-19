@@ -3,7 +3,7 @@ import { log } from '../diag/log';
 import type { MediaRequest, MediaSendResult } from '../media/center';
 import { MEDIA_UNREACHABLE } from '../media/messages';
 import { refererFor } from '../referrer';
-import { MEDIA_NO_SITE_ACCESS, mediaAnswer } from './alerts';
+import { MEDIA_NO_SITE_ACCESS, MEDIA_PRIVATE_WINDOW, mediaAnswer } from './alerts';
 import type { AppSide } from './app';
 import type { HubDeps } from './deps';
 
@@ -45,6 +45,14 @@ export class MediaSender {
     if (!(await hasAccess(this.#deps, target.url))) {
       return { ok: false, message: MEDIA_NO_SITE_ACCESS };
     }
+    // Nothing from a private tab reaches the app while private windows are off or unknown (D279).
+    let privateSession: string | null = null;
+    if (request.cookieStore.private) {
+      privateSession = (await app.privateWindowsOn())
+        ? ((await this.#deps.privateSession?.current()) ?? null)
+        : null;
+      if (privateSession === null) return { ok: false, message: MEDIA_PRIVATE_WINDOW };
+    }
     await settings.ready;
     if (!app.connected || settings.live === null) {
       // Connect first, so "could not be reached" is certain: nothing has been sent yet when this fails.
@@ -61,14 +69,12 @@ export class MediaSender {
       top_level: request.pageUrl,
       navigation: target.kind === 'page',
     };
-    const privateSession = request.cookieStore.private
-      ? ((await this.#deps.privateSession?.current()) ?? null)
-      : null;
     const result = await app.submitChecked(
       newHandoverId(this.#deps),
       {
         url: target.url,
         page_url: request.pageUrl,
+        frame_url: target.requestedBy,
         file_name: null,
         mime: target.mime,
         size: target.size,

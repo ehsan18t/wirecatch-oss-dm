@@ -14,7 +14,6 @@ import {
   alertStore,
   publishButtonSetting,
   retireLocalSettings,
-  sessionArea,
   settingsCache,
   tabInfo,
   toolbarBadge,
@@ -44,7 +43,6 @@ import { NoticeCenter } from '@/lib/notices/center';
 import { focusedWebTab } from '@/lib/notices/focus';
 import { NOTICE_MOUNT, NOTICE_UNMOUNT, NOTICES_PORT, isMountAnswer } from '@/lib/notices/messages';
 import { SITE_ORIGINS } from '@/lib/site-access';
-import { memoryArea } from '@/lib/cache';
 import { PrivateSession } from '@/lib/private-session';
 import { parseWebUrl } from '@/lib/url';
 
@@ -175,7 +173,7 @@ function followPrivateSession(): {
 } {
   const ended = { tell: (_id: string): void => undefined };
   const session = new PrivateSession({
-    area: sessionArea() ?? memoryArea(),
+    area: browser.storage.local,
     anyPrivateWindow: async () => (await browser.windows.getAll()).some((w) => w.incognito),
     newId: () => crypto.randomUUID(),
     ended: (id) => {
@@ -236,6 +234,7 @@ export default defineBackground(() => {
     isPrivateTab: async (tabId) => (await browser.tabs.get(tabId)).incognito,
     privateWindowsOn: () => settings.privateWindowsKnownOn(),
     privateWindowsNow: () => settings.known()?.private_windows === true,
+    mediaTables: () => settings.known()?.media ?? null,
     ready: restored,
   });
 

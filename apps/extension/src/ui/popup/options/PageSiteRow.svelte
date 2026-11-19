@@ -3,7 +3,7 @@
   import { SHELL_ACTIONS, type PageOptions } from '@wirecatch/protocol';
   import { SettingSwitch } from '@wirecatch/ui';
   import type { PopupModel } from '../../../lib/popup/model.svelte';
-  import { siteForPage } from '../../../lib/sites';
+  import { pageHost } from '../../../lib/sites';
 
   interface Props {
     model: PopupModel;
@@ -16,7 +16,7 @@
   let { model, currentUrl, privateTab }: Props = $props();
 
   const host = $derived(
-    privateTab && model.snapshot?.privateWindows !== true ? null : siteForPage(currentUrl),
+    privateTab && model.snapshot?.privateWindows !== true ? null : pageHost(currentUrl),
   );
   let page = $state<PageOptions | null>(null);
 

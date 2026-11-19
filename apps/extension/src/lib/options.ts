@@ -178,7 +178,8 @@ export function parseOption(raw: unknown): ParsedOption | null {
   }
   const label = text(raw.label);
   if (label === null) return null;
-  const read = READERS[kind];
+  // An own key only: an inherited one (`constructor`, `toString`) is no reader.
+  const read = Object.hasOwn(READERS, kind) ? READERS[kind] : undefined;
   if (read === undefined) return { kind: 'unknown', id, label };
   return read({ id, label, help: text(raw.help), disabled: text(raw.disabled) }, raw);
 }

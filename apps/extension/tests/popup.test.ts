@@ -170,10 +170,10 @@ describe('popup', () => {
     await waitFor(() => expect(siteSwitch().getAttribute('aria-checked')).toBe('true'));
     await user.click(siteSwitch());
     await waitFor(() => expect(app.settings.ignored_sites).toEqual([]));
-    // An action about the page's host alone, never the whole list (D279).
+    // An action about the page's whole host alone, never the whole list; the app picks the site (D279).
     expect(app.calls('invoke_action')).toEqual([
-      { method: 'invoke_action', params: { id: 'ignore_site', site: 'example.com' } },
-      { method: 'invoke_action', params: { id: 'take_site', site: 'example.com' } },
+      { method: 'invoke_action', params: { id: 'ignore_site', site: 'www.example.com' } },
+      { method: 'invoke_action', params: { id: 'take_site', site: 'www.example.com' } },
     ]);
   });
 
