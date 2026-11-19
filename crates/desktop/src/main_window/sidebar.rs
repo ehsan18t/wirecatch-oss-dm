@@ -1,7 +1,6 @@
 //! The navigation (D91): every download and each status group with their counts, then the queues,
 //! each with its count or its speed while it downloads, what it is doing, and its own menu.
 
-use chrono::Local;
 use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
@@ -686,7 +685,7 @@ pub(super) fn outside_schedule(queue: &Queue) -> Option<wirecatch_protocol::app:
         && !schedule::allows(
             schedule,
             queue.status.running_until_empty,
-            Local::now().naive_local(),
+            jiff::Zoned::now().datetime(),
         ))
     .then_some(schedule.start)
 }

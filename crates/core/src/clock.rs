@@ -6,7 +6,9 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 use wirecatch_protocol::UnixMillis;
 
-use chrono::{Local, NaiveDateTime, TimeDelta, Utc};
+use jiff::civil::DateTime;
+use jiff::tz::TimeZone;
+use jiff::{Span, Timestamp, Zoned};
 use tokio::sync::watch;
 
 /// A future returned by [`Clock::sleep_until`].
@@ -24,14 +26,14 @@ const MAX_SYSTEM_SLEEP: Duration = Duration::from_secs(60);
 /// hand, so a schedule spanning hours is tested in milliseconds.
 pub trait Clock: Send + Sync + 'static {
     /// The current local date and time, as shown on the user's own clock.
-    fn local_now(&self) -> NaiveDateTime;
+    fn local_now(&self) -> DateTime;
 
     /// The current moment, for timestamps.
     fn unix_millis(&self) -> UnixMillis;
 
     /// Waits until this clock shows `deadline` or later. May return early, so
     /// callers read the time again after waking.
-    fn sleep_until(&self, deadline: NaiveDateTime) -> Sleep<'_>;
+    fn sleep_until(&self, deadline: DateTime) -> Sleep<'_>;
 }
 
 /// The real clock of the machine.
@@ -39,17 +41,16 @@ pub trait Clock: Send + Sync + 'static {
 pub struct SystemClock;
 
 impl Clock for SystemClock {
-    fn local_now(&self) -> NaiveDateTime {
-        Local::now().naive_local()
+    fn local_now(&self) -> DateTime {
+        Zoned::now().datetime()
     }
 
     fn unix_millis(&self) -> UnixMillis {
-        UnixMillis(Utc::now().timestamp_millis())
+        UnixMillis(Timestamp::now().as_millisecond())
     }
 
-    fn sleep_until(&self, deadline: NaiveDateTime) -> Sleep<'_> {
-        let wait = (deadline - self.local_now())
-            .to_std()
+    fn sleep_until(&self, deadline: DateTime) -> Sleep<'_> {
+        let wait = Duration::try_from(self.local_now().duration_until(deadline))
             .unwrap_or(Duration::ZERO)
             .min(MAX_SYSTEM_SLEEP);
         Box::pin(tokio::time::sleep(wait))
@@ -59,14 +60,14 @@ impl Clock for SystemClock {
 /// A clock that only moves when told to. Meant for tests and simulations.
 #[derive(Debug)]
 pub struct ManualClock {
-    now: Mutex<NaiveDateTime>,
+    now: Mutex<DateTime>,
     moved: watch::Sender<()>,
 }
 
 impl ManualClock {
     /// A clock showing `now` as local time.
     #[must_use]
-    pub fn new(now: NaiveDateTime) -> Self {
+    pub fn new(now: DateTime) -> Self {
         Self {
             now: Mutex::new(now),
             moved: watch::Sender::new(()),
@@ -76,32 +77,36 @@ impl ManualClock {
     /// Locks the time shown. A lock poisoned by a panic in another holder is
     /// taken over as it is: the time is replaced whole, so it is never half
     /// written, and release builds abort on panic, so there it cannot happen.
-    fn now(&self) -> MutexGuard<'_, NaiveDateTime> {
+    fn now(&self) -> MutexGuard<'_, DateTime> {
         self.now.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Sets the clock to `now` and wakes everything sleeping on it.
-    pub fn set(&self, now: NaiveDateTime) {
+    pub fn set(&self, now: DateTime) {
         *self.now() = now;
         self.moved.send_replace(());
     }
 
     /// Moves the clock forward by `by` and wakes everything sleeping on it.
-    pub fn advance(&self, by: TimeDelta) {
+    pub fn advance(&self, by: Span) {
         self.set(self.local_now() + by);
     }
 }
 
 impl Clock for ManualClock {
-    fn local_now(&self) -> NaiveDateTime {
+    fn local_now(&self) -> DateTime {
         *self.now()
     }
 
     fn unix_millis(&self) -> UnixMillis {
-        UnixMillis(self.local_now().and_utc().timestamp_millis())
+        // A civil time past what a timestamp can hold reads as the epoch.
+        let at = TimeZone::UTC
+            .to_timestamp(self.local_now())
+            .unwrap_or_default();
+        UnixMillis(at.as_millisecond())
     }
 
-    fn sleep_until(&self, deadline: NaiveDateTime) -> Sleep<'_> {
+    fn sleep_until(&self, deadline: DateTime) -> Sleep<'_> {
         // Subscribing before the first check means a move between the two is not missed.
         let mut moved = self.moved.subscribe();
         Box::pin(async move {
@@ -117,12 +122,10 @@ impl Clock for ManualClock {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::NaiveDate;
+    use jiff::ToSpan as _;
 
-    fn at(hour: u32, minute: u32) -> NaiveDateTime {
-        NaiveDate::from_ymd_opt(2026, 10, 12)
-            .and_then(|d| d.and_hms_opt(hour, minute, 0))
-            .unwrap()
+    fn at(hour: i8, minute: i8) -> DateTime {
+        jiff::civil::datetime(2026, 10, 12, hour, minute, 0, 0)
     }
 
     #[tokio::test]
@@ -132,10 +135,10 @@ mod tests {
         let short = Duration::from_millis(20);
         assert!(tokio::time::timeout(short, &mut sleep).await.is_err());
 
-        clock.advance(TimeDelta::minutes(10));
+        clock.advance(10.minutes());
         assert!(tokio::time::timeout(short, &mut sleep).await.is_err());
 
-        clock.advance(TimeDelta::minutes(20));
+        clock.advance(20.minutes());
         tokio::time::timeout(wirecatch_test_support::PATIENCE, sleep)
             .await
             .unwrap();

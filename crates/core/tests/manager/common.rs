@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use chrono::{NaiveDate, NaiveDateTime};
+use jiff::civil::{DateTime, Time};
 use tempfile::TempDir;
 use wirecatch_core::{
     ComputerProxy, DEFAULT_CAPTURE_TIMEOUT, DEFAULT_STOP_TIMEOUT, KnownFolders, Manager,
@@ -56,10 +56,10 @@ pub async fn fast_server(len: u64) -> TestResult<TestServer> {
 }
 
 /// Monday, 12 October 2026, at the given local time.
-pub fn monday(hour: u32, minute: u32) -> TestResult<NaiveDateTime> {
-    NaiveDate::from_ymd_opt(2026, 10, 12)
-        .and_then(|d| d.and_hms_opt(hour, minute, 0))
-        .ok_or_else(|| format!("{hour}:{minute} is not a time of day").into())
+pub fn monday(hour: i8, minute: i8) -> TestResult<DateTime> {
+    let time = Time::new(hour, minute, 0, 0)
+        .map_err(|_| format!("{hour}:{minute} is not a time of day"))?;
+    Ok(jiff::civil::date(2026, 10, 12).to_datetime(time))
 }
 
 /// Pauses between failed attempts short enough that a download that must fail
@@ -91,7 +91,7 @@ impl Harness {
     }
 
     /// A manager whose clock starts at `now`.
-    pub async fn at(now: NaiveDateTime) -> TestResult<Self> {
+    pub async fn at(now: DateTime) -> TestResult<Self> {
         Self::build(now, DEFAULT_STOP_TIMEOUT, DEFAULT_CAPTURE_TIMEOUT).await
     }
 
@@ -117,7 +117,7 @@ impl Harness {
     }
 
     async fn build(
-        now: NaiveDateTime,
+        now: DateTime,
         stop_timeout: Duration,
         capture_timeout: Duration,
     ) -> TestResult<Self> {
@@ -125,7 +125,7 @@ impl Harness {
     }
 
     async fn build_with(
-        now: NaiveDateTime,
+        now: DateTime,
         stop_timeout: Duration,
         capture_timeout: Duration,
         tweak: Option<Tweak>,

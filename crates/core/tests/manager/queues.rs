@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use chrono::TimeDelta;
+use jiff::ToSpan as _;
 use wirecatch_core::{CoreError, DEFAULT_QUEUE_ID, RemoveFiles};
 use wirecatch_protocol::app::{
     AddRequest, CaptureConfirmation, DownloadStatus, PortablePath, Queue, QueueNotify, QueueReport,
@@ -96,7 +96,7 @@ async fn start_now_runs_a_scheduled_queue_until_it_is_empty() -> TestResult {
 
     // Moving the clock on does not end a run that still has work.
     h.manager.start_queue_now(DEFAULT_QUEUE_ID).unwrap();
-    h.clock.advance(TimeDelta::hours(3));
+    h.clock.advance(3.hours());
     h.wait_status(second.id, DownloadStatus::Completed).await;
     Ok(())
 }

@@ -1,7 +1,7 @@
 //! Acceptance 3: a scheduled queue starts and stops inside its window. Time is
 //! moved by hand, so a window of an hour is crossed in milliseconds.
 
-use chrono::TimeDelta;
+use jiff::ToSpan as _;
 use wirecatch_core::DEFAULT_QUEUE_ID;
 use wirecatch_protocol::app::{DownloadStatus, Schedule, TimeOfDay, Weekday};
 
@@ -61,7 +61,7 @@ async fn a_window_starts_and_stops_its_queue() -> TestResult {
     let asked = server.stats.seen().len();
 
     // Tuesday is not a scheduled day, so it stays queued.
-    h.clock.set(monday(2, 30)? + TimeDelta::days(1));
+    h.clock.set(monday(2, 30)? + 1.day());
     tokio::time::sleep(QUIET).await;
     assert_eq!(h.row(row.id).status, DownloadStatus::Queued);
     assert_eq!(
@@ -71,7 +71,7 @@ async fn a_window_starts_and_stops_its_queue() -> TestResult {
     );
 
     // The next Monday's window picks it up again.
-    h.clock.set(monday(2, 30)? + TimeDelta::days(7));
+    h.clock.set(monday(2, 30)? + 7.days());
     h.wait_for(row.id, "restart next Monday", is_running).await;
     Ok(())
 }
@@ -134,7 +134,7 @@ async fn a_start_time_without_stop_runs_until_the_queue_is_empty() -> TestResult
     h.clock.set(monday(9, 0)?);
     let late = h.add(&server.url("three.bin")).await?;
     assert_eq!(late.status, DownloadStatus::Queued);
-    h.clock.set(monday(2, 0)? + TimeDelta::days(1));
+    h.clock.set(monday(2, 0)? + 1.day());
     h.wait_status(late.id, DownloadStatus::Completed).await;
     Ok(())
 }

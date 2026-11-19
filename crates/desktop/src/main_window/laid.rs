@@ -4,8 +4,8 @@
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-use chrono::NaiveDate;
 use gpui_kit::{ListOffset, Pixels};
+use jiff::civil::Date;
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::DownloadSummary;
 
@@ -17,7 +17,7 @@ use crate::text;
 pub(super) enum Line {
     Heading(Group, usize),
     /// The day the rows under it finished on.
-    Day(NaiveDate),
+    Day(Date),
     /// A download by its index in the library, with its place among what waits in its queue, and whether
     /// a day heading over it already says its day.
     Row(usize, Option<usize>, bool),
@@ -256,7 +256,7 @@ fn found(row: &DownloadSummary, needle: &str) -> bool {
 }
 
 /// The day a finished download goes under: the day it finished, or was added when that is unknown.
-fn finished_day(row: &DownloadSummary) -> Option<NaiveDate> {
+fn finished_day(row: &DownloadSummary) -> Option<Date> {
     text::local_day(row.completed_at.unwrap_or(row.added_at))
 }
 

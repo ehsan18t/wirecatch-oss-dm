@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use chrono::NaiveDateTime;
+use jiff::civil::DateTime;
 use wirecatch_protocol::UnixMillis;
 use wirecatch_protocol::app::{AppSettings, DownloadStatus, Queue, Setting};
 use wirecatch_protocol::proxy::ProxyUse;
@@ -59,7 +59,7 @@ impl Restored {
 /// What restoring needs to know about the world outside the database.
 pub(super) struct Surroundings<'a> {
     /// Local time, for schedules.
-    pub now: NaiveDateTime,
+    pub now: DateTime,
     /// The moment, for timestamps.
     pub now_millis: UnixMillis,
     /// The size of the finished file at a path, if it is there with no part or
@@ -407,7 +407,7 @@ fn restore_entry(
 #[cfg(test)]
 pub(super) fn first_start() -> State {
     let surroundings = Surroundings {
-        now: NaiveDateTime::default(),
+        now: DateTime::default(),
         now_millis: UnixMillis(0),
         finished_size: &|_| None,
         suffixes: SuffixList::built_in(),
@@ -426,7 +426,7 @@ mod tests {
 
     fn nowhere(finished_size: &dyn Fn(&Path) -> Option<u64>) -> Surroundings<'_> {
         Surroundings {
-            now: NaiveDateTime::default(),
+            now: DateTime::default(),
             now_millis: UnixMillis(7),
             finished_size,
             suffixes: SuffixList::built_in(),

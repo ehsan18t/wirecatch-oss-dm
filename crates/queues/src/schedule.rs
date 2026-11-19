@@ -3,7 +3,8 @@
 
 use std::cmp::Ordering;
 
-use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, Timelike};
+use jiff::ToSpan as _;
+use jiff::civil::{Date, DateTime, Time};
 use wirecatch_protocol::app::{Schedule, TimeOfDay, Weekday};
 
 /// How far back a jump of the clock is searched for a missed start time.
@@ -12,8 +13,8 @@ const MAX_CATCH_UP_DAYS: i64 = 7;
 /// Brings the saved `running_until_empty` of a schedule without a stop time up to local time `(since, now]`; `has_work`: downloads still waiting, running or about to go on.
 pub fn follow_run(
     schedule: &Schedule,
-    since: NaiveDateTime,
-    now: NaiveDateTime,
+    since: DateTime,
+    now: DateTime,
     has_work: bool,
     running_until_empty: &mut bool,
 ) {
@@ -31,7 +32,7 @@ pub fn follow_run(
 
 /// Whether `schedule` lets its queue run at local time `now`: inside its window, or, without a stop time, during a run. The core and the window both read this (D155).
 #[must_use]
-pub fn allows(schedule: &Schedule, running_until_empty: bool, now: NaiveDateTime) -> bool {
+pub fn allows(schedule: &Schedule, running_until_empty: bool, now: DateTime) -> bool {
     if schedule.stop.is_some() {
         window_open(schedule, now)
     } else {
@@ -40,7 +41,7 @@ pub fn allows(schedule: &Schedule, running_until_empty: bool, now: NaiveDateTime
 }
 
 /// A schedule without a stop time has no window and is never open here.
-fn window_open(schedule: &Schedule, now: NaiveDateTime) -> bool {
+fn window_open(schedule: &Schedule, now: DateTime) -> bool {
     let (Some(start), Some(stop)) = (to_time(schedule.start), schedule.stop.and_then(to_time))
     else {
         return false;
@@ -51,7 +52,7 @@ fn window_open(schedule: &Schedule, now: NaiveDateTime) -> bool {
         Ordering::Less => runs_on(schedule, today) && start <= t && t < stop,
         // The window runs past midnight.
         Ordering::Greater => {
-            let yesterday = today - TimeDelta::days(1);
+            let yesterday = today - 1.day();
             (runs_on(schedule, today) && t >= start) || (runs_on(schedule, yesterday) && t < stop)
         }
         // The same time for both: the whole day.
@@ -59,33 +60,33 @@ fn window_open(schedule: &Schedule, now: NaiveDateTime) -> bool {
     }
 }
 
-fn start_crossed(schedule: &Schedule, since: NaiveDateTime, now: NaiveDateTime) -> bool {
+fn start_crossed(schedule: &Schedule, since: DateTime, now: DateTime) -> bool {
     let Some(start) = to_time(schedule.start) else {
         return false;
     };
     if now <= since {
         return false;
     }
-    let first = since
-        .date()
-        .max(now.date() - TimeDelta::days(MAX_CATCH_UP_DAYS));
+    let first = since.date().max(now.date() - MAX_CATCH_UP_DAYS.days());
     first
-        .iter_days()
+        .series(1.day())
         .take_while(|day| *day <= now.date())
         .any(|day| {
-            let at = day.and_time(start);
+            let at = day.to_datetime(start);
             since < at && at <= now && runs_on(schedule, day)
         })
 }
 
 /// Schedules have minute precision: the next moment their answer can change.
 #[must_use]
-pub fn next_minute(now: NaiveDateTime) -> NaiveDateTime {
+pub fn next_minute(now: DateTime) -> DateTime {
     let floor = now
-        .with_second(0)
-        .and_then(|t| t.with_nanosecond(0))
+        .with()
+        .second(0)
+        .subsec_nanosecond(0)
+        .build()
         .unwrap_or(now);
-    floor + TimeDelta::minutes(1)
+    floor + 1.minute()
 }
 
 #[must_use]
@@ -93,23 +94,27 @@ pub fn is_valid_time(time: TimeOfDay) -> bool {
     to_time(time).is_some()
 }
 
-fn to_time(time: TimeOfDay) -> Option<NaiveTime> {
-    NaiveTime::from_hms_opt(time.hour.into(), time.minute.into(), 0)
+/// `None` when `time` is not a time of day.
+#[must_use]
+pub fn to_time(time: TimeOfDay) -> Option<Time> {
+    let hour = i8::try_from(time.hour).ok()?;
+    let minute = i8::try_from(time.minute).ok()?;
+    Time::new(hour, minute, 0, 0).ok()
 }
 
-fn runs_on(schedule: &Schedule, day: NaiveDate) -> bool {
+fn runs_on(schedule: &Schedule, day: Date) -> bool {
     schedule.days.is_empty() || schedule.days.contains(&weekday(day))
 }
 
-fn weekday(day: NaiveDate) -> Weekday {
+fn weekday(day: Date) -> Weekday {
     match day.weekday() {
-        chrono::Weekday::Mon => Weekday::Mon,
-        chrono::Weekday::Tue => Weekday::Tue,
-        chrono::Weekday::Wed => Weekday::Wed,
-        chrono::Weekday::Thu => Weekday::Thu,
-        chrono::Weekday::Fri => Weekday::Fri,
-        chrono::Weekday::Sat => Weekday::Sat,
-        chrono::Weekday::Sun => Weekday::Sun,
+        jiff::civil::Weekday::Monday => Weekday::Mon,
+        jiff::civil::Weekday::Tuesday => Weekday::Tue,
+        jiff::civil::Weekday::Wednesday => Weekday::Wed,
+        jiff::civil::Weekday::Thursday => Weekday::Thu,
+        jiff::civil::Weekday::Friday => Weekday::Fri,
+        jiff::civil::Weekday::Saturday => Weekday::Sat,
+        jiff::civil::Weekday::Sunday => Weekday::Sun,
     }
 }
 
@@ -118,14 +123,12 @@ mod tests {
     use super::*;
 
     /// 2026-10-12 is a Monday.
-    fn mon(hour: u32, minute: u32) -> NaiveDateTime {
+    fn mon(hour: i8, minute: i8) -> DateTime {
         day(12, hour, minute)
     }
 
-    fn day(d: u32, hour: u32, minute: u32) -> NaiveDateTime {
-        NaiveDate::from_ymd_opt(2026, 10, d)
-            .and_then(|d| d.and_hms_opt(hour, minute, 0))
-            .unwrap()
+    fn day(d: i8, hour: i8, minute: i8) -> DateTime {
+        jiff::civil::datetime(2026, 10, d, hour, minute, 0, 0)
     }
 
     fn tod(hour: u8, minute: u8) -> TimeOfDay {
@@ -250,7 +253,7 @@ mod tests {
 
     #[test]
     fn next_minute_rounds_up() {
-        let t = mon(1, 0) + TimeDelta::seconds(30);
+        let t = mon(1, 0) + 30.seconds();
         assert_eq!(next_minute(t), mon(1, 1));
         assert_eq!(next_minute(mon(1, 0)), mon(1, 1));
     }

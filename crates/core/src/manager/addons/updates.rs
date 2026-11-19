@@ -41,8 +41,8 @@ fn candidates(releases: Vec<addons::Release>, pinned: &str) -> Vec<(addons::Rele
             let published = r
                 .published_at
                 .as_deref()
-                .and_then(|at| chrono::DateTime::parse_from_rfc3339(at).ok())?
-                .timestamp_millis();
+                .and_then(|at| at.parse::<jiff::Timestamp>().ok())?
+                .as_millisecond();
             Some((r, UnixMillis(published)))
         })
         .collect();

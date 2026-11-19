@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use tracing::warn;
 
-use chrono::NaiveDateTime;
+use jiff::civil::DateTime;
 use tokio::task::AbortHandle;
 use wirecatch_engine::{
     CancellationToken, FileWork, ManualProxies, Progress, ProxyChoice, ProxyRoute, RateLimiter, Url,
@@ -93,7 +93,7 @@ pub(super) struct State {
     pub proxy_logins: Logins,
     pub proxy_servers: Vec<SavedProxyServer>,
     /// When schedules were last evaluated, so a start time crossed since then is seen.
-    pub last_checked: NaiveDateTime,
+    pub last_checked: DateTime,
     pub ids: Counters,
     /// Set by shutdown: nothing new starts.
     pub closed: bool,

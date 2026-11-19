@@ -1,6 +1,7 @@
 //! The media add-on: install from a local server, checksum refusal, safe
 //! unpacking, progress, idempotence, updates and removal.
 
+use jiff::ToSpan as _;
 use wirecatch_protocol::app::{AddonId, AddonState, UiEvent};
 use wirecatch_protocol::wire::ErrorCode;
 
@@ -961,7 +962,7 @@ async fn a_fresh_release_waits_two_days_on_every_install_path() -> TestResult {
     assert_eq!(server.requests(&program), 0, "the program was fetched");
 
     // A day later it is still waiting.
-    h.clock.advance(chrono::TimeDelta::hours(24));
+    h.clock.advance(24.hours());
     let info = check(&h).await?;
     assert_eq!(info.state, AddonState::Installed);
     assert_eq!(
@@ -969,7 +970,7 @@ async fn a_fresh_release_waits_two_days_on_every_install_path() -> TestResult {
         Some("A newer version was released yesterday; Wirecatch installs it after two days.")
     );
     // Two days old: offered at once, and installed quietly by the next check.
-    h.clock.advance(chrono::TimeDelta::hours(24));
+    h.clock.advance(24.hours());
     let info = h.manager.list_addons().remove(0);
     assert_eq!(info.state, AddonState::UpdateAvailable);
     assert_eq!(info.note, None);
@@ -1010,7 +1011,7 @@ async fn the_newest_release_old_enough_is_used_while_a_newer_one_waits() -> Test
         0
     );
     // Once that one is two days old, it follows.
-    h.clock.advance(chrono::TimeDelta::hours(48));
+    h.clock.advance(48.hours());
     let info = check(&h).await?;
     assert!(info.installed_version.unwrap().contains("2026.10.12"));
     assert_eq!(info.note, None);

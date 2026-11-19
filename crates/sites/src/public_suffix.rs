@@ -285,8 +285,9 @@ fn published(text: &str) -> Option<UnixMillis> {
         .lines()
         .take_while(|line| line.is_empty() || line.starts_with("//"))
         .find_map(|line| line.strip_prefix(VERSION_LINE))?;
-    let at = chrono::NaiveDateTime::parse_from_str(version.trim(), "%Y-%m-%d_%H-%M-%S_UTC").ok()?;
-    Some(UnixMillis(at.and_utc().timestamp_millis()))
+    let at = jiff::civil::DateTime::strptime("%Y-%m-%d_%H-%M-%S_UTC", version.trim()).ok()?;
+    let at = at.to_zoned(jiff::tz::TimeZone::UTC).ok()?;
+    Some(UnixMillis(at.timestamp().as_millisecond()))
 }
 
 /// Lists for tests, all made from the built-in snapshot.
