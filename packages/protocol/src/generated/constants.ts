@@ -312,9 +312,9 @@ export const MAX_PAGE_READ_LEN = 33554432;
 export const MAX_PAGE_READ_BODY = 262144;
 
 /**
- * How long the app waits for the whole answer to a page read, in milliseconds.
+ * How long the app waits for the whole answer to a page read, in milliseconds: under yt-dlp's own 20 seconds, so a browser too slow fails the read and the run can read directly.
  */
-export const PAGE_READ_TIMEOUT_MS = 60000;
+export const PAGE_READ_TIMEOUT_MS = 15000;
 
 /**
  * Words that make a name a secret's when one of its segments is the word (see the module documentation for how a name is split). `key` alone counts, so `Invalid key: 5` loses its 5: a bare `key=` pair is most often an API key.

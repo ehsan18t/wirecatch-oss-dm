@@ -182,19 +182,16 @@ impl PageReaderClaim {
                     _ => return true,
                 };
                 drop(state);
-                let answer = Url::parse(answered.url.expose())
-                    .map(|url| BrowserAnswer {
-                        status: answered.status,
-                        url,
-                        headers: answered
-                            .headers
-                            .iter()
-                            .map(|h| (h.name.clone(), h.value.expose().to_owned()))
-                            .collect(),
-                        body,
-                    })
-                    .map_err(|_| BrowserFailed::Network);
-                readers.settle(self.id, answered.id.0, answer);
+                let answer = BrowserAnswer {
+                    status: answered.status,
+                    headers: answered
+                        .headers
+                        .iter()
+                        .map(|h| (h.name.clone(), h.value.expose().to_owned()))
+                        .collect(),
+                    body,
+                };
+                readers.settle(self.id, answered.id.0, Ok(answer));
             }
             Call::PageReadFailed(failed) => {
                 let reason = match failed.reason {
@@ -391,7 +388,6 @@ mod tests {
         assert!(claim.take(&Call::PageReadAnswered(PageReadAnswer {
             id: asked.id,
             status: 410,
-            url: "https://www.example.com/v".into(),
             headers: Vec::new(),
         })));
         let answer = reading.await.unwrap().unwrap();

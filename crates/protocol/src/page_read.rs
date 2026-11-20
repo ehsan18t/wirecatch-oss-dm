@@ -13,8 +13,8 @@ crate::exported::exported_consts! {
     pub const MAX_PAGE_READ_LEN: usize = 32 * 1024 * 1024;
     /// The longest request body a page read carries.
     pub const MAX_PAGE_READ_BODY: usize = 256 * 1024;
-    /// How long the app waits for the whole answer to a page read, in milliseconds.
-    pub const PAGE_READ_TIMEOUT_MS: u64 = 60_000;
+    /// How long the app waits for the whole answer to a page read, in milliseconds: under yt-dlp's own 20 seconds, so a browser too slow fails the read and the run can read directly.
+    pub const PAGE_READ_TIMEOUT_MS: u64 = 15_000;
 }
 
 /// What a browser says about page reads in its `hello`: present when it makes them.
@@ -69,9 +69,6 @@ pub struct PageReadPart {
 pub struct PageReadAnswer {
     pub id: PageReadId,
     pub status: u16,
-    /// Where the browser ended up after redirects.
-    #[ts(as = "String")]
-    pub url: Secret,
     /// The answer's headers, as the browser shows them to `fetch()`: no `Set-Cookie`.
     pub headers: Vec<Header>,
 }

@@ -10424,6 +10424,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tracing",
+ "webpki-root-certs",
  "wirecatch-addons",
  "wirecatch-engine",
  "wirecatch-files",

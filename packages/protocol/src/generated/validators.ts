@@ -1274,7 +1274,6 @@ export function isPageReadAnswer(value: unknown): value is PageReadAnswer {
     isRecord(value1) &&
     isPageReadId(value1['id']) &&
     typeof value1['status'] === 'number' &&
-    typeof value1['url'] === 'string' &&
     isArrayOf(value1['headers'], isHeader))(value);
 }
 

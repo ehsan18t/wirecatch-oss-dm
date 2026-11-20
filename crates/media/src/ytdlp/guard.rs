@@ -775,7 +775,6 @@ mod tests {
         fn read(&self, request: super::super::BrowserRequest) -> super::super::BrowserReading {
             let answer = super::super::BrowserAnswer {
                 status: 410,
-                url: request.url.clone(),
                 headers: vec![
                     ("Content-Type".into(), "text/html".into()),
                     ("Content-Encoding".into(), "br".into()),

@@ -113,6 +113,7 @@ impl Authority {
 fn system_roots() -> &'static str {
     static ROOTS: OnceLock<String> = OnceLock::new();
     ROOTS.get_or_init(|| {
+        // Windows holds only the roots it has fetched so far, so the bundle yt-dlp would use goes in too.
         let found = rustls_native_certs::load_native_certs();
         if !found.errors.is_empty() {
             tracing::debug!(
@@ -121,7 +122,11 @@ fn system_roots() -> &'static str {
             );
         }
         let mut pem = String::new();
-        for der in &found.certs {
+        for der in found
+            .certs
+            .iter()
+            .chain(webpki_root_certs::TLS_SERVER_ROOT_CERTS)
+        {
             push_pem(&mut pem, der);
         }
         pem
@@ -142,10 +147,8 @@ fn push_pem(pem: &mut String, der: &[u8]) {
 pub(super) struct Through {
     pub(super) route: BrowserRoute,
     pub(super) authority: Authority,
-    /// Set when the browser made no answer to a request, so the run can read the page itself.
+    /// Set when the browser made no answer to a request: the run's later tunnels go directly, and a run that failed reads again directly.
     pub(super) failed: AtomicBool,
-    /// Answers the browser reached through a redirect, waiting for yt-dlp to follow it here.
-    redirected: Mutex<Vec<BrowserAnswer>>,
 }
 
 impl Through {
@@ -154,29 +157,12 @@ impl Through {
             route,
             authority,
             failed: AtomicBool::new(false),
-            redirected: Mutex::new(Vec::new()),
         }
     }
 
-    /// Whether a tunnel to `host` goes through the browser: HTTPS to a host of the page's site.
+    /// Whether a tunnel to `host` goes through the browser: HTTPS to a host of the page's site, until the browser once made no answer. yt-dlp retries a failed request (a file too large for a page read, say), which then goes directly.
     pub(super) fn takes(&self, host: &str, port: u16) -> bool {
-        port == 443 && host_on_site(host, &self.route.site)
-    }
-
-    fn redirected_to(&self, url: &Url) -> Option<BrowserAnswer> {
-        let mut waiting = self
-            .redirected
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let at = waiting.iter().position(|answer| answer.url == *url)?;
-        Some(waiting.swap_remove(at))
-    }
-
-    fn wait_for_redirect(&self, answer: BrowserAnswer) {
-        self.redirected
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .push(answer);
+        port == 443 && host_on_site(host, &self.route.site) && !self.failed.load(Ordering::Relaxed)
     }
 }
 
@@ -209,21 +195,7 @@ pub(super) async fn carry(
     tls.read_exact(&mut more).await?;
     request.body.extend(more);
     let head_only = request.method.eq_ignore_ascii_case("HEAD");
-    let asked = request.url.clone();
-    let answer = match through.redirected_to(&asked) {
-        Some(answer) => Ok(answer),
-        None => through.route.reader.read(request).await,
-    };
-    match answer {
-        Ok(answer)
-            if answer.url != asked
-                && answer.url.host_str().is_some_and(|h| through.takes(h, 443)) =>
-        {
-            // yt-dlp follows the redirect itself, so an extractor that reads the final address sees it.
-            let to = answer.url.to_string();
-            through.wait_for_redirect(answer);
-            tls.write_all(redirect(&to).as_bytes()).await?;
-        }
+    match through.route.reader.read(request).await {
         Ok(answer) => write_answer(&mut tls, &answer, head_only).await?,
         Err(failed) => {
             through.failed.store(true, Ordering::Relaxed);
@@ -268,12 +240,6 @@ fn request_of(head: &[u8], host: &str) -> Option<(BrowserRequest, usize)> {
     ))
 }
 
-fn redirect(to: &str) -> String {
-    format!(
-        "HTTP/1.1 302 Found\r\nConnection: close\r\nLocation: {to}\r\nContent-Length: 0\r\n\r\n"
-    )
-}
-
 async fn write_answer<S: AsyncWrite + Unpin>(
     out: &mut S,
     answer: &BrowserAnswer,
@@ -283,10 +249,20 @@ async fn write_answer<S: AsyncWrite + Unpin>(
         .ok()
         .and_then(|status| status.canonical_reason())
         .unwrap_or("Unknown");
+    // A HEAD answer has no body: its length is the one the site said.
+    let length = if head_only {
+        answer
+            .headers
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+            .and_then(|(_, value)| value.trim().parse::<u64>().ok())
+            .unwrap_or_default()
+    } else {
+        answer.body.len() as u64
+    };
     let mut head = format!(
-        "HTTP/1.1 {} {reason}\r\nConnection: close\r\nContent-Length: {}\r\n",
-        answer.status,
-        answer.body.len()
+        "HTTP/1.1 {} {reason}\r\nConnection: close\r\nContent-Length: {length}\r\n",
+        answer.status
     );
     for (name, value) in &answer.headers {
         let passed_on = !NOT_PASSED_ON.iter().any(|n| name.eq_ignore_ascii_case(n));

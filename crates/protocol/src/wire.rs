@@ -711,7 +711,6 @@ mod tests {
             CallMethod::PageReadAnswered => Call::PageReadAnswered(PageReadAnswer {
                 id,
                 status: 200,
-                url: "https://example.com/".into(),
                 headers: Vec::new(),
             }),
             _ => Call::PageReadFailed(PageReadFailed {

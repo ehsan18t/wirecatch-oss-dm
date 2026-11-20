@@ -5,7 +5,7 @@ import { PageReads } from '../src/lib/page-reads';
 const ID = pageReadId(7);
 
 describe('page reads (D282)', () => {
-  it('answers a read in parts, in order, then with its status and final address', async () => {
+  it('answers a read in parts, in order, then with its status and headers', async () => {
     const body = new Uint8Array(MAX_PAGE_READ_PART + 3).fill(65);
     const sent: Call[] = [];
     let answered = (): void => undefined;
@@ -18,7 +18,6 @@ describe('page reads (D282)', () => {
           status: 410,
           headers: { 'Content-Type': 'text/html' },
         });
-        Object.defineProperty(response, 'url', { value: 'https://www.example.com/final' });
         return Promise.resolve(response);
       },
       send: (call) => {
@@ -37,7 +36,7 @@ describe('page reads (D282)', () => {
       },
     });
     await done;
-    expect(asked[0]).toMatchObject({ method: 'GET', credentials: 'include', redirect: 'follow' });
+    expect(asked[0]).toMatchObject({ method: 'GET', credentials: 'include', redirect: 'error' });
     expect(sent.map((call) => call.method)).toEqual([
       'page_read_part',
       'page_read_part',
@@ -52,7 +51,6 @@ describe('page reads (D282)', () => {
       params: {
         id: ID,
         status: 410,
-        url: 'https://www.example.com/final',
         headers: [{ name: 'content-type', value: 'text/html' }],
       },
     });

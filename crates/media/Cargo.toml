@@ -31,6 +31,7 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["io-util", "net", "process"] }
 tokio-rustls = { version = "0.26.0", default-features = false, features = ["ring", "tls12"] }
 tracing.workspace = true
+webpki-root-certs = "1.0.11"
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -52,13 +52,14 @@ export class PageReads {
         return;
       }
       for (let at = 0; at < ending.body.length; at += MAX_PAGE_READ_PART) {
+        if (stop.signal.aborted) return;
         const bytes = toBase64(ending.body.subarray(at, at + MAX_PAGE_READ_PART));
         await this.#send({ method: 'page_read_part', params: { id: read.id, bytes } });
       }
       const headers = [...ending.response.headers].map(([name, value]) => ({ name, value }));
       await this.#send({
         method: 'page_read_answered',
-        params: { id: read.id, status: ending.response.status, url: ending.response.url, headers },
+        params: { id: read.id, status: ending.response.status, headers },
       });
     } catch {
       // The connection to the app broke: the app fails the read itself.
@@ -83,7 +84,8 @@ export class PageReads {
         headers,
         body: read.body === undefined ? undefined : fromBase64(read.body),
         credentials: 'include',
-        redirect: 'follow',
+        // Not followed: the app checks every address against the local network before the browser reaches it, and a redirect's would go unchecked.
+        redirect: 'error',
         cache: 'no-store',
         signal,
       });

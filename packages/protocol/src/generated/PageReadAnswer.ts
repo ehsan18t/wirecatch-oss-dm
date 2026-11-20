@@ -9,10 +9,6 @@ export type PageReadAnswer = {
   id: PageReadId;
   status: number;
   /**
-   * Where the browser ended up after redirects.
-   */
-  url: string;
-  /**
    * The answer's headers, as the browser shows them to `fetch()`: no `Set-Cookie`.
    */
   headers: Array<Header>;

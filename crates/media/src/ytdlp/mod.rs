@@ -297,7 +297,12 @@ async fn start_guard(ctx: &Context<'_>) -> Result<Option<Guard>, YtDlpError> {
     if !ctx.off_local_network {
         return Ok(None);
     }
-    Guard::start(ctx.browser.cloned())
+    // The browser always sends its cookies, so a read of a site read without them first (YouTube) takes it only with the download's own.
+    let browser = ctx
+        .browser
+        .filter(|_| ctx.cookies.is_some() || cookies_first(ctx.page))
+        .cloned();
+    Guard::start(browser)
         .await
         .map(Some)
         .map_err(YtDlpError::Guard)

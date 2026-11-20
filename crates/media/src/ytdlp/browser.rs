@@ -19,8 +19,6 @@ pub struct BrowserRequest {
 #[derive(Debug, Clone)]
 pub struct BrowserAnswer {
     pub status: u16,
-    /// Where the browser ended up after redirects.
-    pub url: Url,
     pub headers: Vec<(String, String)>,
     pub body: Vec<u8>,
 }
