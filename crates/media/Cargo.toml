@@ -19,10 +19,17 @@ wirecatch-protocol = { workspace = true, features = ["tokio"] }
 wirecatch-records.workspace = true
 wirecatch-sites.workspace = true
 wirecatch-streams.workspace = true
+base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
+getrandom.workspace = true
+http = "1.1.0"
+rcgen = { version = "0.14.0", default-features = false, features = ["crypto", "ring"] }
+rustls = { version = "0.23.4", default-features = false, features = ["std", "tls12", "ring"] }
+rustls-native-certs = "0.8.0"
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["io-util", "net", "process"] }
+tokio-rustls = { version = "0.26.0", default-features = false, features = ["ring", "tls12"] }
 tracing.workspace = true
 
 [dev-dependencies]

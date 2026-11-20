@@ -1,4 +1,4 @@
-//! A proxy on the loopback address that keeps a run of yt-dlp off the local network (D136). The engine's guard cannot reach another process, and yt-dlp has no such rule of its own, so every request and redirect hop of the run comes through here, and goes on only to an address on the internet.
+//! A proxy on the loopback address that keeps a run of yt-dlp off the local network (D136). The engine's guard cannot reach another process, and yt-dlp has no such rule of its own, so every request and redirect hop of the run comes through here, and goes on only to an address on the internet. A run with a browser route has its tunnels to the page's site answered by the browser instead ([`super::relay`], D282).
 
 #![forbid(unsafe_code)]
 
@@ -9,12 +9,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tracing::Instrument as _;
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt, copy_bidirectional};
+use base64::Engine as _;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, copy_bidirectional};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::{JoinHandle, JoinSet};
 use wirecatch_engine::Url;
 use wirecatch_engine::units::KIB_USIZE;
 use wirecatch_sites::local_network::is_local;
+
+use super::browser::BrowserRoute;
+use super::relay::{Authority, Through};
 
 /// The longest request head read; yt-dlp's are a few kilobytes, signed addresses and cookies included.
 const MAX_HEAD: usize = 64 * KIB_USIZE;
@@ -33,46 +37,95 @@ const HOP_BY_HOP: [&str; 4] = [
     "proxy-authorization",
 ];
 
-const TUNNEL_OPEN: &[u8] = b"HTTP/1.1 200 Connection established\r\n\r\n";
+pub(super) const TUNNEL_OPEN: &[u8] = b"HTTP/1.1 200 Connection established\r\n\r\n";
 const REFUSED: &[u8] = b"HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n";
-const BAD_REQUEST: &[u8] =
+pub(super) const BAD_REQUEST: &[u8] =
     b"HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n";
-const UNREACHABLE: &[u8] =
+pub(super) const UNREACHABLE: &[u8] =
     b"HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\nContent-Length: 0\r\n\r\n";
+const UNAUTHORIZED: &[u8] = b"HTTP/1.1 407 Proxy Authentication Required\r\nConnection: close\r\nProxy-Authenticate: Basic\r\nContent-Length: 0\r\n\r\n";
+
+/// The user name in a run's proxy address; its password is what counts.
+const PROXY_USER: &str = "run";
 
 /// A running guard. Dropping it stops it and every connection through it.
 pub(super) struct Guard {
     address: SocketAddr,
-    refused: Arc<AtomicBool>,
+    rules: Rules,
     serving: JoinHandle<()>,
 }
 
+/// What every connection of one guard is held to.
+#[derive(Clone)]
+struct Rules {
+    kept_off: fn(IpAddr) -> bool,
+    refused: Arc<AtomicBool>,
+    /// A run through the browser takes requests only with its password: the browser carries the person's sign-in, which any local program could otherwise ask it for.
+    through: Option<(Arc<Through>, String)>,
+}
+
 impl Guard {
-    /// Starts a guard for one run.
-    pub(super) async fn start() -> io::Result<Self> {
-        Self::keeping_off(is_local).await
+    /// Starts a guard for one run; with `browser`, its tunnels to that site go through the browser.
+    pub(super) async fn start(browser: Option<BrowserRoute>) -> io::Result<Self> {
+        Self::keeping_off(is_local, browser).await
     }
 
-    async fn keeping_off(kept_off: fn(IpAddr) -> bool) -> io::Result<Self> {
+    async fn keeping_off(
+        kept_off: fn(IpAddr) -> bool,
+        browser: Option<BrowserRoute>,
+    ) -> io::Result<Self> {
+        let through = match browser {
+            Some(route) => {
+                let authority = wirecatch_engine::task::spawn_blocking(Authority::new)
+                    .await
+                    .map_err(io::Error::other)?
+                    .map_err(io::Error::other)?;
+                Some((Arc::new(Through::new(route, authority)), password()?))
+            }
+            None => None,
+        };
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
         let address = listener.local_addr()?;
-        let refused = Arc::new(AtomicBool::new(false));
-        let serving = wirecatch_engine::task::spawn(serve(listener, kept_off, refused.clone()));
+        let rules = Rules {
+            kept_off,
+            refused: Arc::new(AtomicBool::new(false)),
+            through,
+        };
+        let serving = wirecatch_engine::task::spawn(serve(listener, rules.clone()));
         Ok(Self {
             address,
-            refused,
+            rules,
             serving,
         })
     }
 
-    /// The address to give yt-dlp as its proxy.
+    /// The address to give yt-dlp as its proxy, in its environment: it carries the run's password.
     pub(super) fn url(&self) -> String {
-        format!("http://{}", self.address)
+        match &self.rules.through {
+            Some((_, password)) => format!("http://{PROXY_USER}:{password}@{}", self.address),
+            None => format!("http://{}", self.address),
+        }
     }
 
     /// Whether a request of the run was stopped for leading into the local network.
     pub(super) fn refused_any(&self) -> bool {
-        self.refused.load(Ordering::Relaxed)
+        self.rules.refused.load(Ordering::Relaxed)
+    }
+
+    /// The certificates yt-dlp trusts for a run through the browser, in PEM.
+    pub(super) fn bundle(&self) -> Option<&str> {
+        self.rules
+            .through
+            .as_ref()
+            .map(|(through, _)| through.authority.bundle())
+    }
+
+    /// Whether the browser made no answer to one of the run's requests.
+    pub(super) fn browser_failed(&self) -> bool {
+        self.rules
+            .through
+            .as_ref()
+            .is_some_and(|(through, _)| through.failed.load(Ordering::Relaxed))
     }
 }
 
@@ -82,7 +135,30 @@ impl Drop for Guard {
     }
 }
 
-async fn serve(listener: TcpListener, kept_off: fn(IpAddr) -> bool, refused: Arc<AtomicBool>) {
+/// A run's random proxy password.
+fn password() -> io::Result<String> {
+    let mut bytes = [0_u8; 18];
+    getrandom::fill(&mut bytes).map_err(io::Error::from)?;
+    Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes))
+}
+
+/// Whether request head `head` carries `password` as its `Proxy-Authorization`.
+fn authorized(head: &[u8], password: &str) -> bool {
+    let expected =
+        base64::engine::general_purpose::STANDARD.encode(format!("{PROXY_USER}:{password}"));
+    String::from_utf8_lossy(head)
+        .split("\r\n")
+        .filter_map(|line| line.split_once(':'))
+        .filter(|(name, _)| name.trim().eq_ignore_ascii_case("proxy-authorization"))
+        .any(|(_, value)| {
+            value
+                .trim()
+                .strip_prefix("Basic ")
+                .is_some_and(|given| given.trim() == expected)
+        })
+}
+
+async fn serve(listener: TcpListener, rules: Rules) {
     // Dropped with this task, which aborts every connection.
     let mut connections = JoinSet::new();
     loop {
@@ -90,7 +166,7 @@ async fn serve(listener: TcpListener, kept_off: fn(IpAddr) -> bool, refused: Arc
             accepted = listener.accept() => match accepted {
                 Ok((client, _)) => {
                     // In the caller's span, like every task (`wirecatch_engine::task`).
-                    connections.spawn(carry(client, kept_off, refused.clone()).in_current_span());
+                    connections.spawn(carry(client, rules.clone()).in_current_span());
                 }
                 Err(e) => {
                     tracing::debug!(error = %e, "the local network guard missed a connection");
@@ -211,7 +287,10 @@ fn closing_response(head: &[u8]) -> Vec<u8> {
 }
 
 /// Reads on from `bytes` up to the end of a head: the head and what came after it. `None` when the input ends first or the head runs past [`MAX_HEAD`].
-async fn read_head(input: &mut TcpStream, mut bytes: Vec<u8>) -> Option<(Vec<u8>, Vec<u8>)> {
+pub(super) async fn read_head<S: AsyncRead + Unpin>(
+    input: &mut S,
+    mut bytes: Vec<u8>,
+) -> Option<(Vec<u8>, Vec<u8>)> {
     const END: &[u8] = b"\r\n\r\n";
     let mut chunk = [0_u8; KIB_USIZE];
     loop {
@@ -263,19 +342,25 @@ async fn connect(addresses: &[SocketAddr]) -> Option<TcpStream> {
 }
 
 /// Carries one connection of yt-dlp's to where its request asks, if that is allowed.
-async fn carry(mut client: TcpStream, kept_off: fn(IpAddr) -> bool, refused: Arc<AtomicBool>) {
+async fn carry(mut client: TcpStream, rules: Rules) {
     let Some((head, rest)) = read_head(&mut client, Vec::new()).await else {
         client_may_have_gone(&client.write_all(BAD_REQUEST).await);
         return;
     };
+    if let Some((_, password)) = &rules.through
+        && !authorized(&head, password)
+    {
+        client_may_have_gone(&client.write_all(UNAUTHORIZED).await);
+        return;
+    }
     let Some(destination) = read_request(&head) else {
         client_may_have_gone(&client.write_all(BAD_REQUEST).await);
         return;
     };
-    let addresses = match reach(&destination.host, destination.port, kept_off).await {
+    let addresses = match reach(&destination.host, destination.port, rules.kept_off).await {
         Reach::Open(addresses) => addresses,
         Reach::Refused => {
-            refused.store(true, Ordering::Relaxed);
+            rules.refused.store(true, Ordering::Relaxed);
             tracing::warn!("stopped a request of yt-dlp's that led into the local network");
             client_may_have_gone(&client.write_all(REFUSED).await);
             return;
@@ -285,6 +370,15 @@ async fn carry(mut client: TcpStream, kept_off: fn(IpAddr) -> bool, refused: Arc
             return;
         }
     };
+    if let Some((through, _)) = &rules.through
+        && destination.request.is_none()
+        && through.takes(&destination.host, destination.port)
+    {
+        if let Err(e) = super::relay::carry(client, &rest, &destination.host, through).await {
+            tracing::debug!(error = %e, "a tunnel through the browser ended early");
+        }
+        return;
+    }
     let Some(mut server) = connect(&addresses).await else {
         client_may_have_gone(&client.write_all(UNREACHABLE).await);
         return;
@@ -397,7 +491,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_tunnel_to_the_local_network_is_refused() {
-        let guard = Guard::start().await.unwrap();
+        let guard = Guard::start(None).await.unwrap();
         let server = local_server().await;
         let target = server.local_addr().unwrap();
         let said = answer(
@@ -411,7 +505,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_plain_request_to_the_local_network_is_refused() {
-        let guard = Guard::start().await.unwrap();
+        let guard = Guard::start(None).await.unwrap();
         for target in [
             "http://127.0.0.1:9/",
             "http://192.168.0.1/admin",
@@ -426,7 +520,7 @@ mod tests {
     /// The form of a link-local address `Url::parse` rejects, which a redirect can still name: it never goes on.
     #[tokio::test]
     async fn a_link_local_address_with_a_zone_goes_nowhere() {
-        let guard = Guard::start().await.unwrap();
+        let guard = Guard::start(None).await.unwrap();
         for request in [
             "CONNECT [fe80::1%25eth0]:443 HTTP/1.1\r\n\r\n",
             "GET http://[fe80::1%25eth0]/ HTTP/1.1\r\n\r\n",
@@ -439,7 +533,7 @@ mod tests {
     /// The guard stops reading, so the client may see its connection reset rather than the answer.
     #[tokio::test]
     async fn a_head_past_the_limit_goes_nowhere() {
-        let guard = Guard::start().await.unwrap();
+        let guard = Guard::start(None).await.unwrap();
         let mut client = TcpStream::connect(guard.address).await.unwrap();
         let long = "x".repeat(MAX_HEAD * 2);
         let wrote = client
@@ -452,7 +546,7 @@ mod tests {
 
     #[tokio::test]
     async fn only_web_requests_go_on() {
-        let guard = Guard::start().await.unwrap();
+        let guard = Guard::start(None).await.unwrap();
         for request in [
             "GET ftp://example.com/ HTTP/1.1\r\n\r\n",
             "GET /origin-form HTTP/1.1\r\n\r\n",
@@ -466,7 +560,7 @@ mod tests {
     /// Where it is allowed, a tunnel carries bytes both ways.
     #[tokio::test]
     async fn an_allowed_tunnel_carries_both_ways() {
-        let guard = Guard::keeping_off(nothing_kept_off).await.unwrap();
+        let guard = Guard::keeping_off(nothing_kept_off, None).await.unwrap();
         let server = local_server().await;
         let target = server.local_addr().unwrap();
         let echo = tokio::spawn(async move {
@@ -494,7 +588,7 @@ mod tests {
     /// A plain request reaches the server in the form a server reads, without what was for a proxy, and closes, so the next request comes back through the guard.
     #[tokio::test]
     async fn an_allowed_plain_request_is_rewritten_for_the_server() {
-        let guard = Guard::keeping_off(nothing_kept_off).await.unwrap();
+        let guard = Guard::keeping_off(nothing_kept_off, None).await.unwrap();
         let server = local_server().await;
         let target = server.local_addr().unwrap();
         let heard = tokio::spawn(async move {
@@ -522,7 +616,7 @@ mod tests {
     /// A server that keeps its connection open never gets a later request sent down this one, which could name another host and carry its cookies.
     #[tokio::test]
     async fn a_keep_alive_server_sees_one_request_only() {
-        let guard = Guard::keeping_off(nothing_kept_off).await.unwrap();
+        let guard = Guard::keeping_off(nothing_kept_off, None).await.unwrap();
         let server = local_server().await;
         let target = server.local_addr().unwrap();
         let later = tokio::spawn(async move {
@@ -567,7 +661,7 @@ mod tests {
     /// A request's body goes on to its stated length, and what follows it does not.
     #[tokio::test]
     async fn only_a_requests_own_body_goes_on() {
-        let guard = Guard::keeping_off(nothing_kept_off).await.unwrap();
+        let guard = Guard::keeping_off(nothing_kept_off, None).await.unwrap();
         let server = local_server().await;
         let target = server.local_addr().unwrap();
         let heard = tokio::spawn(async move {
@@ -593,7 +687,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_body_of_unstated_length_goes_nowhere() {
-        let guard = Guard::keeping_off(nothing_kept_off).await.unwrap();
+        let guard = Guard::keeping_off(nothing_kept_off, None).await.unwrap();
         let said = answer(
             &guard,
             "POST http://127.0.0.1:9/ HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n",
@@ -622,7 +716,7 @@ mod tests {
     /// A server cannot keep the client reading: an early answer does not reach it, and anything more from the client ends the connection before a later answer could pass for its next request.
     #[tokio::test]
     async fn an_early_answer_cannot_hold_the_connection() {
-        let guard = Guard::keeping_off(nothing_kept_off).await.unwrap();
+        let guard = Guard::keeping_off(nothing_kept_off, None).await.unwrap();
         let server = local_server().await;
         let target = server.local_addr().unwrap();
         let (hinted, was_hinted) = tokio::sync::oneshot::channel();
@@ -670,5 +764,95 @@ mod tests {
             sent,
             b"HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 2\r\nno colon here\r\n\r\n"
         );
+    }
+
+    /// Answers every page read with `page`, keeping what was asked.
+    struct FakeBrowser {
+        asked: std::sync::Mutex<Vec<super::super::BrowserRequest>>,
+    }
+
+    impl super::super::BrowserReader for FakeBrowser {
+        fn read(&self, request: super::super::BrowserRequest) -> super::super::BrowserReading {
+            let answer = super::super::BrowserAnswer {
+                status: 410,
+                url: request.url.clone(),
+                headers: vec![
+                    ("Content-Type".into(), "text/html".into()),
+                    ("Content-Encoding".into(), "br".into()),
+                ],
+                body: b"page".to_vec(),
+            };
+            self.asked.lock().unwrap().push(request);
+            Box::pin(async move { Ok(answer) })
+        }
+    }
+
+    /// A tunnel to the page's site takes only the run's password, and its request is made by the browser: yt-dlp gets the browser's answer over TLS with the run's own certificate, its body already decoded.
+    #[tokio::test]
+    async fn a_tunnel_to_the_pages_site_is_answered_by_the_browser() {
+        let browser = Arc::new(FakeBrowser {
+            asked: std::sync::Mutex::default(),
+        });
+        let route = super::super::BrowserRoute {
+            reader: browser.clone(),
+            site: "localhost".into(),
+        };
+        let guard = Guard::keeping_off(nothing_kept_off, Some(route))
+            .await
+            .unwrap();
+        let connect = "CONNECT localhost:443 HTTP/1.1\r\nHost: localhost:443\r\n";
+        let said = answer(&guard, &format!("{connect}\r\n")).await;
+        assert!(said.starts_with("HTTP/1.1 407"), "{said}");
+
+        let proxy = Url::parse(&guard.url()).unwrap();
+        let login = base64::engine::general_purpose::STANDARD.encode(format!(
+            "{}:{}",
+            proxy.username(),
+            proxy.password().unwrap()
+        ));
+        let mut client = TcpStream::connect(guard.address).await.unwrap();
+        client
+            .write_all(format!("{connect}Proxy-Authorization: Basic {login}\r\n\r\n").as_bytes())
+            .await
+            .unwrap();
+        let mut opened = vec![0_u8; TUNNEL_OPEN.len()];
+        client.read_exact(&mut opened).await.unwrap();
+        assert_eq!(opened, TUNNEL_OPEN);
+
+        let (through, _) = guard.rules.through.as_ref().unwrap();
+        let mut roots = rustls::RootCertStore::empty();
+        roots
+            .add(super::super::relay::authority_der(&through.authority))
+            .unwrap();
+        let config = rustls::ClientConfig::builder_with_provider(Arc::new(
+            rustls::crypto::ring::default_provider(),
+        ))
+        .with_protocol_versions(rustls::ALL_VERSIONS)
+        .unwrap()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+        let name = rustls::pki_types::ServerName::try_from("localhost").unwrap();
+        let mut tls = tokio_rustls::TlsConnector::from(Arc::new(config))
+            .connect(name, client)
+            .await
+            .unwrap();
+        tls.write_all(b"GET /v?k=1 HTTP/1.1\r\nHost: localhost\r\nAccept: */*\r\n\r\n")
+            .await
+            .unwrap();
+        let mut said = Vec::new();
+        tokio::time::timeout(PATIENCE, tls.read_to_end(&mut said))
+            .await
+            .unwrap()
+            .unwrap();
+        let said = String::from_utf8(said).unwrap();
+        assert_eq!(
+            said,
+            "HTTP/1.1 410 Gone\r\nConnection: close\r\nContent-Length: 4\r\nContent-Type: text/html\r\n\r\npage"
+        );
+        let asked = browser.asked.lock().unwrap();
+        assert_eq!(asked.len(), 1);
+        assert_eq!(asked[0].url.as_str(), "https://localhost/v?k=1");
+        assert_eq!(asked[0].method, "GET");
+        assert!(!guard.browser_failed());
     }
 }

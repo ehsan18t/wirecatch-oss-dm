@@ -2,6 +2,8 @@
 import type { BrowserNotice } from './BrowserNotice';
 import type { NoticeId } from './NoticeId';
 import type { OptionList } from './OptionList';
+import type { PageRead } from './PageRead';
+import type { PageReadCancelled } from './PageReadCancelled';
 import type { QueueSummary } from './QueueSummary';
 import type { ShellConfig } from './ShellConfig';
 
@@ -13,4 +15,6 @@ export type Event =
   | { type: 'notice_requested'; data: BrowserNotice }
   | { type: 'notice_withdrawn'; data: NoticeId }
   | { type: 'shell_config_changed'; data: ShellConfig }
-  | { type: 'options_changed'; data: OptionList };
+  | { type: 'options_changed'; data: OptionList }
+  | { type: 'page_read_requested'; data: PageRead }
+  | { type: 'page_read_cancelled'; data: PageReadCancelled };

@@ -10411,11 +10411,18 @@ dependencies = [
 name = "wirecatch-media"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
+ "getrandom 0.4.3",
+ "http",
+ "rcgen",
+ "rustls",
+ "rustls-native-certs",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
+ "tokio-rustls",
  "tracing",
  "wirecatch-addons",
  "wirecatch-engine",

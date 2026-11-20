@@ -88,6 +88,14 @@ import type { OutputFit } from './OutputFit';
 import type { OutputFormat } from './OutputFormat';
 import type { PageOptions } from './PageOptions';
 import type { PageQuery } from './PageQuery';
+import type { PageRead } from './PageRead';
+import type { PageReadAnswer } from './PageReadAnswer';
+import type { PageReadCancelled } from './PageReadCancelled';
+import type { PageReadFailed } from './PageReadFailed';
+import type { PageReadFailure } from './PageReadFailure';
+import type { PageReadId } from './PageReadId';
+import type { PageReadPart } from './PageReadPart';
+import type { PageReads } from './PageReads';
 import type { PendingCapture } from './PendingCapture';
 import type { PortablePath } from './PortablePath';
 import type { PrivateSessionEnded } from './PrivateSessionEnded';
@@ -423,7 +431,19 @@ export function isCall(value: unknown): value is Call {
     ((value1: unknown): boolean =>
       isRecord(value1) &&
       value1['method'] === 'private_session_ended' &&
-      isPrivateSessionEnded(value1['params']))(value)
+      isPrivateSessionEnded(value1['params']))(value) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) &&
+      value1['method'] === 'page_read_part' &&
+      isPageReadPart(value1['params']))(value) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) &&
+      value1['method'] === 'page_read_answered' &&
+      isPageReadAnswer(value1['params']))(value) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) &&
+      value1['method'] === 'page_read_failed' &&
+      isPageReadFailed(value1['params']))(value)
   );
 }
 
@@ -629,7 +649,15 @@ export function isEvent(value: unknown): value is Event {
     ((value1: unknown): boolean =>
       isRecord(value1) && value1['type'] === 'options_changed' && isOptionList(value1['data']))(
       value,
-    )
+    ) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['type'] === 'page_read_requested' && isPageRead(value1['data']))(
+      value,
+    ) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) &&
+      value1['type'] === 'page_read_cancelled' &&
+      isPageReadCancelled(value1['data']))(value)
   );
 }
 
@@ -798,7 +826,8 @@ export function isHello(value: unknown): value is Hello {
     (value1['max_protocol_version'] === undefined ||
       typeof value1['max_protocol_version'] === 'number') &&
     (typeof value1['private_session'] === 'string' || value1['private_session'] === null) &&
-    typeof value1['start_app'] === 'boolean')(value);
+    typeof value1['start_app'] === 'boolean' &&
+    (value1['page_reads'] === undefined || isPageReads(value1['page_reads'])))(value);
 }
 
 /** Whether `value` has the shape of a {@link HelloReply}; fields it does not name are not checked. */
@@ -1226,6 +1255,60 @@ export function isPageQuery(value: unknown): value is PageQuery {
   return ((value1: unknown): boolean => isRecord(value1) && typeof value1['host'] === 'string')(
     value,
   );
+}
+
+/** Whether `value` has the shape of a {@link PageRead}; fields it does not name are not checked. */
+export function isPageRead(value: unknown): value is PageRead {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    isPageReadId(value1['id']) &&
+    typeof value1['method'] === 'string' &&
+    typeof value1['url'] === 'string' &&
+    isArrayOf(value1['headers'], isHeader) &&
+    (value1['body'] === undefined || typeof value1['body'] === 'string'))(value);
+}
+
+/** Whether `value` has the shape of a {@link PageReadAnswer}; fields it does not name are not checked. */
+export function isPageReadAnswer(value: unknown): value is PageReadAnswer {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    isPageReadId(value1['id']) &&
+    typeof value1['status'] === 'number' &&
+    typeof value1['url'] === 'string' &&
+    isArrayOf(value1['headers'], isHeader))(value);
+}
+
+/** Whether `value` has the shape of a {@link PageReadCancelled}; fields it does not name are not checked. */
+export function isPageReadCancelled(value: unknown): value is PageReadCancelled {
+  return ((value1: unknown): boolean => isRecord(value1) && isPageReadId(value1['id']))(value);
+}
+
+/** Whether `value` has the shape of a {@link PageReadFailed}; fields it does not name are not checked. */
+export function isPageReadFailed(value: unknown): value is PageReadFailed {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) && isPageReadId(value1['id']) && isPageReadFailure(value1['reason']))(value);
+}
+
+/** Whether `value` has the shape of a {@link PageReadFailure}; fields it does not name are not checked. */
+export function isPageReadFailure(value: unknown): value is PageReadFailure {
+  return value === 'network' || value === 'too_large';
+}
+
+/** Whether `value` has the shape of a {@link PageReadId}; fields it does not name are not checked. */
+export function isPageReadId(value: unknown): value is PageReadId {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+/** Whether `value` has the shape of a {@link PageReadPart}; fields it does not name are not checked. */
+export function isPageReadPart(value: unknown): value is PageReadPart {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) && isPageReadId(value1['id']) && typeof value1['bytes'] === 'string')(value);
+}
+
+/** Whether `value` has the shape of a {@link PageReads}; fields it does not name are not checked. */
+export function isPageReads(value: unknown): value is PageReads {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) && typeof value1['user_agent'] === 'string')(value);
 }
 
 /** Whether `value` has the shape of a {@link PendingCapture}; fields it does not name are not checked. */

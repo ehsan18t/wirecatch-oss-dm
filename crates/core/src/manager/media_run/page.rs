@@ -87,6 +87,7 @@ pub(super) async fn page_attempt(
     let proxy = wirecatch_settings::proxy::ytdlp_proxy(&job.options.proxy, &job.url);
     let ctx = ytdlp::Context {
         off_local_network: off_local_network(job, proxy.as_deref()).await,
+        browser: job.browser.as_ref(),
         tools,
         page: &job.url,
         cookies: cookies.as_deref(),

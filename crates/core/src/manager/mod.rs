@@ -18,6 +18,7 @@ mod media;
 mod media_run;
 mod options;
 mod page_readings;
+pub(crate) mod page_reads;
 mod placement;
 mod policy;
 mod preferences;
@@ -346,6 +347,8 @@ struct Inner {
     media_refresh_delays: Arc<[Duration]>,
     /// Each reading of a page is a request to its site, and many soon after one another get the app refused as a bot.
     page_readings: Arc<page_readings::PageReadings>,
+    /// The browsers that make page reads for media reads (D282).
+    page_readers: Arc<page_reads::PageReaders>,
     retry_backoff: Backoff,
     /// Shared by every download for the global speed limit.
     global_limiter: Arc<RateLimiter>,
@@ -488,6 +491,7 @@ impl Manager {
             media_timeout: config.media_timeout,
             media_refresh_delays: config.media_refresh_delays.into(),
             page_readings: Arc::default(),
+            page_readers: Arc::default(),
             retry_backoff: config.retry_backoff,
             global_limiter,
             ui_events,

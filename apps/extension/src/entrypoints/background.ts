@@ -38,6 +38,7 @@ import { MediaRegistry } from '@/lib/media/registry';
 import { MediaWatcher } from '@/lib/media/watch';
 import { acceptsPopupPort } from '@/lib/popup-port';
 import { NativeClient } from '@/lib/native/client';
+import { PageReads } from '@/lib/page-reads';
 import { browserTransport } from '@/lib/native/port';
 import { NoticeCenter } from '@/lib/notices/center';
 import { focusedWebTab } from '@/lib/notices/focus';
@@ -187,10 +188,19 @@ function followPrivateSession(): {
 export default defineBackground(() => {
   installDiagnostics('background', self);
   const { session: privateSession, ended: sessionEnded } = followPrivateSession();
+  // Firefox's fetch() from an extension has not been measured against a site's checks yet (D282).
+  const makesPageReads = !isFirefox();
   const client = new NativeClient({
     transport: browserTransport(),
-    hello: () => helloFromExtension(privateSession),
+    hello: () => helloFromExtension(privateSession, makesPageReads),
   });
+  if (makesPageReads) {
+    const pageReads = new PageReads({
+      fetch: (url, init) => fetch(url, init),
+      send: (call, timeoutMs) => client.request(call, timeoutMs),
+    });
+    client.onEvent((event) => pageReads.follow(event));
+  }
 
   const hubDeps = {
     mediaButtonSetting: { publish: publishButtonSetting },

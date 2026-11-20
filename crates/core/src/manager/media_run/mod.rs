@@ -75,9 +75,27 @@ struct Job {
     file_work: FileWork,
     /// What happens when its name is taken by a file in the folder (D96).
     taken: Taken,
+    /// The browser its page reads go through (D282).
+    browser: Option<wirecatch_media::ytdlp::BrowserRoute>,
 }
 
 impl Manager {
+    /// Reserves and releases the paths download `id`'s finished file may take, among the paths other downloads hold.
+    fn reserve_for(&self, id: DownloadId) -> Reserve {
+        let manager = Arc::downgrade(&self.inner);
+        Arc::new(move |path: &Path, take: bool| {
+            Manager::from_weak(&manager).is_some_and(|m| {
+                let mut state = m.lock();
+                if take {
+                    state.claimed.reserve(path, id)
+                } else {
+                    state.claimed.release(path, id);
+                    true
+                }
+            })
+        })
+    }
+
     /// Starts media download `id` (the caller checked every limit).
     pub(super) fn start_media_run(
         &self,
@@ -130,20 +148,7 @@ impl Manager {
             } else {
                 self.inner.page_readings.clone()
             },
-            reserve: {
-                let manager = Arc::downgrade(&self.inner);
-                Arc::new(move |path: &Path, take: bool| {
-                    Manager::from_weak(&manager).is_some_and(|m| {
-                        let mut state = m.lock();
-                        if take {
-                            state.claimed.reserve(path, id)
-                        } else {
-                            state.claimed.release(path, id);
-                            true
-                        }
-                    })
-                })
-            },
+            reserve: self.reserve_for(id),
             placing: {
                 let manager = Arc::downgrade(&self.inner);
                 Arc::new(move || {
@@ -154,6 +159,7 @@ impl Manager {
             },
             file_work: FileWork::new(),
             taken: Taken::of(entry.on_existing, state.settings.when_file_exists),
+            browser: self.browser_route(state, &entry.origin, &url),
         };
         self.launch(state, id, run_id, answered, move |cancel, file_work| {
             let work = Job { file_work, ..work };

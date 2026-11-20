@@ -143,6 +143,9 @@ impl CallMethod {
         CallMethod::PageOptions,
         CallMethod::CheckDownload,
         CallMethod::PrivateSessionEnded,
+        CallMethod::PageReadPart,
+        CallMethod::PageReadAnswered,
+        CallMethod::PageReadFailed,
     ];
 
     /// The protocol version that added the call, or `None` for a method this build does not
@@ -168,7 +171,10 @@ impl CallMethod {
             | CallMethod::InvokeAction
             | CallMethod::PageOptions
             | CallMethod::CheckDownload
-            | CallMethod::PrivateSessionEnded => Some(2),
+            | CallMethod::PrivateSessionEnded
+            | CallMethod::PageReadPart
+            | CallMethod::PageReadAnswered
+            | CallMethod::PageReadFailed => Some(2),
             CallMethod::Unknown => None,
         }
     }
@@ -188,6 +194,8 @@ impl EventKind {
         EventKind::NoticeWithdrawn,
         EventKind::ShellConfigChanged,
         EventKind::OptionsChanged,
+        EventKind::PageReadRequested,
+        EventKind::PageReadCancelled,
     ];
 
     /// The protocol version that added the event. The app sends it only on connections that
@@ -199,7 +207,9 @@ impl EventKind {
             EventKind::NoticeRequested
             | EventKind::NoticeWithdrawn
             | EventKind::ShellConfigChanged
-            | EventKind::OptionsChanged => 2,
+            | EventKind::OptionsChanged
+            | EventKind::PageReadRequested
+            | EventKind::PageReadCancelled => 2,
         }
     }
 }

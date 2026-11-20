@@ -51,18 +51,34 @@ pub async fn download(
     progress: &MediaProgress,
     cancel: &CancellationToken,
 ) -> Result<Fetched, YtDlpError> {
+    match download_as_asked(ctx, format, merge_into, work, progress, cancel).await {
+        Err(Attempt::BrowserFailed(error)) => {
+            debug!(%error, "the browser made no answer to a request; downloading directly");
+            let direct = super::without_browser(ctx);
+            download_as_asked(&direct, format, merge_into, work, progress, cancel).await
+        }
+        fetched => fetched,
+    }
+    .map_err(Attempt::into_error)
+}
+
+async fn download_as_asked(
+    ctx: &Context<'_>,
+    format: &str,
+    merge_into: Option<Container>,
+    work: &Path,
+    progress: &MediaProgress,
+    cancel: &CancellationToken,
+) -> Result<Fetched, Attempt> {
     if let Some(anonymous) = without_cookies(ctx) {
         match download_once(&anonymous, format, merge_into, work, progress, cancel).await {
-            Ok(fetched) => return Ok(fetched),
             Err(Attempt::NeedsSignIn(error)) => {
                 debug!(%error, "downloading needs the browser's sign-in; trying with it");
             }
-            Err(Attempt::Failed(error)) => return Err(error),
+            fetched => return fetched,
         }
     }
-    download_once(ctx, format, merge_into, work, progress, cancel)
-        .await
-        .map_err(Attempt::into_error)
+    download_once(ctx, format, merge_into, work, progress, cancel).await
 }
 
 async fn download_once(
@@ -81,8 +97,12 @@ async fn download_once(
         proxy: guard_url.as_deref().or(ctx.proxy),
         ..*ctx
     };
+    let trusted = super::trust(guard.as_ref(), scratch.path()).await?;
     let cookies = CookiesFile::create(ctx).await?;
-    let args = download_args(ctx, cookies.as_ref(), format, merge_into);
+    let mut args = download_args(ctx, cookies.as_ref(), format, merge_into);
+    if trusted.is_some() {
+        args.splice(0..0, super::Trusted::args());
+    }
     let mut printed = None::<PathBuf>;
     let result = process::run(
         &ctx.tools.ytdlp,
@@ -91,7 +111,11 @@ async fn download_once(
         RunOptions::lines()
             .with_idle_timeout(STALL_TIMEOUT)
             .watching(work.to_path_buf())
-            .with_environment(super::run_environment(ctx, scratch.path())),
+            .with_environment(super::run_environment(
+                ctx,
+                scratch.path(),
+                trusted.as_ref(),
+            )),
         cancel,
         |output, line| {
             if let Some(report) = line
@@ -119,9 +143,9 @@ async fn download_once(
         return Err(if guard.as_ref().is_some_and(Guard::refused_any) {
             YtDlpError::LocalNetwork.into()
         } else if let Some(address) = ran.stderr.error_line().and_then(refused_address) {
-            refused(&ran).of_address(address)
+            super::failed_through(guard.as_ref(), refused(&ran).of_address(address))
         } else {
-            refused(&ran)
+            super::failed_through(guard.as_ref(), refused(&ran))
         });
     }
     let work = work.to_path_buf();
@@ -273,6 +297,7 @@ mod tests {
             proxy: None,
             rate_limit: Some(2048),
             off_local_network: false,
+            browser: None,
         };
         let args = download_args(&ctx, None, "best", merge_into);
         args.iter()

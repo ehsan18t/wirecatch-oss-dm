@@ -1,12 +1,14 @@
-// The one place a plain number becomes an id. The protocol's ids are branded (`DownloadId`, `QueueId`, `QuestionId`, `NoticeId`, `ProxyServerId`), so one cannot pass for another; an id that comes from the app is already typed, or is checked with its generated guard (`isDownloadId`). These constructors are for a number known to be the id: the desktop's stand-in backend, and tests. Each checks the number with the same guard, so no id is made without the check.
+// The one place a plain number becomes an id. The protocol's ids are branded (`DownloadId`, `QueueId`, `QuestionId`, `NoticeId`, `ProxyServerId`, `PageReadId`), so one cannot pass for another; an id that comes from the app is already typed, or is checked with its generated guard (`isDownloadId`). These constructors are for a number known to be the id: the desktop's stand-in backend, and tests. Each checks the number with the same guard, so no id is made without the check.
 import type { DownloadId } from './generated/DownloadId';
 import type { NoticeId } from './generated/NoticeId';
+import type { PageReadId } from './generated/PageReadId';
 import type { ProxyServerId } from './generated/ProxyServerId';
 import type { QuestionId } from './generated/QuestionId';
 import type { QueueId } from './generated/QueueId';
 import {
   isDownloadId,
   isNoticeId,
+  isPageReadId,
   isProxyServerId,
   isQuestionId,
   isQueueId,
@@ -45,4 +47,9 @@ export function noticeId(value: number): NoticeId {
 /** `value` as the id of a proxy server (D73). */
 export function proxyServerId(value: number): ProxyServerId {
   return checked(value, isProxyServerId, 'proxy server id');
+}
+
+/** `value` as the id of a page read the app asks a browser to make (D282). */
+export function pageReadId(value: number): PageReadId {
+  return checked(value, isPageReadId, 'page read id');
 }

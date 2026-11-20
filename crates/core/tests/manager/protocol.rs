@@ -167,6 +167,7 @@ fn hello(protocol_version: u32, max_protocol_version: Option<u32>) -> Call {
         max_protocol_version,
         private_session: None,
         start_app: true,
+        page_reads: None,
     })
 }
 
