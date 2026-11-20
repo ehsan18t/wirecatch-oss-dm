@@ -1,4 +1,4 @@
-//! A temporary folder of its own for each run of yt-dlp, readable only by the current user and deleted with what is in it: yt-dlp's temporary files go there, and it is the only folder the PhantomJS stand-in lets a script touch (D281).
+//! A temporary folder of its own for each run of yt-dlp, readable only by the current user and deleted with what is in it: yt-dlp's temporary files go there, and the PhantomJS stand-in lets a script touch only the files directly in it (D281).
 
 #![forbid(unsafe_code)]
 
@@ -57,14 +57,21 @@ impl Scratch {
     }
 }
 
-/// Deleted when dropped: the fallback when a run is cancelled, panics or [`Scratch::delete`] could not delete it.
+/// Deleted when dropped: the fallback when a run is cancelled, panics or [`Scratch::delete`] could not delete it. Off the async threads when a runtime is there, since the folder may hold yt-dlp's unpacked build.
 impl Drop for Scratch {
     fn drop(&mut self) {
         if self.deleted {
             return;
         }
-        if let Err(e) = wirecatch_files::remove_own_folder(&self.path) {
-            warn!(path = %self.path.display(), error = %e, "could not delete a run's temporary folder");
+        let path = std::mem::take(&mut self.path);
+        let remove = move || {
+            if let Err(e) = wirecatch_files::remove_own_folder(&path) {
+                warn!(path = %path.display(), error = %e, "could not delete a run's temporary folder");
+            }
+        };
+        match tokio::runtime::Handle::try_current() {
+            Ok(runtime) => drop(wirecatch_engine::task::spawn_blocking_on(&runtime, remove)),
+            Err(_) => remove(),
         }
     }
 }

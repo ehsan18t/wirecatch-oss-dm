@@ -219,10 +219,12 @@ function createPage() {
     setContent(html, url) {
       setTimeout(() => load(page, String(html), String(url ?? '')), 0);
     },
-    // Runs `fn` in the page and gives back a copy of what it returned, as PhantomJS does.
+    // Runs `fn` in the page and gives back a copy of what it returned, as PhantomJS does: `null` for what JSON cannot hold.
     evaluate(fn, ...args) {
-      const result = runInPage(page, `(${fn.toString()}).apply(null, ${JSON.stringify(args)})`);
-      return result === undefined ? null : JSON.parse(JSON.stringify(result));
+      const copy = JSON.stringify(
+        runInPage(page, `(${fn.toString()}).apply(null, ${JSON.stringify(args)})`),
+      );
+      return copy === undefined ? null : JSON.parse(copy);
     },
     render() {
       return false;

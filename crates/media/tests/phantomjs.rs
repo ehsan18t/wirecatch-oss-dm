@@ -200,6 +200,92 @@ fn a_script_stays_in_its_folder() {
     assert_eq!(stdout(&output), "");
 }
 
+/// yt-dlp's one-file build unpacks its libraries into a folder of the run's own, which a script may not change.
+#[test]
+fn what_yt_dlp_unpacked_is_out_of_reach() {
+    let Some(deno) = real_deno() else { return };
+    let folder = private_dir("phantomjs").unwrap();
+    let unpacked = folder.path().join("_MEI1");
+    std::fs::create_dir(&unpacked).unwrap();
+    let library = unpacked.join("library");
+    std::fs::write(&library, "yt-dlp's").unwrap();
+    let script = folder.path().join("script");
+    std::fs::write(
+        &script,
+        executed(&format!(
+            "require('fs').write(\"{}\", 'the page\\'s')",
+            quoted(&library)
+        )),
+    )
+    .unwrap();
+    let output = run(&deno, folder.path(), &script).unwrap();
+    assert!(!output.status.success(), "{output:?}");
+    assert_eq!(std::fs::read_to_string(&library).unwrap(), "yt-dlp's");
+}
+
+/// yt-dlp names its files under the folder as the app named it, which may go through a link.
+#[cfg(unix)]
+#[test]
+fn a_folder_named_through_a_link_works() {
+    let Some(deno) = real_deno() else { return };
+    let real = private_dir("phantomjs").unwrap();
+    let links = private_dir("links").unwrap();
+    let folder = links.path().join("run");
+    std::os::unix::fs::symlink(real.path(), &folder).unwrap();
+    let files = get(
+        &folder,
+        CHECK_PAGE,
+        "[]",
+        "https://www.example.com/view_video.php?viewkey=1",
+        "Mozilla/5.0 (test)",
+        "saveAndExit();",
+    )
+    .unwrap();
+    let output = run(&deno, &folder, &files.script).unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        std::fs::read_to_string(&files.cookies)
+            .unwrap()
+            .contains("KEY")
+    );
+}
+
+/// Deno splits what it allows on commas, with no way to escape one.
+#[test]
+fn a_folder_with_a_comma_is_refused() {
+    let parent = private_dir("phantomjs").unwrap();
+    let folder = parent.path().join("a,b");
+    std::fs::create_dir(&folder).unwrap();
+    let script = folder.join("script");
+    std::fs::write(&script, executed("console.log('ran')")).unwrap();
+    let output = run(Path::new("deno"), &folder, &script).unwrap();
+    assert!(!output.status.success(), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("comma"),
+        "{output:?}"
+    );
+}
+
+/// What JSON cannot hold, such as a function, comes back as `null`, as from PhantomJS.
+#[test]
+fn what_a_page_cannot_copy_comes_back_as_null() {
+    let Some(deno) = real_deno() else { return };
+    let folder = private_dir("phantomjs").unwrap();
+    let files = get(
+        folder.path(),
+        "<!DOCTYPE html>",
+        "[]",
+        "https://www.example.com/play",
+        "Mozilla/5.0 (test)",
+        r"console.log(JSON.stringify(page.evaluate(function() { return function() {}; })));
+        saveAndExit();",
+    )
+    .unwrap();
+    let output = run(&deno, folder.path(), &files.script).unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(stdout(&output), "null");
+}
+
 #[test]
 fn without_a_deno_nothing_runs() {
     let folder = private_dir("phantomjs").unwrap();

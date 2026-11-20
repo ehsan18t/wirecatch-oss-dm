@@ -16,7 +16,7 @@ pub const VERSION: &str = "2.1.1";
 /// Names the Deno the stand-in runs scripts in.
 pub const DENO_VARIABLE: &str = "WIRECATCH_PHANTOMJS_DENO";
 
-/// Names the only folder a script may read and write in: the run's own, where yt-dlp keeps its temporary files.
+/// Names the run's own folder, where yt-dlp keeps its temporary files: a script may read and write only the files directly in it.
 pub const FOLDER_VARIABLE: &str = "WIRECATCH_PHANTOMJS_FOLDER";
 
 /// The stand-in installed with the app: in a `phantomjs` folder of its own beside the app on Windows, under `/usr/lib/<slug>` beside `/usr/bin` on Linux. `None` when it is not there, as in a development build.

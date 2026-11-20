@@ -1,4 +1,4 @@
-//! `phantomjs`: the stand-in yt-dlp runs instead of PhantomJS (D281). It answers `-v` with PhantomJS's last version and runs a script in the Deno the app names, through `shim.js`, which gives it the PhantomJS APIs yt-dlp's `PhantomJSwrapper` uses. The script may read and write only the run's own folder; Deno gets no network, environment or programs.
+//! `phantomjs`: the stand-in yt-dlp runs instead of PhantomJS (D281). It answers `-v` with PhantomJS's last version and runs a script in the Deno the app names, through `shim.js`, which gives it the PhantomJS APIs yt-dlp's `PhantomJSwrapper` uses. The script may read and write only the files directly in the run's own folder, which yt-dlp wrote for it; Deno gets no network, environment or programs.
 
 #![forbid(unsafe_code)]
 
@@ -46,46 +46,62 @@ async fn run(args: &[OsString]) -> Result<ExitCode, String> {
         .map(PathBuf::from)
         .ok_or("no script to run")?;
     let deno = std::env::var_os(DENO_VARIABLE).ok_or("no Deno named")?;
-    let folder = std::env::var_os(FOLDER_VARIABLE).ok_or("no folder named")?;
-    let folder = canonical(Path::new(&folder)).map_err(|e| format!("the folder: {e}"))?;
-    let script = canonical(&script).map_err(|e| format!("the script: {e}"))?;
-    if !script.starts_with(&folder) {
+    let folder = PathBuf::from(std::env::var_os(FOLDER_VARIABLE).ok_or("no folder named")?);
+    if folder.to_string_lossy().contains(',') {
+        return Err("the run's folder has a comma in its path, which Deno cannot be given".into());
+    }
+    let inside = tokio::fs::canonicalize(&folder)
+        .await
+        .map_err(|e| format!("the folder: {e}"))?;
+    let canonical_script = tokio::fs::canonicalize(&script)
+        .await
+        .map_err(|e| format!("the script: {e}"))?;
+    if !canonical_script.starts_with(&inside) {
         return Err("the script is outside the run's folder".into());
     }
     let shim = folder.join(format!("phantomjs-shim-{}.js", std::process::id()));
     tokio::fs::write(&shim, SHIM)
         .await
         .map_err(|e| format!("could not write the shim: {e}"))?;
-    let ran = run_deno(Path::new(&deno), &folder, &shim, &script).await;
+    let ran = match own_files(&folder).await {
+        Ok(files) => run_deno(Path::new(&deno), &folder, &files, &shim, &script).await,
+        Err(e) => Err(format!("could not list the run's folder: {e}")),
+    };
     if let Err(e) = tokio::fs::remove_file(&shim).await {
         eprintln!("phantomjs stand-in: could not delete the shim: {e}");
     }
     ran
 }
 
-/// `path` made absolute and plain: Windows' canonical form (`\\?\C:\..`) is not one Deno's permissions compare with the paths a script names.
-fn canonical(path: &Path) -> std::io::Result<PathBuf> {
-    let full = std::fs::canonicalize(path)?;
-    let text = full.to_string_lossy();
-    Ok(match text.strip_prefix(r"\\?\") {
-        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => PathBuf::from(rest),
-        _ => full,
-    })
+/// The files directly in `folder`, comma-separated for Deno and named under `folder` as given: yt-dlp names them that way, and Deno compares links literally. Folders are left out: yt-dlp's one-file build unpacks its libraries into one.
+async fn own_files(folder: &Path) -> std::io::Result<OsString> {
+    let mut entries = tokio::fs::read_dir(folder).await?;
+    let mut files = OsString::new();
+    while let Some(entry) = entries.next_entry().await? {
+        let name = entry.file_name();
+        if !entry.file_type().await?.is_file() || name.to_string_lossy().contains(',') {
+            continue;
+        }
+        if !files.is_empty() {
+            files.push(",");
+        }
+        files.push(folder.join(name));
+    }
+    Ok(files)
 }
 
 /// Runs the script in Deno with its outputs passed straight through, so yt-dlp reads them as PhantomJS's. Deno stays in this program's process group or job, which the app ends with the run.
 async fn run_deno(
     deno: &Path,
     folder: &Path,
+    files: &OsString,
     shim: &Path,
     script: &Path,
 ) -> Result<ExitCode, String> {
-    let mut allowed = OsString::from("=");
-    allowed.push(folder);
-    let mut read = OsString::from("--allow-read");
-    read.push(&allowed);
-    let mut write = OsString::from("--allow-write");
-    write.push(&allowed);
+    let mut read = OsString::from("--allow-read=");
+    read.push(files);
+    let mut write = OsString::from("--allow-write=");
+    write.push(files);
     let mut command = Command::new(deno);
     command
         .args([
