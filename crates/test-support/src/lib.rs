@@ -111,36 +111,46 @@ pub const PATIENCE: Duration = Duration::from_secs(120);
 /// A window in which something must not happen: a test that checks nothing came (no request, no event, no rerun) waits this long first. Short, since it can only miss a fault, never fail a correct run (docs/ENGINEERING.md, section 7).
 pub const QUIET: Duration = Duration::from_millis(300);
 
-/// A real ffmpeg from `WIRECATCH_TEST_FFMPEG` or the `PATH`.
-///
-/// Without one the test is skipped with a note, unless
-/// `WIRECATCH_REQUIRE_FFMPEG=1` (set in CI): then it fails, so a missing
-/// ffmpeg can never make these tests pass silently.
+/// A real ffmpeg from `WIRECATCH_TEST_FFMPEG` or the `PATH`; without one the test is skipped, or fails under `WIRECATCH_REQUIRE_FFMPEG=1`.
 #[must_use]
 pub fn real_ffmpeg() -> Option<PathBuf> {
-    let configured = std::env::var_os("WIRECATCH_TEST_FFMPEG").map(PathBuf::from);
+    real_program("ffmpeg", "FFMPEG")
+}
+
+/// A real Deno from `WIRECATCH_TEST_DENO` or the `PATH`; without one the test is skipped, or fails under `WIRECATCH_REQUIRE_DENO=1`.
+#[must_use]
+pub fn real_deno() -> Option<PathBuf> {
+    real_program("deno", "DENO")
+}
+
+/// The program `name` from `WIRECATCH_TEST_<VARIABLE>` or the `PATH`.
+///
+/// Without one the test is skipped with a note, unless
+/// `WIRECATCH_REQUIRE_<VARIABLE>=1` (set in CI): then it fails, so a missing
+/// program can never make these tests pass silently.
+fn real_program(name: &str, variable: &str) -> Option<PathBuf> {
+    let setting = format!("WIRECATCH_TEST_{variable}");
+    let configured = std::env::var_os(&setting).map(PathBuf::from);
     let found = match &configured {
         Some(path) if path.is_file() => Some(path.clone()),
         Some(_) => None,
         None => {
-            let name = format!("ffmpeg{}", std::env::consts::EXE_SUFFIX);
+            let file = format!("{name}{}", std::env::consts::EXE_SUFFIX);
             std::env::var_os("PATH").and_then(|paths| {
                 std::env::split_paths(&paths)
-                    .map(|d| d.join(&name))
+                    .map(|d| d.join(&file))
                     .find(|p| p.is_file())
             })
         }
     };
     if found.is_none() {
         let why = match &configured {
-            Some(path) => format!(
-                "WIRECATCH_TEST_FFMPEG is {}, which is not a file",
-                path.display()
-            ),
-            None => "no ffmpeg on PATH and WIRECATCH_TEST_FFMPEG is not set".to_string(),
+            Some(path) => format!("{setting} is {}, which is not a file", path.display()),
+            None => format!("no {name} on PATH and {setting} is not set"),
         };
-        let required = std::env::var("WIRECATCH_REQUIRE_FFMPEG").is_ok_and(|v| v == "1");
-        assert!(!required, "WIRECATCH_REQUIRE_FFMPEG=1 but {why}");
+        let requirement = format!("WIRECATCH_REQUIRE_{variable}");
+        let required = std::env::var(&requirement).is_ok_and(|v| v == "1");
+        assert!(!required, "{requirement}=1 but {why}");
         eprintln!("skipped: {why}");
     }
     found

@@ -798,7 +798,12 @@ impl Manager {
             return;
         }
         if let Some((pending, error)) = self.offer(id, found) {
-            warn!(error = %error.message, "media could not be read");
+            warn!(
+                error = %error.message,
+                site = source.fetch.url.host_str().unwrap_or_default(),
+                kind = ?source.kind,
+                "media could not be read"
+            );
             let arrival = pending.arrival();
             if pending.page_otherwise {
                 self.emit(UiEvent::ConfirmationClosed { id });

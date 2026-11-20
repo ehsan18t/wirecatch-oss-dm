@@ -80,7 +80,7 @@ jobs:
           cache-bin: false
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      # The streams and media tests need a real ffmpeg; they skip without one, so Linux CI is where real joins and conversions are proven. It is the build the media add-on installs, from the add-on's pinned address and checked against its pinned SHA-256 (`crates/addons/src/manifest.rs`, printed by the ffmpeg_release example), and the cache keeps it until that file changes.
+      # The streams and media tests need a real ffmpeg, and the browser check tests a real Deno; they skip without one, so Linux CI is where they are proven. Each is the build the media add-on installs, from the add-on's pinned address and checked against its pinned SHA-256 (`crates/addons/src/manifest.rs`, printed by the media_tool_release example), and the cache keeps it until that file changes.
       - name: Restore ffmpeg
         id: ffmpeg
         if: runner.os == 'Linux' && matrix.part == 'test'
@@ -92,7 +92,7 @@ jobs:
       - name: Download ffmpeg
         if: runner.os == 'Linux' && matrix.part == 'test' && steps.ffmpeg.outputs.cache-hit != 'true'
         run: |
-          release=$(cargo run --quiet --locked -p wirecatch-core --example ffmpeg_release)
+          release=$(cargo run --quiet --locked -p wirecatch-core --example media_tool_release -- ffmpeg)
           read -r url sha256 program <<< "$release"
           curl --fail --location --retry 3 --silent --show-error --output "$RUNNER_TEMP/ffmpeg.tar.xz" "$url"
           echo "$sha256  $RUNNER_TEMP/ffmpeg.tar.xz" | sha256sum --check --strict
@@ -107,6 +107,33 @@ jobs:
           "$ffmpeg" -hide_banner -version | head -n 1
           echo "WIRECATCH_TEST_FFMPEG=$ffmpeg" >> "$GITHUB_ENV"
           echo "WIRECATCH_REQUIRE_FFMPEG=1" >> "$GITHUB_ENV"
+
+      - name: Restore Deno
+        id: deno
+        if: runner.os == 'Linux' && matrix.part == 'test'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/deno
+          key: deno-${{ runner.os }}-${{ hashFiles('crates/addons/src/manifest.rs') }}
+
+      - name: Download Deno
+        if: runner.os == 'Linux' && matrix.part == 'test' && steps.deno.outputs.cache-hit != 'true'
+        run: |
+          release=$(cargo run --quiet --locked -p wirecatch-core --example media_tool_release -- deno)
+          read -r url sha256 program <<< "$release"
+          curl --fail --location --retry 3 --silent --show-error --output "$RUNNER_TEMP/deno.zip" "$url"
+          echo "$sha256  $RUNNER_TEMP/deno.zip" | sha256sum --check --strict
+          mkdir -p ~/deno
+          unzip -q "$RUNNER_TEMP/deno.zip" -d ~/deno
+          echo "$program" > ~/deno/program
+
+      - name: Use Deno
+        if: runner.os == 'Linux' && matrix.part == 'test'
+        run: |
+          deno="$HOME/deno/$(cat ~/deno/program)"
+          "$deno" --version | head -n 1
+          echo "WIRECATCH_TEST_DENO=$deno" >> "$GITHUB_ENV"
+          echo "WIRECATCH_REQUIRE_DENO=1" >> "$GITHUB_ENV"
 
       # Every test binary runs even after one fails, so one failure cannot hide what the others would show. Only a test that hangs ends the run, by name, well inside the job's limit (D174).
       # Windows leaves out `clippy-linux`, a partial Linux lint for machines without Linux: the Ubuntu job lints Linux in full.

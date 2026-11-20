@@ -21,7 +21,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { GateError, ROOT } from './gate/process.mjs';
+import { cargoMetadata, GateError, ROOT } from './gate/process.mjs';
 import { INSTALLER_CRATES, installerPackages } from './notices/cargo.mjs';
 import { noticeSection, renderNotices } from './notices/render.mjs';
 import {
@@ -160,6 +160,22 @@ function stageBinaries(product, built, into, exe) {
   }
 }
 
+/** The PhantomJS stand-in's program name: the media crate's one program, named as yt-dlp looks for it (D281). */
+function standInName() {
+  const media = cargoMetadata().packages.find((pkg) => pkg.name === 'wirecatch-media');
+  const programs = media?.targets.filter((target) => target.kind.includes('bin')) ?? [];
+  if (programs.length !== 1)
+    fail('wirecatch-media should build exactly one program, the PhantomJS stand-in.');
+  return programs[0].name;
+}
+
+/** The stand-in in a folder of its own, `into`, which the app puts first on yt-dlp's PATH. */
+function stageStandIn(built, into, exe) {
+  const name = standInName();
+  mkdirSync(into, { recursive: true });
+  copyFileSync(join(built, `${name}${exe}`), join(into, `${name}${exe}`));
+}
+
 /** The third-party notices of the build for `triple`, in the `folder` it installs them to (D117). */
 function writeNotices(product, triple, folder) {
   const title = `Third-party notices for ${product.product.name} ${product.product.version} (${triple})`;
@@ -176,6 +192,7 @@ function windows(product, built, arch, triple) {
   const stage = join(OUT, `stage-windows-${arch}`);
   rmSync(stage, { recursive: true, force: true });
   stageBinaries(product, built, stage, '.exe');
+  stageStandIn(built, join(stage, standInName()), '.exe');
   copyFileSync(join(ROOT, 'LICENSE'), join(stage, 'LICENSE.txt'));
   writeNotices(product, triple, stage);
   const iscc =
@@ -198,6 +215,7 @@ function windows(product, built, arch, triple) {
     Repository: product.links.repository,
     AppExe: product.executables.app,
     BridgeExe: product.executables.bridge,
+    StandIn: standInName(),
     NoticesFile: product.files.notices,
     Arch: arch === 'x64' ? 'x64compatible' : 'arm64',
     Icon: join(ICONS, 'icon.ico'),
@@ -265,6 +283,7 @@ function stageLinux(product, built, root, triple) {
   const id = product.channels.release.identifier;
   rmSync(root, { recursive: true, force: true });
   stageBinaries(product, built, join(root, 'usr', 'bin'), '');
+  stageStandIn(built, standInFolder(product, root), '');
   const applications = join(root, 'usr', 'share', 'applications');
   mkdirSync(applications, { recursive: true });
   writeFileSync(join(applications, `${id}.desktop`), desktopEntry(product));
@@ -279,6 +298,11 @@ function stageLinux(product, built, root, triple) {
   mkdirSync(license, { recursive: true });
   copyFileSync(join(ROOT, 'LICENSE'), join(license, 'LICENSE'));
   writeNotices(product, triple, license);
+}
+
+/** Where Linux packages install the stand-in, under `root`; the app looks there (`crates/media/src/phantomjs.rs`). */
+function standInFolder(product, root) {
+  return join(root, 'usr', 'lib', product.product.slug, standInName());
 }
 
 /** Fills the package hook `name` from its template and returns the file it wrote. */
@@ -317,6 +341,11 @@ async function linux(product, built, arch, triple) {
         dst: `/usr/bin/${file}`,
         file_info: { mode: 0o755 },
       })),
+      {
+        src: join(standInFolder(product, root), standInName()),
+        dst: `/usr/lib/${slug}/${standInName()}/${standInName()}`,
+        file_info: { mode: 0o755 },
+      },
       { src: `${join(root, 'usr', 'share')}/`, dst: '/usr/share', type: 'tree' },
     ],
     scripts: {

@@ -12,6 +12,8 @@ pub struct MediaTools {
     pub ffmpeg: PathBuf,
     pub deno: PathBuf,
     pub ytdlp_cache: PathBuf,
+    /// The PhantomJS stand-in yt-dlp gets (D281); `None` when the app was installed without it.
+    pub phantomjs: Option<PathBuf>,
     /// Set for every clone when a program could not be started (an antivirus took it, say), so
     /// the manager looks at the files again instead of trusting what it found.
     broken: Arc<AtomicBool>,
@@ -26,6 +28,7 @@ impl From<ToolPaths> for MediaTools {
             ffmpeg: paths.ffmpeg,
             deno: paths.deno,
             ytdlp_cache: paths.ytdlp_cache,
+            phantomjs: crate::phantomjs::installed(),
             broken: Arc::default(),
             encoders: Arc::default(),
         }

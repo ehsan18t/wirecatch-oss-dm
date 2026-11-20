@@ -73,6 +73,8 @@ async fn download_once(
     progress: &MediaProgress,
     cancel: &CancellationToken,
 ) -> Result<Fetched, Attempt> {
+    super::make_dir(ctx.temp_dir).await?;
+    let scratch = super::make_scratch(ctx.temp_dir).await?;
     let guard = start_guard(ctx).await?;
     let guard_url = guard.as_ref().map(Guard::url);
     let ctx = &Context {
@@ -89,7 +91,7 @@ async fn download_once(
         RunOptions::lines()
             .with_idle_timeout(STALL_TIMEOUT)
             .watching(work.to_path_buf())
-            .with_environment(super::proxy_environment(ctx)),
+            .with_environment(super::run_environment(ctx, scratch.path())),
         cancel,
         |output, line| {
             if let Some(report) = line
@@ -107,6 +109,7 @@ async fn download_once(
     )
     .await;
     CookiesFile::delete(cookies).await;
+    scratch.delete().await;
     let ran = match result {
         Ok(ran) => ran,
         Err(RunError::Cancelled) => return Ok(Fetched::Cancelled),

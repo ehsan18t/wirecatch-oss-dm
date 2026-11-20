@@ -1,7 +1,7 @@
 //! Running the media add-on's yt-dlp: reading a page's formats (`-J`) and, for
 //! formats Wirecatch cannot download itself, letting yt-dlp download them.
 //!
-//! The browser's cookies reach yt-dlp through a Netscape cookies file bound to the page's host, readable only by the current user (it is created inside the app's private data folder and restricted again), and deleted as soon as yt-dlp exits. yt-dlp gets the add-on's Deno as its only JavaScript runtime, ignores any configuration files and plugins on the machine, and keeps its cache in the add-on folder rather than the one other copies of yt-dlp share.
+//! The browser's cookies reach yt-dlp through a Netscape cookies file bound to the page's host, readable only by the current user (it is created inside the app's private data folder and restricted again), and deleted as soon as yt-dlp exits. yt-dlp gets the add-on's Deno as its only JavaScript runtime, ignores any configuration files and plugins on the machine, and keeps its cache in the add-on folder rather than the one other copies of yt-dlp share. Each run has a temporary folder of its own, and finds the app's PhantomJS stand-in first on its `PATH` (D281).
 
 #![forbid(unsafe_code)]
 
@@ -9,6 +9,7 @@ mod cookies;
 mod download;
 mod guard;
 mod info;
+mod scratch;
 
 pub use download::{Fetched, download};
 pub use info::{Chapter, Format, FormatId, Info, SubtitleFile, Transport, ids, selection};
@@ -26,6 +27,7 @@ use wirecatch_streams::process::{self, Ran, RunError, RunOptions};
 use crate::MediaTools;
 use cookies::CookiesFile;
 use guard::Guard;
+use scratch::Scratch;
 
 /// Where and how yt-dlp runs.
 #[derive(Clone, Copy)]
@@ -270,6 +272,7 @@ async fn start_guard(ctx: &Context<'_>) -> Result<Option<Guard>, YtDlpError> {
 
 async fn extract_once(ctx: &Context<'_>, cancel: &CancellationToken) -> Result<Info, Attempt> {
     make_dir(ctx.temp_dir).await?;
+    let scratch = make_scratch(ctx.temp_dir).await?;
     let guard = start_guard(ctx).await?;
     let guard_url = guard.as_ref().map(Guard::url);
     let ctx = &Context {
@@ -287,12 +290,13 @@ async fn extract_once(ctx: &Context<'_>, cancel: &CancellationToken) -> Result<I
         ctx.temp_dir,
         RunOptions::collect()
             .with_timeout(ctx.timeout)
-            .with_environment(proxy_environment(ctx)),
+            .with_environment(run_environment(ctx, scratch.path())),
         cancel,
         |_, _| {},
     )
     .await;
     CookiesFile::delete(cookies).await;
+    scratch.delete().await;
     let ran = result.map_err(YtDlpError::from_run)?;
     if !ran.success() {
         return Err(if guard.as_ref().is_some_and(Guard::refused_any) {
@@ -317,6 +321,37 @@ async fn make_dir(path: &Path) -> Result<(), YtDlpError> {
             path: path.to_path_buf(),
             source,
         })
+}
+
+/// The run's own temporary folder, in `temp_dir`, which exists.
+async fn make_scratch(temp_dir: &Path) -> Result<Scratch, YtDlpError> {
+    Scratch::create(temp_dir)
+        .await
+        .map_err(|source| YtDlpError::Folder {
+            path: temp_dir.to_path_buf(),
+            source,
+        })
+}
+
+/// What a run gets in its environment: the proxy ([`proxy_environment`]), `scratch` as its temporary folder, and the PhantomJS stand-in when the app has it (D281).
+pub(crate) fn run_environment(
+    ctx: &Context<'_>,
+    scratch: &Path,
+) -> Vec<(OsString, Option<OsString>)> {
+    let mut environment = proxy_environment(ctx);
+    environment.extend(
+        ["TMP", "TEMP", "TMPDIR"]
+            .into_iter()
+            .map(|name| (name.into(), Some(scratch.into()))),
+    );
+    if let Some(stand_in) = &ctx.tools.phantomjs {
+        environment.extend(crate::phantomjs::environment(
+            stand_in,
+            &ctx.tools.deno,
+            scratch,
+        ));
+    }
+    environment
 }
 
 /// What keeps every run of yt-dlp, the version check of a new one included, from reading the machine's own yt-dlp setup: its configuration files and its plugins.
@@ -533,6 +568,45 @@ mod tests {
             );
         }
         assert_eq!(value("NO_PROXY"), Some(None));
+    }
+
+    /// A run keeps its temporary files in its own folder, and finds the PhantomJS stand-in only when the app has one (D281).
+    #[test]
+    fn a_run_has_its_own_temporary_folder_and_the_stand_in() {
+        let mut tools = MediaTools::for_test(Path::new("ffmpeg"));
+        let page = Url::parse("https://example.com/v").unwrap();
+        let names = |tools: &MediaTools| -> Vec<OsString> {
+            let ctx = Context {
+                tools,
+                page: &page,
+                cookies: None,
+                user_agent: None,
+                temp_dir: Path::new("temp"),
+                timeout: Duration::from_secs(1),
+                proxy: None,
+                rate_limit: None,
+                off_local_network: false,
+            };
+            let environment = run_environment(&ctx, Path::new("scratch"));
+            for name in ["TMP", "TEMP", "TMPDIR"] {
+                assert!(
+                    environment.contains(&(name.into(), Some("scratch".into()))),
+                    "{name}"
+                );
+            }
+            environment.into_iter().map(|(name, _)| name).collect()
+        };
+        let without = names(&tools);
+        assert!(!without.contains(&"PATH".into()), "{without:?}");
+        tools.phantomjs = Some(Path::new("app").join("phantomjs").join("phantomjs"));
+        let with = names(&tools);
+        for name in [
+            "PATH",
+            crate::phantomjs::DENO_VARIABLE,
+            crate::phantomjs::FOLDER_VARIABLE,
+        ] {
+            assert!(with.contains(&name.into()), "{name} in {with:?}");
+        }
     }
 
     /// The version check of a new yt-dlp is isolated like every other run.

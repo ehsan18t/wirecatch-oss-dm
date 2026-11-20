@@ -47,6 +47,8 @@ Name: desktopicon; Description: "Create a desktop shortcut"; Flags: unchecked
 ; If one still cannot be closed at uninstall, it goes at the next restart.
 Source: "{#Stage}\{#AppExe}.exe"; DestDir: "{app}"; Flags: ignoreversion uninsrestartdelete
 Source: "{#Stage}\{#BridgeExe}.exe"; DestDir: "{app}"; Flags: ignoreversion uninsrestartdelete
+; The PhantomJS stand-in, alone in its folder: the app puts that folder first on yt-dlp's PATH (D281).
+Source: "{#Stage}\{#StandIn}\{#StandIn}.exe"; DestDir: "{app}\{#StandIn}"; Flags: ignoreversion uninsrestartdelete
 Source: "{#Stage}\LICENSE.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Stage}\{#NoticesFile}"; DestDir: "{app}"; Flags: ignoreversion
 

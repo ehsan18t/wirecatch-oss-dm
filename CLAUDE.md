@@ -13,40 +13,40 @@ The bar is code a principal engineer would hold up as an example. Passing the ga
 
 ## Layout
 
-| Path                     | What it is                                                                                                                                                          |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `crates/engine`          | Download engine library, published to crates.io. Its public API is documented and kept stable.                                                                      |
-| `crates/protocol`        | Every type, name and limit crossing a process boundary. TypeScript is generated from it.                                                                            |
-| `crates/core`            | The download manager: queues, running downloads and media downloads, add-on installs.                                                                               |
-| `crates/streams`         | HLS and DASH downloads.                                                                                                                                             |
-| `crates/addons`          | The media add-on: pinned releases, checksums, signatures, safe unpacking, and finding the installed programs (D20, D21).                                            |
-| `crates/records`         | What is saved of a download, a queue's batch and the proxy passwords: the types the store keeps and core uses.                                                      |
-| `crates/store`           | The download list on disk: the SQLite database, its migrations and the repair of a damaged one (D17).                                                               |
-| `crates/messages`        | What a person is told when a download fails, with the fix to offer (D3).                                                                                            |
-| `crates/media`           | Video and audio: the quality choice, reading pages with yt-dlp, ffmpeg conversions and joining, a media download's progress (D24, D31).                             |
-| `crates/settings`        | The settings: defaults and checks, the category rules that pick a folder, the proxy setting, and settings files (D71).                                              |
-| `crates/files`           | File helpers: writing a file whole, discarding one, keeping one private to its owner, and the Mark of the Web.                                                      |
-| `crates/sites`           | Site rules: the Public Suffix List with its built-in snapshot, and which links may reach the person's own network (D39, D44).                                       |
-| `crates/server`          | The local protocol server (D14): one client connection over any byte stream, answered by the manager.                                                               |
-| `crates/desktop`         | The desktop app, drawn with GPUI (D95, D99), and its installers (`packaging/`, D106).                                                                               |
-| `crates/shell`           | What the desktop app does besides drawing windows: opening the manager, serving the bridge, start at sign-in, and each interface command as a plain function (D99). |
-| `crates/queues`          | Queue rules as pure functions: which downloads start under each queue's limits, and when a scheduled queue runs (D74).                                              |
-| `crates/updates`         | The app's own updates: the signed manifest of a release's installers, and which release and installer to take (D111).                                               |
-| `crates/ipc`             | Local app endpoint (named pipe on Windows, Unix socket on Linux).                                                                                                   |
-| `crates/bridge`          | Native messaging host between the extension and the app.                                                                                                            |
-| `crates/cli`             | The `wirecatch` command-line downloader.                                                                                                                            |
-| `crates/logging`         | Every binary's logging (stderr and a capped file in the log folder) and the redaction that keeps secrets out of log lines (D40).                                    |
-| `crates/e2e`             | End-to-end tests across extension, bridge and app.                                                                                                                  |
-| `crates/product`         | Product identity constants, generated from `config/product.toml`. Never edit `src` by hand.                                                                         |
-| `crates/test-support`    | Unpublished test servers and helpers every crate's tests share (D26).                                                                                               |
-| `apps/extension`         | WXT browser extension for Chromium and Firefox.                                                                                                                     |
-| `packages/protocol`      | Generated TypeScript types. Never edit `src/generated` by hand.                                                                                                     |
-| `packages/eslint-config` | The one ESLint configuration, and the `wirecatch/*` rules.                                                                                                          |
-| `packages/product`       | Product identity for TypeScript, generated from `config/product.toml`. Never edit `src` by hand.                                                                    |
-| `packages/units`         | Byte units, and how sizes and speeds are shown and typed, for the extension.                                                                                        |
-| `packages/ui`            | The extension's design system: tokens, themes, motion and primitives (D36).                                                                                         |
-| `config/`                | Product identity (`product.toml`), templates of package hooks and `SECURITY.md`, and standard licence texts (`licenses/`, D117); the rest is generated (D29).       |
-| `scripts/gate.mjs`       | Every quality check: the runner, with the checks in `scripts/gate/`.                                                                                                |
+| Path                     | What it is                                                                                                                                                                                              |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `crates/engine`          | Download engine library, published to crates.io. Its public API is documented and kept stable.                                                                                                          |
+| `crates/protocol`        | Every type, name and limit crossing a process boundary. TypeScript is generated from it.                                                                                                                |
+| `crates/core`            | The download manager: queues, running downloads and media downloads, add-on installs.                                                                                                                   |
+| `crates/streams`         | HLS and DASH downloads.                                                                                                                                                                                 |
+| `crates/addons`          | The media add-on: pinned releases, checksums, signatures, safe unpacking, and finding the installed programs (D20, D21).                                                                                |
+| `crates/records`         | What is saved of a download, a queue's batch and the proxy passwords: the types the store keeps and core uses.                                                                                          |
+| `crates/store`           | The download list on disk: the SQLite database, its migrations and the repair of a damaged one (D17).                                                                                                   |
+| `crates/messages`        | What a person is told when a download fails, with the fix to offer (D3).                                                                                                                                |
+| `crates/media`           | Video and audio: the quality choice, reading pages with yt-dlp, ffmpeg conversions and joining, a media download's progress, and the PhantomJS stand-in yt-dlp runs site scripts with (D24, D31, D281). |
+| `crates/settings`        | The settings: defaults and checks, the category rules that pick a folder, the proxy setting, and settings files (D71).                                                                                  |
+| `crates/files`           | File helpers: writing a file whole, discarding one, keeping one private to its owner, and the Mark of the Web.                                                                                          |
+| `crates/sites`           | Site rules: the Public Suffix List with its built-in snapshot, and which links may reach the person's own network (D39, D44).                                                                           |
+| `crates/server`          | The local protocol server (D14): one client connection over any byte stream, answered by the manager.                                                                                                   |
+| `crates/desktop`         | The desktop app, drawn with GPUI (D95, D99), and its installers (`packaging/`, D106).                                                                                                                   |
+| `crates/shell`           | What the desktop app does besides drawing windows: opening the manager, serving the bridge, start at sign-in, and each interface command as a plain function (D99).                                     |
+| `crates/queues`          | Queue rules as pure functions: which downloads start under each queue's limits, and when a scheduled queue runs (D74).                                                                                  |
+| `crates/updates`         | The app's own updates: the signed manifest of a release's installers, and which release and installer to take (D111).                                                                                   |
+| `crates/ipc`             | Local app endpoint (named pipe on Windows, Unix socket on Linux).                                                                                                                                       |
+| `crates/bridge`          | Native messaging host between the extension and the app.                                                                                                                                                |
+| `crates/cli`             | The `wirecatch` command-line downloader.                                                                                                                                                                |
+| `crates/logging`         | Every binary's logging (stderr and a capped file in the log folder) and the redaction that keeps secrets out of log lines (D40).                                                                        |
+| `crates/e2e`             | End-to-end tests across extension, bridge and app.                                                                                                                                                      |
+| `crates/product`         | Product identity constants, generated from `config/product.toml`. Never edit `src` by hand.                                                                                                             |
+| `crates/test-support`    | Unpublished test servers and helpers every crate's tests share (D26).                                                                                                                                   |
+| `apps/extension`         | WXT browser extension for Chromium and Firefox.                                                                                                                                                         |
+| `packages/protocol`      | Generated TypeScript types. Never edit `src/generated` by hand.                                                                                                                                         |
+| `packages/eslint-config` | The one ESLint configuration, and the `wirecatch/*` rules.                                                                                                                                              |
+| `packages/product`       | Product identity for TypeScript, generated from `config/product.toml`. Never edit `src` by hand.                                                                                                        |
+| `packages/units`         | Byte units, and how sizes and speeds are shown and typed, for the extension.                                                                                                                            |
+| `packages/ui`            | The extension's design system: tokens, themes, motion and primitives (D36).                                                                                                                             |
+| `config/`                | Product identity (`product.toml`), templates of package hooks and `SECURITY.md`, and standard licence texts (`licenses/`, D117); the rest is generated (D29).                                           |
+| `scripts/gate.mjs`       | Every quality check: the runner, with the checks in `scripts/gate/`.                                                                                                                                    |
 
 ## Gates
 
