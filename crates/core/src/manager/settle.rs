@@ -128,6 +128,7 @@ impl Manager {
                 }
             }
             if writing {
+                self.take_over_after_answer(&mut state, id);
                 return Ok(Some(path));
             }
             path
@@ -152,6 +153,7 @@ impl Manager {
                 if let Some(entry) = state.downloads.get_mut(&id) {
                     entry.naming.writing = true;
                 }
+                self.take_over_after_answer(state, id);
                 self.save(state, id);
                 drop(guard);
                 self.wait_for_record(id);
@@ -290,6 +292,7 @@ impl Manager {
         entry.confirmed_name = None;
         entry.expect = None;
         entry.video_check = false;
+        self.take_over_after_answer(state, id);
         self.save(state, id);
         drop(guard);
         self.wait_for_record(id);

@@ -283,6 +283,7 @@ impl Manager {
                 deciding: None,
             };
             state.handovers.insert(&capture.handover_id, handover);
+            super::refresh::claim_kind_switch(&mut state, &capture.handover_id);
             self.emit(UiEvent::CaptureRepeated(Repeated::Question(id)));
             return Ok(reply);
         }
@@ -310,6 +311,7 @@ impl Manager {
                 deciding: None,
             },
         );
+        super::refresh::claim_kind_switch(&mut state, &capture.handover_id);
         Ok(reply)
     }
 
@@ -607,6 +609,9 @@ impl Manager {
                     let mut state = self.lock();
                     for handover in &pending.handovers {
                         state.handovers.retarget(handover, Target::Confirmed(row));
+                    }
+                    if let Some(old) = state.handovers.take_replaced(&pending.handovers) {
+                        self.take_over(&mut state, old, row);
                     }
                 }
                 self.gave_way(&pending);

@@ -210,6 +210,7 @@ impl Manager {
             Details::new("prepare", "download").write(entry);
             entry.row.status = DownloadStatus::Failed;
             entry.row.error = Some(super::sign_in::explain(&entry.origin, error));
+            entry.replaces = None;
         }
         self.save(state, id);
     }
@@ -348,17 +349,25 @@ impl Manager {
             (Ended::Failed(error) | Ended::NotConverted(error), None) => {
                 entry.row.status = DownloadStatus::Failed;
                 entry.row.error = Some(super::sign_in::explain(&entry.origin, error));
+                entry.replaces = None;
             }
             (Ended::Vanished, None) => {
                 Details::new("run", "task").write(entry);
                 entry.row.status = DownloadStatus::Failed;
                 entry.row.error = Some(wirecatch_messages::stopped_unexpectedly(worked));
+                entry.replaces = None;
             }
         }
         if !finished {
             self.discard_after_stop(state, id, run.stop.as_ref());
         }
         self.act_on_the_answer(state, id, run.stop, found, run.server_name.take());
+        if state
+            .entry(id)
+            .is_ok_and(|entry| entry.row.status == DownloadStatus::Completed)
+        {
+            self.take_over_after_answer(state, id);
+        }
         self.save(state, id);
         // First: the plan must see the read, or the run of a queue with nothing else left ends here (D155.3).
         if let Some(page) = answered_page {
@@ -493,6 +502,7 @@ pub(super) fn mark_completed(entry: &mut Entry, bytes: u64, now: UnixMillis) {
 /// Puts a download in the cancelled state, with nothing kept.
 pub(super) fn mark_cancelled(entry: &mut Entry) {
     entry.row.status = DownloadStatus::Cancelled;
+    entry.replaces = None;
     entry.naming.writing = false;
     entry.row.error = None;
     entry.row.done = 0;

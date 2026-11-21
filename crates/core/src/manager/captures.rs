@@ -23,11 +23,12 @@ use wirecatch_sites::cookie_scope;
 use wirecatch_sites::local_network::{self, ChosenBy};
 
 use super::Manager;
-use super::arrival::{Fetch, Kind, NewEntry, Wanted};
+use super::arrival::{CaptureReceipt, Fetch, Kind, NewEntry, Wanted};
 use super::downloads::{capture_action, parse_url};
 use super::handovers::{self, Handover, Target};
 use super::placement::{Candidate, Placed, QueueRequest};
 use super::questions::Withdrawn;
+use super::refresh::claim_kind_switch;
 use super::state::{Expectation, Pending, State};
 use crate::error::{CoreError, Result};
 use crate::headers::Origin;
@@ -92,9 +93,26 @@ impl Manager {
         if let Some(refreshed) = self.refresh_from_capture(&capture, &url, chosen_by)? {
             return Ok(refreshed);
         }
-        if let Some(joined) = self.join_unfinished(&capture, &url)? {
-            return Ok(joined);
+        let handover = capture.handover_id.clone();
+        let added = match self.join_unfinished(&capture, &url) {
+            Ok(Some(joined)) => Ok(joined),
+            Ok(None) => self.add_new_capture(capture, url, chosen_by, arrived).await,
+            Err(e) => Err(e),
+        };
+        if added.is_err() {
+            self.lock().handovers.discard_replacement(&handover);
         }
+        added
+    }
+
+    /// Adds a capture that refreshed and joined nothing: as a question about its media or its file, or as a download.
+    async fn add_new_capture(
+        &self,
+        capture: NewDownload,
+        url: Url,
+        chosen_by: ChosenBy,
+        arrived: Instant,
+    ) -> Result<AddedDownload> {
         let (ask, placed) = {
             let state = self.lock_open()?;
             (
@@ -123,12 +141,26 @@ impl Manager {
                 wanted: wanted_by(&capture),
                 placed,
                 start: true,
-                kind: captured(&capture, Some(capture.handover_id.clone())),
+                kind: captured(
+                    &capture,
+                    CaptureReceipt::Automatic(capture.handover_id.clone()),
+                ),
             })
             .await?;
         let Some(row) = added else {
             return self.known_handover(&capture.handover_id).await;
         };
+        self.answer_captured(row, &capture.handover_id, arrived)
+            .await
+    }
+
+    /// Answers the extension for the download `row` added for `handover`: at once when it is queued, else once its server answered.
+    async fn answer_captured(
+        &self,
+        row: DownloadSummary,
+        handover: &str,
+        arrived: Instant,
+    ) -> Result<AddedDownload> {
         let reply = AddedDownload {
             id: Some(row.id),
             action: capture_action(&row),
@@ -138,16 +170,13 @@ impl Manager {
             self.emit(UiEvent::Captured(row));
             return Ok(reply);
         }
-        match self
-            .await_answer(row.id, &capture.handover_id, arrived, &reply)
-            .await
-        {
+        match self.await_answer(row.id, handover, arrived, &reply).await {
             Ok(()) => Ok(reply),
             Err(reason) => {
                 // Answer at once: stopping the attempt can take up to the stop
                 // timeout, and the extension does not wait that long. The attempt
                 // is hidden now and removed in the background.
-                self.lock().handovers.remove(&capture.handover_id);
+                self.lock().handovers.remove(handover);
                 self.remove_in_background(vec![row.id]);
                 Err(CoreError::NotStarted(reason))
             }
@@ -196,6 +225,7 @@ impl Manager {
             }
         };
         state.handovers.decide(handover, reply.clone());
+        self.accept_captured_file(&mut state, handover, id);
         self.emit(UiEvent::Captured(summary));
         Ok(())
     }
@@ -255,8 +285,8 @@ impl Manager {
     /// [`CoreError::Closed`] once the manager has shut down. A handover that is unknown
     /// or already started is an outcome, not an error.
     pub fn withdraw_capture(&self, handover_id: &str) -> Result<WithdrawOutcome> {
+        let mut state = self.lock_open()?;
         let download = {
-            let mut state = self.lock_open()?;
             let Some(known) = state.handovers.get(handover_id).cloned() else {
                 return Ok(WithdrawOutcome::NotFound);
             };
@@ -297,7 +327,7 @@ impl Manager {
         };
         // Hidden and never started again from now on; stopping it may take up to
         // the stop timeout, which the extension should not have to wait for.
-        self.remove_in_background(vec![download]);
+        self.remove_in_background_locked(&mut state, vec![download]);
         Ok(WithdrawOutcome::Withdrawn)
     }
 
@@ -354,11 +384,13 @@ impl Manager {
     ) -> Result<DownloadId> {
         match self.insert_confirmed(&pending, answer).await {
             Ok(row) => {
-                let mut state = self.lock();
-                for handover in &pending.handovers {
-                    state
-                        .handovers
-                        .retarget(handover, Target::Confirmed(row.id));
+                {
+                    let mut state = self.lock();
+                    for handover in &pending.handovers {
+                        state
+                            .handovers
+                            .retarget(handover, Target::Confirmed(row.id));
+                    }
                 }
                 self.emit(UiEvent::ConfirmationClosed { id });
                 Ok(row.id)
@@ -490,6 +522,7 @@ impl Manager {
             deciding: None,
         };
         state.handovers.insert(handover, record);
+        state.handovers.discard_replacement(handover);
         self.emit(UiEvent::CaptureRepeated(Repeated::Download(id)));
         Some(reply)
     }
@@ -548,6 +581,7 @@ impl Manager {
                 deciding: None,
             };
             state.handovers.insert(&capture.handover_id, handover);
+            claim_kind_switch(&mut state, &capture.handover_id);
             self.emit(UiEvent::CaptureRepeated(Repeated::Question(id)));
             return Ok(reply);
         }
@@ -578,6 +612,7 @@ impl Manager {
                 deciding: None,
             },
         );
+        claim_kind_switch(&mut state, &capture.handover_id);
         state.pending.insert(
             id,
             Pending {
@@ -631,7 +666,10 @@ impl Manager {
                     answer.queue,
                 ),
                 start: !answer.later,
-                kind: captured(request, None),
+                kind: captured(
+                    request,
+                    CaptureReceipt::Confirmed(pending.handovers.clone()),
+                ),
             })
             .await?;
         match added {
@@ -679,9 +717,9 @@ fn wanted_by(capture: &NewDownload) -> Wanted {
 }
 
 /// `handover`: set while the extension waits for the answer.
-fn captured(capture: &NewDownload, handover: Option<String>) -> Kind {
+fn captured(capture: &NewDownload, receipt: CaptureReceipt) -> Kind {
     Kind::Captured {
-        handover,
+        receipt,
         expect: expectation_of(capture),
         media: direct_media(capture),
     }

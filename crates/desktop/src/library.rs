@@ -276,7 +276,11 @@ impl Library {
                     self.read_order(cx);
                 }
             }
-            UiEvent::DownloadsRemoved(ids) => self.downloads.remove(&ids),
+            UiEvent::DownloadsRemoved(ids) => {
+                self.downloads.remove(&ids);
+                // A capture replacing a download may have taken its place in the list.
+                self.read_order(cx);
+            }
             UiEvent::QueuesChanged(queues) => {
                 let same_order = self
                     .queues

@@ -1,9 +1,11 @@
 //! A desktop window can watch for the next capture of one unfinished download.
 
+use std::sync::Arc;
+
 use tokio::sync::oneshot;
 use wirecatch_engine::{CancellationToken, Url};
 use wirecatch_protocol::DownloadId;
-use wirecatch_protocol::app::DownloadStatus;
+use wirecatch_protocol::app::{DownloadStatus, UiEvent};
 use wirecatch_protocol::extension::{
     AddAction, AddedDownload, CaptureSource, MediaKind, NewDownload,
 };
@@ -14,6 +16,7 @@ use super::Manager;
 use super::captures::{expectation_of, origin_of};
 use super::downloads::Replacement;
 use super::handovers::{Handover, Target};
+use super::state::State;
 use crate::error::{CoreError, Result};
 
 /// What a window that asked to watch for a fresh link is told.
@@ -40,6 +43,13 @@ pub(super) struct WatchingLink {
     pub id: DownloadId,
     saved: oneshot::Sender<()>,
     stop: CancellationToken,
+    generation: Arc<()>,
+}
+
+impl WatchingLink {
+    fn active(&self) -> bool {
+        !self.saved.is_closed() && !self.stop.is_cancelled()
+    }
 }
 
 impl Manager {
@@ -89,7 +99,12 @@ impl Manager {
                 .then(|| web_url(&entry.row.url))
                 .flatten()
         });
-        state.link_refresh = Some(WatchingLink { id, saved, stop });
+        state.link_refresh = Some(WatchingLink {
+            id,
+            saved,
+            stop,
+            generation: Arc::new(()),
+        });
         Ok(LinkWatch::Started(page))
     }
 
@@ -111,14 +126,13 @@ impl Manager {
             return Ok(None);
         }
         let mut state = self.lock_open()?;
-        if state.handovers.get(&capture.handover_id).is_some() {
+        // An overlapping resend belongs to the first watch it matched.
+        if state.handovers.get(&capture.handover_id).is_some()
+            || state.handovers.has_replacement(&capture.handover_id)
+        {
             return Ok(None);
         }
-        let Some(watch) = state
-            .link_refresh
-            .as_ref()
-            .filter(|watch| !watch.saved.is_closed() && !watch.stop.is_cancelled())
-        else {
+        let Some(watch) = state.link_refresh.as_ref().filter(|watch| watch.active()) else {
             return Ok(None);
         };
         let id = watch.id;
@@ -131,8 +145,15 @@ impl Manager {
         }
         if entry.row.status == DownloadStatus::Completed
             || entry.refuse_if_stranded().is_err()
-            || !matches_capture(entry, capture)
+            || from_private_window(entry)
         {
+            return Ok(None);
+        }
+        if !same_kind(entry, capture) {
+            let generation = Arc::clone(&watch.generation);
+            state
+                .handovers
+                .replace_with(&capture.handover_id, id, generation);
             return Ok(None);
         }
 
@@ -160,15 +181,82 @@ impl Manager {
                 deciding: None,
             },
         );
-        if let Some(watch) = state.link_refresh.take()
-            && watch.saved.send(()).is_err()
-        {
-            tracing::debug!(
-                id = id.0,
-                "the link watch's window closed after its capture was matched"
-            );
-        }
+        answer_watch(&mut state, id);
         Ok(Some(reply))
+    }
+
+    /// A captured replacement takes the watched row's position. Mark removal under the same lock
+    /// so neither a new link to the original nor removal of the replacement can race the switch.
+    pub(super) fn take_over(&self, state: &mut State, old: DownloadId, new: DownloadId) {
+        if old == new || state.closed {
+            return;
+        }
+        let Ok(entry) = state.entry(old) else {
+            return;
+        };
+        if entry.row.status == DownloadStatus::Completed {
+            return;
+        }
+        let position = entry.position;
+        let Ok(entry) = state.entry_mut(new) else {
+            return;
+        };
+        entry.position = position;
+        let row = entry.summary();
+        self.save(state, new);
+        self.remove_in_background_locked(state, vec![old]);
+        // Show the replacement before the removal asks the desktop to reread the order.
+        self.emit(UiEvent::DownloadsChanged(vec![row]));
+    }
+
+    /// Queued files and files waiting for a path decision replace the original
+    /// only after a usable server answer or an accepted existing file.
+    pub(super) fn accept_captured_file(&self, state: &mut State, handover: &str, new: DownloadId) {
+        claim_kind_switch(state, handover);
+        if let Some(old) = state.handovers.take_replacement(handover)
+            && let Ok(entry) = state.entry_mut(new)
+        {
+            if entry.naming.settled || entry.row.status == DownloadStatus::Completed {
+                self.take_over(state, old, new);
+            } else {
+                entry.replaces = Some(old);
+                self.save(state, new);
+            }
+        }
+    }
+
+    /// Applies a queued or confirmed file's replacement after the app accepts its server answer.
+    pub(super) fn take_over_after_answer(&self, state: &mut State, new: DownloadId) {
+        if let Ok(entry) = state.entry_mut(new)
+            && let Some(old) = entry.replaces.take()
+        {
+            self.take_over(state, old, new);
+        }
+    }
+}
+
+/// Ends this capture's watch once it becomes a question or an accepted download (D286.5).
+pub(super) fn claim_kind_switch(state: &mut State, handover: &str) {
+    let watch = state.link_refresh.as_ref().filter(|watch| watch.active());
+    if state
+        .handovers
+        .claim_replacement(handover, watch.map(|watch| &watch.generation))
+        && let Some(watch) = watch
+    {
+        let id = watch.id;
+        answer_watch(state, id);
+    }
+}
+
+/// Closes the window watching for `id`'s link: a capture answered it.
+fn answer_watch(state: &mut State, id: DownloadId) {
+    if let Some(watch) = state.link_refresh.take()
+        && watch.saved.send(()).is_err()
+    {
+        tracing::debug!(
+            id = id.0,
+            "the link watch's window closed after its capture was matched"
+        );
     }
 }
 
@@ -217,14 +305,17 @@ fn source_page(source: &BrowserSource) -> Option<Url> {
 }
 
 /// D286: while the watch is open, the next capture of the same kind refreshes the row, whatever its address or size.
-fn matches_capture(entry: &super::Entry, capture: &NewDownload) -> bool {
+fn same_kind(entry: &super::Entry, capture: &NewDownload) -> bool {
     // A video file sent by the download button downloads as any other file.
     let delivery = |kind: Option<MediaKind>| kind.filter(|kind| *kind != MediaKind::Direct);
     delivery(entry.row.media.as_ref().map(|media| media.source))
         == delivery(capture.media.as_ref().map(|media| media.kind))
-        && !entry
-            .origin
-            .browser_source
-            .as_deref()
-            .is_some_and(|source| source.private_window)
+}
+
+fn from_private_window(entry: &super::Entry) -> bool {
+    entry
+        .origin
+        .browser_source
+        .as_deref()
+        .is_some_and(|source| source.private_window)
 }
