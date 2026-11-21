@@ -1,7 +1,27 @@
 // Writing product identity into files that also hold other things: fields of JSON and Cargo manifests, and templates whose `{{section.key}}` names a value of config/product.toml.
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 /** A file the generator cannot update as it is; the message says which and why. */
 export class ManifestError extends Error {}
+
+/** The crates of the workspace: the `members` of the root Cargo.toml, each a folder or a `folder/*` glob. */
+export function crateManifests(root) {
+  const members = /^members\s*=\s*\[([^\]]*)\]/m.exec(
+    readFileSync(join(root, 'Cargo.toml'), 'utf8'),
+  );
+  if (!members) throw new ManifestError('The root Cargo.toml has no `members` list.');
+  return [...members[1].matchAll(/"([^"]+)"/g)].flatMap(([, member]) => {
+    const folders = member.endsWith('/*')
+      ? readdirSync(join(root, member.slice(0, -2)), { withFileTypes: true })
+          .filter((entry) => entry.isDirectory())
+          .map((entry) => `${member.slice(0, -2)}/${entry.name}`)
+      : [member];
+    return folders
+      .map((folder) => `${folder}/Cargo.toml`)
+      .filter((path) => existsSync(join(root, path)));
+  });
+}
 
 /** `text` (a JSON file) with `change` applied to its parsed value, ready for Prettier. */
 export function editJson(text, change) {
@@ -23,6 +43,19 @@ function tableBody(lines, header, path) {
   const start = starts[0] + 1;
   const next = lines.findIndex((line, i) => i >= start && TABLE_HEADER.test(line));
   return { start, end: next === -1 ? lines.length : next };
+}
+
+/** Package names of the workspace members that carry the product version. */
+export function workspaceCrateNames(root) {
+  return new Set(
+    crateManifests(root).map((path) => {
+      const lines = readFileSync(join(root, path), 'utf8').split('\n');
+      const { start, end } = tableBody(lines, '[package]', path);
+      const name = /^name\s*=\s*"([^"]+)"/m.exec(lines.slice(start, end).join('\n'))?.[1];
+      if (!name) throw new ManifestError(`${path} has no package name.`);
+      return name;
+    }),
+  );
 }
 
 /** Whether a TOML value goes on past its line: an unclosed array or table, or a multi-line string. */

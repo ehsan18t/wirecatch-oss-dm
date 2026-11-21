@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse } from 'smol-toml';
 import { GateError, ROOT } from './process.mjs';
-import { crateManifests } from './product.mjs';
+import { crateManifests } from '../product/manifests.mjs';
 
 const SECTIONS = ['dependencies', 'dev-dependencies', 'build-dependencies'];
 
