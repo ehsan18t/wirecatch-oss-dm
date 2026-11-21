@@ -16,6 +16,7 @@ use tokio::sync::{Semaphore, mpsc};
 use tracing::{debug, warn};
 use wirecatch_protocol::MIN_PROTOCOL_VERSION;
 use wirecatch_protocol::frame::{self, FrameError, MAX_FRAME_LEN};
+use wirecatch_protocol::page_read::PageReads;
 use wirecatch_protocol::version::{VersionError, VersionRange};
 use wirecatch_protocol::wire::{
     Call, CallMethod, ClientKind, ErrorCode, Event, Hello, HelloReply, Message, Outcome,
@@ -50,7 +51,7 @@ where
     claim.name(hello.private_session.as_deref());
     let (reader, mut page_reads) = match hello.page_reads.clone() {
         Some(reads) => {
-            let (reader, events) = manager.connect_page_reader(reads.user_agent);
+            let (reader, events) = manager.connect_page_reader(reads.profile);
             (Some(reader), Some(events))
         }
         None => (None, None),
@@ -77,8 +78,9 @@ where
                         Ok((id, call)) if reader.as_ref().is_some_and(|r| r.take(&call)) => {
                             Some(ok(id, Reply::Done))
                         }
-                        Ok((id, call)) => {
+                        Ok((id, mut call)) => {
                             claim.follow(&call);
+                            from_profile(&mut call, hello.page_reads.as_ref());
                             start_request(&manager, &slots, &responder, version, id, call)
                         }
                         Err(reply) => Some(*reply),
@@ -112,6 +114,15 @@ where
     drop(claim);
     drop(reader);
     Ok(())
+}
+
+/// Names on a download this connection hands over the browser profile its hello named, whatever the client wrote: a download's page reads go through that profile alone (D282).
+fn from_profile(call: &mut Call, page_reads: Option<&PageReads>) {
+    if let Call::AddDownload(capture) = call
+        && let Some(route) = capture.browser_route.as_deref_mut()
+    {
+        route.profile = page_reads.map(|reads| reads.profile.clone());
+    }
 }
 
 /// The next page read event for this connection's browser; never, for a connection that makes none.
@@ -710,5 +721,33 @@ mod tests {
             too_old.message
         );
         assert_eq!(refusal(2, 1).code, ErrorCode::InvalidRequest);
+    }
+
+    /// A download takes the browser profile its connection's hello named, not one the client wrote, and none from a connection that makes no page reads.
+    #[test]
+    fn a_download_takes_its_connections_profile() {
+        let handed = |written: Option<&str>, hello: Option<&str>| {
+            let mut capture = wirecatch_test_support::downloads::capture("https://example.com/v");
+            capture.browser_route = Some(Box::new(wirecatch_protocol::extension::BrowserRoute {
+                private_window: false,
+                private_session: None,
+                profile: written.map(Into::into),
+                observed_page: None,
+                page_redirect_urls: None,
+                redirect_urls: Vec::new(),
+            }));
+            let mut call = Call::AddDownload(Box::new(capture));
+            let reads = hello.map(|profile| PageReads {
+                profile: profile.into(),
+            });
+            from_profile(&mut call, reads.as_ref());
+            match call {
+                Call::AddDownload(capture) => capture.browser_route.unwrap().profile,
+                _ => unreachable!(),
+            }
+        };
+        assert_eq!(handed(None, Some("p")).as_deref(), Some("p"));
+        assert_eq!(handed(Some("other"), Some("p")).as_deref(), Some("p"));
+        assert_eq!(handed(Some("other"), None), None);
     }
 }

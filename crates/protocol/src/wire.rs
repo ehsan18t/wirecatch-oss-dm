@@ -712,6 +712,7 @@ mod tests {
                 id,
                 status: 200,
                 headers: Vec::new(),
+                address: Some("93.184.215.14".into()),
             }),
             _ => Call::PageReadFailed(PageReadFailed {
                 id,

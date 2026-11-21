@@ -144,6 +144,10 @@ pub struct BrowserRoute {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional = nullable)]
     pub private_session: Option<String>,
+    /// The browser profile it comes from (D282): the app sets it from the connection's [`PageReads::profile`](crate::page_read::PageReads::profile), replacing what a client sends.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
+    pub profile: Option<String>,
     /// The full page observed in the browser, used to return there. The HTTP
     /// referrer alone is insufficient to identify that page.
     #[ts(as = "Option<String>")]

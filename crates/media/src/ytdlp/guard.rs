@@ -38,7 +38,8 @@ const HOP_BY_HOP: [&str; 4] = [
 ];
 
 pub(super) const TUNNEL_OPEN: &[u8] = b"HTTP/1.1 200 Connection established\r\n\r\n";
-const REFUSED: &[u8] = b"HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n";
+pub(super) const REFUSED: &[u8] =
+    b"HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n";
 pub(super) const BAD_REQUEST: &[u8] =
     b"HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n";
 pub(super) const UNREACHABLE: &[u8] =
@@ -74,13 +75,15 @@ impl Guard {
         kept_off: fn(IpAddr) -> bool,
         browser: Option<BrowserRoute>,
     ) -> io::Result<Self> {
+        let refused = Arc::new(AtomicBool::new(false));
         let through = match browser {
             Some(route) => {
                 let authority = wirecatch_engine::task::spawn_blocking(Authority::new)
                     .await
                     .map_err(io::Error::other)?
                     .map_err(io::Error::other)?;
-                Some((Arc::new(Through::new(route, authority)), password()?))
+                let through = Through::new(route, authority, kept_off, refused.clone());
+                Some((Arc::new(through), password()?))
             }
             None => None,
         };
@@ -88,7 +91,7 @@ impl Guard {
         let address = listener.local_addr()?;
         let rules = Rules {
             kept_off,
-            refused: Arc::new(AtomicBool::new(false)),
+            refused,
             through,
         };
         let serving = wirecatch_engine::task::spawn(serve(listener, rules.clone()));
@@ -481,7 +484,10 @@ mod tests {
         let mut client = TcpStream::connect(guard.address).await.unwrap();
         client.write_all(request.as_bytes()).await.unwrap();
         let mut text = Vec::new();
-        client.read_to_end(&mut text).await.unwrap();
+        tokio::time::timeout(PATIENCE, client.read_to_end(&mut text))
+            .await
+            .unwrap()
+            .unwrap();
         String::from_utf8_lossy(&text).into_owned()
     }
 
@@ -766,8 +772,9 @@ mod tests {
         );
     }
 
-    /// Answers every page read with `page`, keeping what was asked.
+    /// Answers every page read with `page`, reached at `address`, keeping what was asked.
     struct FakeBrowser {
+        address: Option<IpAddr>,
         asked: std::sync::Mutex<Vec<super::super::BrowserRequest>>,
     }
 
@@ -780,29 +787,29 @@ mod tests {
                     ("Content-Encoding".into(), "br".into()),
                 ],
                 body: b"page".to_vec(),
+                address: self.address,
             };
             self.asked.lock().unwrap().push(request);
             Box::pin(async move { Ok(answer) })
         }
     }
 
-    /// A tunnel to the page's site takes only the run's password, and its request is made by the browser: yt-dlp gets the browser's answer over TLS with the run's own certificate, its body already decoded.
-    #[tokio::test]
-    async fn a_tunnel_to_the_pages_site_is_answered_by_the_browser() {
-        let browser = Arc::new(FakeBrowser {
-            asked: std::sync::Mutex::default(),
-        });
+    const ON_THE_INTERNET: Option<IpAddr> = Some(IpAddr::V4(Ipv4Addr::new(93, 184, 215, 14)));
+
+    /// A guard whose tunnels to `localhost` go through `browser`; addresses in 192.168.0.0/16 are kept off.
+    async fn guard_through(browser: &Arc<FakeBrowser>) -> Guard {
         let route = super::super::BrowserRoute {
             reader: browser.clone(),
-            site: "localhost".into(),
+            hosts: super::super::RoutedHosts::Site("localhost".into()),
         };
-        let guard = Guard::keeping_off(nothing_kept_off, Some(route))
-            .await
-            .unwrap();
-        let connect = "CONNECT localhost:443 HTTP/1.1\r\nHost: localhost:443\r\n";
-        let said = answer(&guard, &format!("{connect}\r\n")).await;
-        assert!(said.starts_with("HTTP/1.1 407"), "{said}");
+        let lan = |ip: IpAddr| matches!(ip, IpAddr::V4(v4) if v4.octets()[..2] == [192, 168]);
+        Guard::keeping_off(lan, Some(route)).await.unwrap()
+    }
 
+    const CONNECT: &str = "CONNECT localhost:443 HTTP/1.1\r\nHost: localhost:443\r\n";
+
+    /// What yt-dlp hears over TLS, trusting only the run's authority, when it asks `request` through a tunnel with the run's password.
+    async fn asked_through_tunnel(guard: &Guard, request: &[u8]) -> String {
         let proxy = Url::parse(&guard.url()).unwrap();
         let login = base64::engine::general_purpose::STANDARD.encode(format!(
             "{}:{}",
@@ -811,11 +818,14 @@ mod tests {
         ));
         let mut client = TcpStream::connect(guard.address).await.unwrap();
         client
-            .write_all(format!("{connect}Proxy-Authorization: Basic {login}\r\n\r\n").as_bytes())
+            .write_all(format!("{CONNECT}Proxy-Authorization: Basic {login}\r\n\r\n").as_bytes())
             .await
             .unwrap();
         let mut opened = vec![0_u8; TUNNEL_OPEN.len()];
-        client.read_exact(&mut opened).await.unwrap();
+        tokio::time::timeout(PATIENCE, client.read_exact(&mut opened))
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(opened, TUNNEL_OPEN);
 
         let (through, _) = guard.rules.through.as_ref().unwrap();
@@ -831,19 +841,34 @@ mod tests {
         .with_root_certificates(roots)
         .with_no_client_auth();
         let name = rustls::pki_types::ServerName::try_from("localhost").unwrap();
-        let mut tls = tokio_rustls::TlsConnector::from(Arc::new(config))
-            .connect(name, client)
+        let connecting = tokio_rustls::TlsConnector::from(Arc::new(config)).connect(name, client);
+        let mut tls = tokio::time::timeout(PATIENCE, connecting)
             .await
+            .unwrap()
             .unwrap();
-        tls.write_all(b"GET /v?k=1 HTTP/1.1\r\nHost: localhost\r\nAccept: */*\r\n\r\n")
-            .await
-            .unwrap();
+        tls.write_all(request).await.unwrap();
         let mut said = Vec::new();
         tokio::time::timeout(PATIENCE, tls.read_to_end(&mut said))
             .await
             .unwrap()
             .unwrap();
-        let said = String::from_utf8(said).unwrap();
+        String::from_utf8(said).unwrap()
+    }
+
+    const PAGE_REQUEST: &[u8] = b"GET /v?k=1 HTTP/1.1\r\nHost: localhost\r\nAccept: */*\r\n\r\n";
+
+    /// A tunnel to the page's site takes only the run's password, and its request is made by the browser: yt-dlp gets the browser's answer over TLS with the run's own certificate, its body already decoded.
+    #[tokio::test]
+    async fn a_tunnel_to_the_pages_site_is_answered_by_the_browser() {
+        let browser = Arc::new(FakeBrowser {
+            address: ON_THE_INTERNET,
+            asked: std::sync::Mutex::default(),
+        });
+        let guard = guard_through(&browser).await;
+        let said = answer(&guard, &format!("{CONNECT}\r\n")).await;
+        assert!(said.starts_with("HTTP/1.1 407"), "{said}");
+
+        let said = asked_through_tunnel(&guard, PAGE_REQUEST).await;
         assert_eq!(
             said,
             "HTTP/1.1 410 Gone\r\nConnection: close\r\nContent-Length: 4\r\nContent-Type: text/html\r\n\r\npage"
@@ -853,5 +878,44 @@ mod tests {
         assert_eq!(asked[0].url.as_str(), "https://localhost/v?k=1");
         assert_eq!(asked[0].method, "GET");
         assert!(!guard.browser_failed());
+    }
+
+    /// The browser looks the host up itself: an answer from an address in the local network never reaches yt-dlp, and the run is marked as refused (D136).
+    #[tokio::test]
+    async fn an_answer_the_browser_got_from_the_local_network_is_refused() {
+        let browser = Arc::new(FakeBrowser {
+            address: Some(IpAddr::V4(Ipv4Addr::new(192, 168, 0, 1))),
+            asked: std::sync::Mutex::default(),
+        });
+        let guard = guard_through(&browser).await;
+        let said = asked_through_tunnel(&guard, PAGE_REQUEST).await;
+        assert!(said.starts_with("HTTP/1.1 403"), "{said}");
+        assert!(!said.contains("page"), "{said}");
+        assert!(guard.refused_any());
+    }
+
+    /// An answer whose address the browser did not report is not used: the run goes on directly.
+    #[tokio::test]
+    async fn an_answer_without_its_address_is_not_used() {
+        let browser = Arc::new(FakeBrowser {
+            address: None,
+            asked: std::sync::Mutex::default(),
+        });
+        let guard = guard_through(&browser).await;
+        let said = asked_through_tunnel(&guard, PAGE_REQUEST).await;
+        assert!(said.starts_with("HTTP/1.1 502"), "{said}");
+        assert!(guard.browser_failed());
+        assert!(!guard.refused_any());
+    }
+
+    /// A run that downloads takes only the page's own host through the browser; a read takes the page's whole site.
+    #[test]
+    fn a_download_routes_only_the_pages_host() {
+        use super::super::RoutedHosts;
+        let site = RoutedHosts::Site("example.com".into());
+        let page = RoutedHosts::Page("www.example.com".into());
+        assert!(site.take("cdn.example.com") && site.take("www.example.com"));
+        assert!(page.take("WWW.example.com"));
+        assert!(!page.take("cdn.example.com") && !page.take("example.com"));
     }
 }

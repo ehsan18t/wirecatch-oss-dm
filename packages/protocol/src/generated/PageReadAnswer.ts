@@ -12,4 +12,8 @@ export type PageReadAnswer = {
    * The answer's headers, as the browser shows them to `fetch()`: no `Set-Cookie`.
    */
   headers: Array<Header>;
+  /**
+   * The address the browser's connection reached, as its `webRequest` reports it: the app refuses an answer from the local network, and does not use one without an address.
+   */
+  address?: string;
 };

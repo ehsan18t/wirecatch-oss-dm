@@ -10499,6 +10499,7 @@ dependencies = [
  "wirecatch-engine",
  "wirecatch-product",
  "wirecatch-protocol",
+ "wirecatch-test-support",
 ]
 
 [[package]]

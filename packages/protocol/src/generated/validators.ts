@@ -371,6 +371,9 @@ export function isBrowserRoute(value: unknown): value is BrowserRoute {
     (value1['private_session'] === undefined ||
       typeof value1['private_session'] === 'string' ||
       value1['private_session'] === null) &&
+    (value1['profile'] === undefined ||
+      typeof value1['profile'] === 'string' ||
+      value1['profile'] === null) &&
     (typeof value1['observed_page'] === 'string' || value1['observed_page'] === null) &&
     (value1['page_redirect_urls'] === undefined ||
       isArrayOf(value1['page_redirect_urls'], (value2: unknown) => typeof value2 === 'string')) &&
@@ -1274,7 +1277,8 @@ export function isPageReadAnswer(value: unknown): value is PageReadAnswer {
     isRecord(value1) &&
     isPageReadId(value1['id']) &&
     typeof value1['status'] === 'number' &&
-    isArrayOf(value1['headers'], isHeader))(value);
+    isArrayOf(value1['headers'], isHeader) &&
+    (value1['address'] === undefined || typeof value1['address'] === 'string'))(value);
 }
 
 /** Whether `value` has the shape of a {@link PageReadCancelled}; fields it does not name are not checked. */
@@ -1306,8 +1310,9 @@ export function isPageReadPart(value: unknown): value is PageReadPart {
 
 /** Whether `value` has the shape of a {@link PageReads}; fields it does not name are not checked. */
 export function isPageReads(value: unknown): value is PageReads {
-  return ((value1: unknown): boolean =>
-    isRecord(value1) && typeof value1['user_agent'] === 'string')(value);
+  return ((value1: unknown): boolean => isRecord(value1) && typeof value1['profile'] === 'string')(
+    value,
+  );
 }
 
 /** Whether `value` has the shape of a {@link PendingCapture}; fields it does not name are not checked. */

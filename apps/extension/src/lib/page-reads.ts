@@ -16,11 +16,14 @@ export interface PageReadDeps {
   fetch: (url: string, init: RequestInit) => Promise<Response>;
   /** Sends a call to the app and waits for its answer. */
   send: (call: Call, timeoutMs: number) => Promise<unknown>;
+  /** The address the browser's connection for `url` reached, for a read started at `since`; null when the browser did not say. */
+  addressOf: (url: string, since: number) => Promise<string | null>;
+  now: () => number;
 }
 
 /** What one page read sends the app on its way: answered, failed, or nothing for a read the app stopped. */
 type Ending =
-  | { kind: 'answered'; response: Response; body: Uint8Array }
+  | { kind: 'answered'; response: Response; body: Uint8Array; address: string | null }
   | { kind: 'failed'; reason: PageReadFailure }
   | { kind: 'stopped' };
 
@@ -38,12 +41,19 @@ export class PageReads {
     if (event.type === 'page_read_cancelled') this.#running.get(event.data.id)?.abort();
   }
 
+  /** The connection to the app is gone: every read it asked for stops, so none answers a later connection, whose reads may reuse the ids. */
+  disconnected(): void {
+    for (const stop of this.#running.values()) stop.abort();
+  }
+
   async #read(read: PageRead): Promise<void> {
     const stop = new AbortController();
     this.#running.set(read.id, stop);
+    // Read as a call: the signal aborts while the read waits.
+    const stopped = (): boolean => stop.signal.aborted;
     try {
       const ending = await this.#make(read, stop.signal);
-      if (ending.kind === 'stopped') return;
+      if (ending.kind === 'stopped' || stopped()) return;
       if (ending.kind === 'failed') {
         await this.#send({
           method: 'page_read_failed',
@@ -52,14 +62,20 @@ export class PageReads {
         return;
       }
       for (let at = 0; at < ending.body.length; at += MAX_PAGE_READ_PART) {
-        if (stop.signal.aborted) return;
+        if (stopped()) return;
         const bytes = toBase64(ending.body.subarray(at, at + MAX_PAGE_READ_PART));
         await this.#send({ method: 'page_read_part', params: { id: read.id, bytes } });
       }
+      if (stopped()) return;
       const headers = [...ending.response.headers].map(([name, value]) => ({ name, value }));
       await this.#send({
         method: 'page_read_answered',
-        params: { id: read.id, status: ending.response.status, headers },
+        params: {
+          id: read.id,
+          status: ending.response.status,
+          headers,
+          ...(ending.address === null ? {} : { address: ending.address }),
+        },
       });
     } catch {
       // The connection to the app broke: the app fails the read itself.
@@ -77,6 +93,7 @@ export class PageReads {
         // A header fetch() refuses goes without it, as yt-dlp's other headers do.
       }
     }
+    const since = this.#deps.now();
     let response: Response;
     try {
       response = await this.#deps.fetch(read.url, {
@@ -93,15 +110,12 @@ export class PageReads {
       // The app stopped the read, or the site could not be reached: either is the whole answer.
       return signal.aborted ? { kind: 'stopped' } : { kind: 'failed', reason: 'network' };
     }
-    if (Number(response.headers.get('content-length')) > MAX_PAGE_READ_LEN) {
-      void response.body?.cancel();
-      return { kind: 'failed', reason: 'too_large' };
-    }
     try {
+      // The limit is on the bytes that come: a `HEAD` answer states a length it never sends.
       const body = await readCapped(response, MAX_PAGE_READ_LEN);
-      return body === null
-        ? { kind: 'failed', reason: 'too_large' }
-        : { kind: 'answered', response, body };
+      if (body === null) return { kind: 'failed', reason: 'too_large' };
+      const address = await this.#deps.addressOf(read.url, since);
+      return { kind: 'answered', response, body, address };
     } catch {
       // The app stopped the read, or the connection broke mid-body: either is the whole answer.
       return signal.aborted ? { kind: 'stopped' } : { kind: 'failed', reason: 'network' };

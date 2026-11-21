@@ -13,8 +13,8 @@ use wirecatch_streams::process::{self, Output, RunError, RunOptions, STALL_TIMEO
 use super::cookies::CookiesFile;
 use super::guard::Guard;
 use super::{
-    Attempt, Context, YtDlpError, common_args, refused, refused_address, start_guard,
-    without_cookies,
+    Attempt, BrowserRoute, Context, RoutedHosts, YtDlpError, common_args, refused, refused_address,
+    start_guard, without_cookies,
 };
 use crate::MediaProgress;
 use crate::output::Container;
@@ -81,6 +81,15 @@ async fn download_as_asked(
     download_once(ctx, format, merge_into, work, progress, cancel).await
 }
 
+/// The run's browser route for the page's own host only: the run reads the page again through the browser, and downloads the video directly (D282).
+fn page_host_only(ctx: &Context<'_>) -> Option<BrowserRoute> {
+    let route = ctx.browser?;
+    Some(BrowserRoute {
+        reader: route.reader.clone(),
+        hosts: RoutedHosts::Page(ctx.page.host_str()?.to_owned()),
+    })
+}
+
 async fn download_once(
     ctx: &Context<'_>,
     format: &str,
@@ -91,7 +100,12 @@ async fn download_once(
 ) -> Result<Fetched, Attempt> {
     super::make_dir(ctx.temp_dir).await?;
     let scratch = super::make_scratch(ctx.temp_dir).await?;
-    let guard = start_guard(ctx).await?;
+    let page_only = page_host_only(ctx);
+    let guard = start_guard(&Context {
+        browser: page_only.as_ref(),
+        ..*ctx
+    })
+    .await?;
     let guard_url = guard.as_ref().map(Guard::url);
     let ctx = &Context {
         proxy: guard_url.as_deref().or(ctx.proxy),

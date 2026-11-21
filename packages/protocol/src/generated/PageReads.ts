@@ -5,7 +5,7 @@
  */
 export type PageReads = {
   /**
-   * The browser's `navigator.userAgent`, which the app matches with a download's to pick the browser it came from.
+   * A random id the browser profile keeps for good: a download reads only through the profile it came from, which [`BrowserRoute::profile`](crate::extension::BrowserRoute::profile) names.
    */
-  user_agent: string;
+  profile: string;
 };

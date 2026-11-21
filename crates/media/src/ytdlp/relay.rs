@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 use std::io;
+use std::net::IpAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -16,11 +17,10 @@ use tokio::net::TcpStream;
 use tokio_rustls::TlsAcceptor;
 use wirecatch_engine::Url;
 use wirecatch_product::PRODUCT_NAME;
-use wirecatch_protocol::hosts::host_on_site;
 use wirecatch_protocol::page_read::MAX_PAGE_READ_BODY;
 
-use super::browser::{BrowserAnswer, BrowserRequest, BrowserRoute};
-use super::guard::{BAD_REQUEST, TUNNEL_OPEN, UNREACHABLE, read_head};
+use super::browser::{BrowserAnswer, BrowserFailed, BrowserRequest, BrowserRoute};
+use super::guard::{BAD_REQUEST, REFUSED, TUNNEL_OPEN, UNREACHABLE, read_head};
 
 /// How many base64 characters a PEM line holds (RFC 7468).
 const PEM_LINE: usize = 64;
@@ -149,20 +149,30 @@ pub(super) struct Through {
     pub(super) authority: Authority,
     /// Set when the browser made no answer to a request: the run's later tunnels go directly, and a run that failed reads again directly.
     pub(super) failed: AtomicBool,
+    /// The guard's own rule (D136), applied to the address the browser's connection reached.
+    kept_off: fn(IpAddr) -> bool,
+    refused: Arc<AtomicBool>,
 }
 
 impl Through {
-    pub(super) fn new(route: BrowserRoute, authority: Authority) -> Self {
+    pub(super) fn new(
+        route: BrowserRoute,
+        authority: Authority,
+        kept_off: fn(IpAddr) -> bool,
+        refused: Arc<AtomicBool>,
+    ) -> Self {
         Self {
             route,
             authority,
             failed: AtomicBool::new(false),
+            kept_off,
+            refused,
         }
     }
 
-    /// Whether a tunnel to `host` goes through the browser: HTTPS to a host of the page's site, until the browser once made no answer. yt-dlp retries a failed request (a file too large for a page read, say), which then goes directly.
+    /// Whether a tunnel to `host` goes through the browser: HTTPS to a host the route takes, until the browser once made no answer. yt-dlp retries a failed request (a file too large for a page read, say), which then goes directly.
     pub(super) fn takes(&self, host: &str, port: u16) -> bool {
-        port == 443 && host_on_site(host, &self.route.site) && !self.failed.load(Ordering::Relaxed)
+        port == 443 && self.route.hosts.take(host) && !self.failed.load(Ordering::Relaxed)
     }
 }
 
@@ -195,8 +205,24 @@ pub(super) async fn carry(
     tls.read_exact(&mut more).await?;
     request.body.extend(more);
     let head_only = request.method.eq_ignore_ascii_case("HEAD");
-    match through.route.reader.read(request).await {
-        Ok(answer) => write_answer(&mut tls, &answer, head_only).await?,
+    // The browser resolves the host itself, so the address checked before the tunnel need not be the one it reached.
+    let answer = through
+        .route
+        .reader
+        .read(request)
+        .await
+        .and_then(|answer| match answer.address {
+            None => Err(BrowserFailed::Unchecked),
+            Some(address) if (through.kept_off)(address) => Ok(None),
+            Some(_) => Ok(Some(answer)),
+        });
+    match answer {
+        Ok(Some(answer)) => write_answer(&mut tls, &answer, head_only).await?,
+        Ok(None) => {
+            through.refused.store(true, Ordering::Relaxed);
+            tracing::warn!("refused a page read the browser answered from the local network");
+            tls.write_all(REFUSED).await?;
+        }
         Err(failed) => {
             through.failed.store(true, Ordering::Relaxed);
             tracing::debug!(error = %failed, "the browser made no answer to a page read");

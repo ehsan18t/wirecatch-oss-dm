@@ -15,6 +15,7 @@ mod scratch;
 
 pub use browser::{
     BrowserAnswer, BrowserFailed, BrowserReader, BrowserReading, BrowserRequest, BrowserRoute,
+    RoutedHosts,
 };
 
 pub use download::{Fetched, download};

@@ -21,8 +21,8 @@ crate::exported::exported_consts! {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct PageReads {
-    /// The browser's `navigator.userAgent`, which the app matches with a download's to pick the browser it came from.
-    pub user_agent: String,
+    /// A random id the browser profile keeps for good: a download reads only through the profile it came from, which [`BrowserRoute::profile`](crate::extension::BrowserRoute::profile) names.
+    pub profile: String,
 }
 
 /// Identifies one page read, from the app.
@@ -71,6 +71,10 @@ pub struct PageReadAnswer {
     pub status: u16,
     /// The answer's headers, as the browser shows them to `fetch()`: no `Set-Cookie`.
     pub headers: Vec<Header>,
+    /// The address the browser's connection reached, as its `webRequest` reports it: the app refuses an answer from the local network, and does not use one without an address.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub address: Option<String>,
 }
 
 /// Says the browser could not make a page read ([`crate::wire::Call::PageReadFailed`]).

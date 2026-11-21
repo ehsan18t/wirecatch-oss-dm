@@ -67,16 +67,16 @@ export async function browserInfo(): Promise<BrowserInfo> {
   });
 }
 
-/** What this extension says about itself in `hello`: its version, the private session while a private window is open (D280), and whether this browser makes page reads (D282). */
+/** What this extension says about itself in `hello`: its version, the private session while a private window is open (D280), and, for a browser that makes page reads, its profile (D282). */
 export async function helloFromExtension(
   session: Pick<PrivateSession, 'current'> | null,
-  pageReads: boolean,
+  profile: (() => Promise<string>) | null,
 ): Promise<HelloIdentity> {
   return {
     client: 'extension',
     client_version: browser.runtime.getManifest().version,
     private_session: (await session?.current()) ?? null,
-    ...(pageReads ? { page_reads: { user_agent: navigator.userAgent } } : {}),
+    ...(profile === null ? {} : { page_reads: { profile: await profile() } }),
   };
 }
 

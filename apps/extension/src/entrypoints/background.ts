@@ -38,7 +38,9 @@ import { MediaRegistry } from '@/lib/media/registry';
 import { MediaWatcher } from '@/lib/media/watch';
 import { acceptsPopupPort } from '@/lib/popup-port';
 import { NativeClient } from '@/lib/native/client';
+import { browserProfile } from '@/lib/browser-profile';
 import { PageReads } from '@/lib/page-reads';
+import { ReachedAddresses } from '@/lib/page-read-addresses';
 import { browserTransport } from '@/lib/native/port';
 import { NoticeCenter } from '@/lib/notices/center';
 import { focusedWebTab } from '@/lib/notices/focus';
@@ -185,22 +187,47 @@ function followPrivateSession(): {
   return { session, ended };
 }
 
+/** This browser profile's id (D282), read or made once, and read again at the next hello after a storage failure. */
+function keptProfile(): () => Promise<string> {
+  let kept: Promise<string> | null = null;
+  return () =>
+    (kept ??= browserProfile(browser.storage.local, () => crypto.randomUUID()).catch(
+      (error: unknown) => {
+        kept = null;
+        throw error;
+      },
+    ));
+}
+
+/** Makes the app's page reads (D282), telling it the address each of its connections reached. */
+function servePageReads(client: NativeClient): void {
+  const reached = new ReachedAddresses(new URL(browser.runtime.getURL('/')).origin, Date.now);
+  browser.webRequest.onResponseStarted.addListener((response) => reached.seen(response), {
+    urls: ['<all_urls>'],
+  });
+  const pageReads = new PageReads({
+    fetch: (url, init) => fetch(url, init),
+    send: (call, timeoutMs) => client.request(call, timeoutMs),
+    addressOf: (url, since) => reached.of(url, since),
+    now: Date.now,
+  });
+  client.onEvent((event) => pageReads.follow(event));
+  client.onStatus((status) => {
+    if (status.state !== 'connected') pageReads.disconnected();
+  });
+}
+
 export default defineBackground(() => {
   installDiagnostics('background', self);
   const { session: privateSession, ended: sessionEnded } = followPrivateSession();
   // Firefox's fetch() from an extension has not been measured against a site's checks yet (D282).
   const makesPageReads = !isFirefox();
+  const profile = makesPageReads ? keptProfile() : null;
   const client = new NativeClient({
     transport: browserTransport(),
-    hello: () => helloFromExtension(privateSession, makesPageReads),
+    hello: () => helloFromExtension(privateSession, profile),
   });
-  if (makesPageReads) {
-    const pageReads = new PageReads({
-      fetch: (url, init) => fetch(url, init),
-      send: (call, timeoutMs) => client.request(call, timeoutMs),
-    });
-    client.onEvent((event) => pageReads.follow(event));
-  }
+  if (makesPageReads) servePageReads(client);
 
   const hubDeps = {
     mediaButtonSetting: { publish: publishButtonSetting },
