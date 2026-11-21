@@ -5,6 +5,9 @@ import { fileURLToPath } from 'node:url';
 
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
+/** Rules for Wirecatch's Rust sources leave vendored crates in their upstream style. */
+export const RUST_SOURCE_SCOPE = ['*.rs', ':!vendor/**'];
+
 /** Upper bound on output read back from a command (cargo metadata of the whole workspace is a few MiB). */
 const MAX_CAPTURED_BYTES = 64 * 1024 * 1024;
 

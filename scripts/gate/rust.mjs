@@ -117,10 +117,21 @@ function workspaceBridge() {
   return join(metadata.target_directory, 'debug', file);
 }
 
-function test() {
-  return runWithTestLimit('cargo', testArguments(options), {
+async function test() {
+  await runWithTestLimit('cargo', testArguments(options), {
     env: { [bridgeVariable()]: workspaceBridge() },
   });
+  if (process.platform === 'win32' && options.desktop) {
+    // The backported backend is outside the workspace, so --workspace excludes its tests.
+    await runWithTestLimit('cargo', [
+      'test',
+      '--locked',
+      '-p',
+      'gpui-pre-windows',
+      '--lib',
+      'activation_tests::',
+    ]);
+  }
 }
 
 /** The published engine still builds with the oldest Rust its manifest promises. */

@@ -1,7 +1,7 @@
 // Refuses Rust tests that race the machine: an upper bound on how long something took, or a short fixed timeout on a wait that has to succeed. Such a test passes on a fast, idle machine and fails on a busy CI runner, whatever the change being tested (ENGINEERING section 7).
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { filesMatching, GateError, ROOT } from './process.mjs';
+import { filesMatching, GateError, ROOT, RUST_SOURCE_SCOPE } from './process.mjs';
 import { closingBracket, codeOnly } from './rust-attributes.mjs';
 import { declaredTestModules, isTestFile, testItems } from './test-code.mjs';
 
@@ -183,11 +183,13 @@ export function timingRaces(file, text, testModules = []) {
 
 function testTiming() {
   const testModules = declaredTestModules();
-  const hits = filesMatching(`${MEASURED}|Duration::from_|_bps|_server|throttle`, ['*.rs']).flatMap(
-    (file) =>
-      timingRaces(file, readFileSync(join(ROOT, file), 'utf8'), testModules).map(
-        (hit) => `${file}:${String(hit.line)}: ${hit.code}`,
-      ),
+  const hits = filesMatching(
+    `${MEASURED}|Duration::from_|_bps|_server|throttle`,
+    RUST_SOURCE_SCOPE,
+  ).flatMap((file) =>
+    timingRaces(file, readFileSync(join(ROOT, file), 'utf8'), testModules).map(
+      (hit) => `${file}:${String(hit.line)}: ${hit.code}`,
+    ),
   );
   if (hits.length > 0) {
     throw new GateError(

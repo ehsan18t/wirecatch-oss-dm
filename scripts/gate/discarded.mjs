@@ -1,7 +1,7 @@
 // `discarded`: refuses `_ = expr` in Rust, as a statement, a match arm or a closure's body, which drops a result without a word, and which clippy's `let_underscore_must_use` does not see since it is no `let` (ENGINEERING section 4). A `tokio::select!` pattern (`_ = tick.tick() => ..`) is not one.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { filesMatching, GateError, ROOT } from './process.mjs';
+import { filesMatching, GateError, ROOT, RUST_SOURCE_SCOPE } from './process.mjs';
 import { codeOnly } from './rust-attributes.mjs';
 
 /** The end that a top-level `at` makes, if any: a `,` before a `select!` arm's `if` precondition is none. */
@@ -41,7 +41,7 @@ export function discardedResults(text) {
 }
 
 function discarded() {
-  const hits = filesMatching(String.raw`\b_ =`, ['*.rs']).flatMap((file) =>
+  const hits = filesMatching(String.raw`\b_ =`, RUST_SOURCE_SCOPE).flatMap((file) =>
     discardedResults(readFileSync(join(ROOT, file), 'utf8')).map(
       (hit) => `${file}:${String(hit.line)}: ${hit.code}`,
     ),

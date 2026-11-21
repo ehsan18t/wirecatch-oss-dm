@@ -1,7 +1,7 @@
 // Reads the lint attributes in the Rust sources: every `#[allow]` and `#[expect]`, also inside `#[cfg_attr]`, however deeply nested. Its reader for Rust code without comments and literals serves the other source checks too.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { filesMatching, ROOT } from './process.mjs';
+import { filesMatching, ROOT, RUST_SOURCE_SCOPE } from './process.mjs';
 
 /** Where a raw string starts (`r"`, `r#"`, `br##"`, `cr#"`): its `#`s close it again after the closing quote. */
 const RAW_STRING = /^[bc]?r(#*)"/;
@@ -161,7 +161,7 @@ let cached = null;
  * Every lint attribute in the Rust sources, with the file and line it is on and the lints it names. Comments and string literals are not read, so docs and tests may show the syntax. Read once per gate run.
  */
 export function rustLintAttributes() {
-  cached ??= filesMatching(String.raw`(allow|expect|cfg_attr)\s*\(`, ['*.rs']).flatMap(
+  cached ??= filesMatching(String.raw`(allow|expect|cfg_attr)\s*\(`, RUST_SOURCE_SCOPE).flatMap(
     attributesIn,
   );
   return cached;
