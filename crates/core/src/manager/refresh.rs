@@ -2,11 +2,11 @@
 
 use tokio::sync::oneshot;
 use wirecatch_engine::{CancellationToken, Url};
+use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::DownloadStatus;
 use wirecatch_protocol::extension::{
-    AddAction, AddedDownload, CaptureSource, MAX_DOWNLOAD_REDIRECTS, MediaKind, NewDownload,
+    AddAction, AddedDownload, CaptureSource, MediaKind, NewDownload,
 };
-use wirecatch_protocol::{DownloadId, Secret};
 use wirecatch_records::origin::BrowserSource;
 use wirecatch_sites::local_network::ChosenBy;
 
@@ -129,14 +129,6 @@ impl Manager {
         if origin.browser_source.is_none() {
             return Ok(None);
         }
-        let known_size = if entry.media_job.is_none() {
-            entry
-                .row
-                .total
-                .or_else(|| entry.expect.as_ref().and_then(|expected| expected.size))
-        } else {
-            None
-        };
         if entry.row.status == DownloadStatus::Completed
             || entry.refuse_if_stranded().is_err()
             || !matches_capture(entry, capture)
@@ -144,11 +136,8 @@ impl Manager {
             return Ok(None);
         }
 
-        let expect = entry.media_job.is_none().then(|| {
-            let mut expect = expectation_of(capture);
-            expect.size = expect.size.or(known_size);
-            expect
-        });
+        // Without a size from the browser the server's decides: the engine starts another file over (D284.4).
+        let expect = entry.media_job.is_none().then(|| expectation_of(capture));
         self.replace_link(
             &mut state,
             id,
@@ -194,8 +183,6 @@ pub(super) fn browser_source(capture: &NewDownload) -> Option<BrowserSource> {
             .as_ref()
             .filter(|page| web_url(page.expose()).is_some())
             .cloned(),
-        page_redirect_urls: safe_redirects(route.page_redirect_urls.as_deref().unwrap_or_default()),
-        redirect_urls: safe_redirects(&route.redirect_urls),
         private_window: route.private_window,
         private_session: route.private_session.clone(),
         profile: route.profile.clone(),
@@ -212,14 +199,6 @@ fn has_browser_source(source: CaptureSource) -> bool {
         source,
         CaptureSource::BrowserDownload | CaptureSource::MediaButton | CaptureSource::ContextMenu
     )
-}
-
-fn safe_redirects(urls: &[Secret]) -> Vec<Secret> {
-    urls.iter()
-        .take(MAX_DOWNLOAD_REDIRECTS)
-        .filter(|address| web_url(address.expose()).is_some())
-        .cloned()
-        .collect()
 }
 
 fn web_url(text: &str) -> Option<Url> {
