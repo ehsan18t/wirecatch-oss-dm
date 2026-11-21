@@ -25,7 +25,7 @@ wirecatch-sites.workspace = true
 wirecatch-store.workspace = true
 wirecatch-streams.workspace = true
 wirecatch-updates.workspace = true
-base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
+base64.workspace = true
 futures-util.workspace = true
 jiff = { workspace = true, features = ["tz-system", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 serde.workspace = true

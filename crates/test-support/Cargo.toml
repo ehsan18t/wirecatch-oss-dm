@@ -14,15 +14,15 @@ publish = false
 # Everything here serves the test servers, so it comes with the `servers`
 # feature: a crate that needs only the plain helpers builds no HTTP or TLS stack.
 axum = { workspace = true, optional = true }
-base64 = { version = "0.23.1", default-features = false, features = ["alloc"], optional = true }
+base64 = { workspace = true, optional = true }
 bytes = { workspace = true, optional = true }
 futures-util = { workspace = true, optional = true }
 # The same major version and crypto provider (ring) as the engine, so a test's
 # root store is the type the engine's TLS configuration takes.
 rcgen = { version = "0.14.0", default-features = false, features = ["crypto", "ring"], optional = true }
-rustls = { version = "0.23.4", default-features = false, features = ["std", "tls12", "ring"], optional = true }
+rustls = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["io-util"], optional = true }
-tokio-rustls = { version = "0.26.0", default-features = false, features = ["ring", "tls12"], optional = true }
+tokio-rustls = { workspace = true, optional = true }
 url = { workspace = true, optional = true }
 
 # Reading the redaction samples, only with the `redaction` feature; serde_json also reads cargo's build messages with `bridge` and resume files with `resume`.
@@ -45,7 +45,7 @@ sha2 = { version = "0.10.9", optional = true }
 # The HTTP/3 test servers, only with the `http3` feature.
 h3 = { version = "0.0.8", optional = true }
 h3-quinn = { version = "0.0.10", optional = true }
-http = { version = "1.1.0", optional = true }
+http = { workspace = true, optional = true }
 hyper = { version = "1.4.0", features = ["server", "http1", "http2"], optional = true }
 hyper-util = { version = "0.1.10", features = ["server-auto", "tokio"], optional = true }
 quinn = { version = "0.11.9", default-features = false, features = ["runtime-tokio", "rustls-ring"], optional = true }
