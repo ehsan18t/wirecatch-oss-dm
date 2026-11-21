@@ -155,10 +155,10 @@ async fn download_once(
     if !ran.success() {
         return Err(if guard.as_ref().is_some_and(Guard::refused_any) {
             YtDlpError::LocalNetwork.into()
-        } else if output_path_is_too_long(&ran.stderr) {
-            YtDlpError::OutputPathTooLong.into()
         } else if let Some(address) = ran.stderr.error_line().and_then(refused_address) {
             super::failed_through(guard.as_ref(), refused(&ran).of_address(address))
+        } else if ran.stderr.error_line().is_some_and(output_path_is_too_long) {
+            YtDlpError::OutputPathTooLong.into()
         } else {
             super::failed_through(guard.as_ref(), refused(&ran))
         });
@@ -229,14 +229,13 @@ fn download_args(
     args
 }
 
-fn output_path_is_too_long(stderr: &process::StderrTail) -> bool {
-    stderr.error_line().is_some_and(|line| {
-        let line = line.to_ascii_lowercase();
-        line.contains("[errno 36]")
-            || line.contains("[winerror 206]")
-            || line.contains("file name too long")
-            || line.contains("filename or extension is too long")
-    })
+fn output_path_is_too_long(line: &str) -> bool {
+    let error = line.strip_prefix("ERROR: ").unwrap_or(line);
+    let system = error
+        .strip_prefix("unable to open for writing:")
+        .unwrap_or(error)
+        .trim_start();
+    system.starts_with("[Errno 36]") || system.starts_with("[WinError 206]")
 }
 
 /// The bytes done, when known the total (exact, else estimated), and the format, from a
@@ -322,7 +321,7 @@ mod tests {
             return Ok(());
         };
         let dir = tempfile::tempdir()?;
-        let name = "100% $WIRECATCH_YTDLP_OUTPUT_DIR %WIRECATCH_YTDLP_OUTPUT_DIR% %(title)s";
+        let name = format!("100% ${OUTPUT_DIR_ENV} %{OUTPUT_DIR_ENV}% %(title)s");
         let work = dir
             .path()
             .join("nested".repeat(16))
@@ -362,6 +361,19 @@ mod tests {
         assert_eq!(result, work.join("media.mp4"));
         assert_eq!(std::fs::read(result)?, bytes);
         Ok(())
+    }
+
+    #[test]
+    fn only_an_operating_system_path_error_suggests_a_shorter_folder() {
+        assert!(output_path_is_too_long(
+            "ERROR: unable to open for writing: [Errno 36] File name too long: 'media.mp4'"
+        ));
+        assert!(output_path_is_too_long(
+            "ERROR: [WinError 206] The filename or extension is too long: 'media.mp4'"
+        ));
+        assert!(!output_path_is_too_long(
+            "ERROR: missing video named file name too long"
+        ));
     }
 
     /// The value yt-dlp is given for `option` when it merges into `merge_into`.
