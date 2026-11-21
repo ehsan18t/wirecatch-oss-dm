@@ -1,7 +1,9 @@
 //! Serves one client connection (D14). The first call must be `hello`; the connection then
 //! speaks the newest version both sides have (D32) and gets only that version's events and
 //! error codes. Requests run side by side, so a slow capture never holds up a withdrawal;
-//! responses match requests by id only, and one task writes every frame.
+//! responses match requests by id only, and one task writes every frame. A browser that makes
+//! page reads (D282) gets their requests on its own connection only, and its answers are taken in
+//! the order they came, before any other request of the connection runs.
 
 use std::io;
 use std::sync::Arc;
@@ -14,14 +16,14 @@ use tokio::sync::{Semaphore, mpsc};
 use tracing::{debug, warn};
 use wirecatch_protocol::MIN_PROTOCOL_VERSION;
 use wirecatch_protocol::frame::{self, FrameError, MAX_FRAME_LEN};
+use wirecatch_protocol::page_read::PageReads;
 use wirecatch_protocol::version::{VersionError, VersionRange};
 use wirecatch_protocol::wire::{
     Call, CallMethod, ClientKind, ErrorCode, Event, Hello, HelloReply, Message, Outcome,
     ProtocolError, Reply, RequestHead, UNKNOWN_REQUEST_ID,
 };
 
-use wirecatch_core::Manager;
-use wirecatch_core::SessionClaim;
+use wirecatch_core::{Manager, SessionClaim};
 use wirecatch_engine::units::KIB_USIZE;
 
 /// A request beyond this gets an error at once, so a client cannot pile up work.
@@ -47,6 +49,13 @@ where
         claims: Vec::new(),
     };
     claim.name(hello.private_session.as_deref());
+    let (reader, mut page_reads) = match hello.page_reads.clone() {
+        Some(reads) => {
+            let (reader, events) = manager.connect_page_reader(reads.profile);
+            (Some(reader), Some(events))
+        }
+        None => (None, None),
+    };
     send(&mut stream, ok(id, hello_reply(version)), version).await?;
     debug!(
         client = ?hello.client,
@@ -65,8 +74,13 @@ where
                     None => break,
                     Some(Frame::TooLarge(len)) => Some(too_large(len)),
                     Some(Frame::Body(body)) => match parse_request(&body, version) {
-                        Ok((id, call)) => {
+                        // An answer's parts must stay in order, so they are taken here, not in a task of their own.
+                        Ok((id, call)) if reader.as_ref().is_some_and(|r| r.take(&call)) => {
+                            Some(ok(id, Reply::Done))
+                        }
+                        Ok((id, mut call)) => {
                             claim.follow(&call);
+                            from_profile(&mut call, hello.page_reads.as_ref());
                             start_request(&manager, &slots, &responder, version, id, call)
                         }
                         Err(reply) => Some(*reply),
@@ -77,6 +91,7 @@ where
                 }
             }
             Some(response) = responses.recv() => send(&mut stream, response, version).await?,
+            Some(event) = next_page_read(&mut page_reads) => send(&mut stream, Message::Event { event }, version).await?,
             event = events.recv() => match event {
                 Ok(event) => send(&mut stream, Message::Event { event }, version).await?,
                 Err(RecvError::Lagged(missed)) => {
@@ -97,7 +112,25 @@ where
         send(&mut stream, response, version).await?;
     }
     drop(claim);
+    drop(reader);
     Ok(())
+}
+
+/// Names on a download this connection hands over the browser profile its hello named, whatever the client wrote: a download's page reads go through that profile alone (D282).
+fn from_profile(call: &mut Call, page_reads: Option<&PageReads>) {
+    if let Call::AddDownload(capture) = call
+        && let Some(route) = capture.browser_route.as_deref_mut()
+    {
+        route.profile = page_reads.map(|reads| reads.profile.clone());
+    }
+}
+
+/// The next page read event for this connection's browser; never, for a connection that makes none.
+async fn next_page_read(events: &mut Option<mpsc::UnboundedReceiver<Event>>) -> Option<Event> {
+    match events {
+        Some(events) => events.recv().await,
+        None => std::future::pending().await,
+    }
 }
 
 /// The private sessions a connection named, released when the connection ends.
@@ -276,6 +309,10 @@ async fn handle(manager: &Manager, version: u32, call: Call) -> Outcome {
         Call::CheckDownload(check) => Ok(Reply::DownloadCheck(manager.check_download(&check))),
         Call::PrivateSessionEnded(ended) => {
             manager.end_private_session(&ended.id);
+            Ok(Reply::Done)
+        }
+        // From a connection that makes no page reads: there is no read to go to.
+        Call::PageReadPart(_) | Call::PageReadAnswered(_) | Call::PageReadFailed(_) => {
             Ok(Reply::Done)
         }
     };
@@ -654,6 +691,7 @@ mod tests {
             max_protocol_version: None,
             private_session: None,
             start_app: true,
+            page_reads: None,
         };
         let refusal = |oldest, newest| {
             let refused = VersionRange::new(oldest, newest)
@@ -683,5 +721,33 @@ mod tests {
             too_old.message
         );
         assert_eq!(refusal(2, 1).code, ErrorCode::InvalidRequest);
+    }
+
+    /// A download takes the browser profile its connection's hello named, not one the client wrote, and none from a connection that makes no page reads.
+    #[test]
+    fn a_download_takes_its_connections_profile() {
+        let handed = |written: Option<&str>, hello: Option<&str>| {
+            let mut capture = wirecatch_test_support::downloads::capture("https://example.com/v");
+            capture.browser_route = Some(Box::new(wirecatch_protocol::extension::BrowserRoute {
+                private_window: false,
+                private_session: None,
+                profile: written.map(Into::into),
+                observed_page: None,
+                page_redirect_urls: None,
+                redirect_urls: Vec::new(),
+            }));
+            let mut call = Call::AddDownload(Box::new(capture));
+            let reads = hello.map(|profile| PageReads {
+                profile: profile.into(),
+            });
+            from_profile(&mut call, reads.as_ref());
+            match call {
+                Call::AddDownload(capture) => capture.browser_route.unwrap().profile,
+                _ => unreachable!(),
+            }
+        };
+        assert_eq!(handed(None, Some("p")).as_deref(), Some("p"));
+        assert_eq!(handed(Some("other"), Some("p")).as_deref(), Some("p"));
+        assert_eq!(handed(Some("other"), None), None);
     }
 }

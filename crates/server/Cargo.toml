@@ -20,6 +20,7 @@ tracing.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["io-util", "test-util"] }
+wirecatch-test-support = { path = "../test-support", features = ["downloads"] }
 
 [lints]
 workspace = true

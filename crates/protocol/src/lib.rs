@@ -7,6 +7,7 @@
 //! - [`app`]: downloads, queues and settings as the desktop UI sees them.
 //! - [`rules`]: what an auto queue takes of the new downloads.
 //! - [`media_start`]: where a video's quality window starts, and whether it opens at all.
+//! - [`page_read`]: requests of yt-dlp's the browser makes for the app (D282).
 //! - [`desktop`]: the commands and events between the desktop UI and its Rust shell.
 //! - [`frame`]: length-prefixed JSON framing used on every local connection.
 //! - [`launch`]: the flag and variables a program starts the bridge or the app with.
@@ -25,6 +26,7 @@ pub mod hosts;
 pub mod languages;
 pub mod launch;
 pub mod media_start;
+pub mod page_read;
 pub mod proxy;
 pub mod rules;
 pub mod secret;

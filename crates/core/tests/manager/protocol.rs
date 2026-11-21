@@ -167,6 +167,7 @@ fn hello(protocol_version: u32, max_protocol_version: Option<u32>) -> Call {
         max_protocol_version,
         private_session: None,
         start_app: true,
+        page_reads: None,
     })
 }
 
@@ -1703,6 +1704,7 @@ async fn a_browser_capture_refreshes_the_watched_row_after_a_mirror_change() -> 
     old.browser_route = Some(Box::new(BrowserRoute {
         private_window: false,
         private_session: None,
+        profile: None,
         observed_page: Some(page.into()),
         page_redirect_urls: Some(vec![entry.into()]),
         redirect_urls: vec![release.into()],
@@ -1766,6 +1768,7 @@ async fn a_file_of_the_same_size_refreshes_the_watched_row_from_any_site() -> Te
     old.browser_route = Some(Box::new(BrowserRoute {
         private_window: false,
         private_session: None,
+        profile: None,
         observed_page: Some(page.into()),
         page_redirect_urls: None,
         redirect_urls: Vec::new(),
@@ -1804,6 +1807,7 @@ async fn a_dismissed_watch_leaves_a_later_capture_to_its_own_row() -> TestResult
     old.browser_route = Some(Box::new(BrowserRoute {
         private_window: false,
         private_session: None,
+        profile: None,
         observed_page: Some(page.into()),
         page_redirect_urls: None,
         redirect_urls: vec!["https://project.example/releases/v1/report.pdf".into()],
@@ -1843,6 +1847,7 @@ async fn unsafe_or_private_source_pages_do_not_open_a_watch() -> TestResult {
         download.browser_route = Some(Box::new(BrowserRoute {
             private_window,
             private_session: private_window.then(|| "session-1".into()),
+            profile: None,
             observed_page: Some(page.into()),
             page_redirect_urls: None,
             redirect_urls: Vec::new(),
@@ -2031,6 +2036,7 @@ fn private_route(session: Option<&str>) -> BrowserRoute {
     BrowserRoute {
         private_window: true,
         private_session: session.map(Into::into),
+        profile: None,
         observed_page: None,
         page_redirect_urls: None,
         redirect_urls: Vec::new(),

@@ -19,11 +19,19 @@ wirecatch-protocol = { workspace = true, features = ["tokio"] }
 wirecatch-records.workspace = true
 wirecatch-sites.workspace = true
 wirecatch-streams.workspace = true
+base64.workspace = true
+getrandom.workspace = true
+http.workspace = true
+rcgen = { version = "0.14.0", default-features = false, features = ["crypto", "ring"] }
+rustls.workspace = true
+rustls-native-certs.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["io-util", "net", "process"] }
+tokio-rustls.workspace = true
 tracing.workspace = true
+webpki-root-certs.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

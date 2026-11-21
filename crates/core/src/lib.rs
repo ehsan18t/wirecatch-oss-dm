@@ -18,6 +18,7 @@ mod speed;
 pub use clock::{Clock, ManualClock, Sleep, SystemClock};
 pub use error::{CoreError, Result};
 pub use manager::app_update::{AppReleases, AppUpdate, UpdateDownload};
+pub use manager::page_reads::PageReaderClaim;
 pub use manager::private_sessions::{PRIVATE_SESSION_GRACE, SessionClaim};
 pub use manager::{
     DEFAULT_CAPTURE_TIMEOUT, DEFAULT_MEDIA_REFRESH_DELAYS, DEFAULT_MEDIA_TIMEOUT,

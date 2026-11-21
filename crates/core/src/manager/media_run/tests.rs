@@ -39,6 +39,7 @@ fn job() -> Job {
         placing: Arc::new(|| {}),
         file_work: FileWork::new(),
         taken: Taken::KeepBoth,
+        browser: None,
     }
 }
 

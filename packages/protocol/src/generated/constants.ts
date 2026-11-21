@@ -297,6 +297,26 @@ export const MAX_PROXY_NAME_CHARS = 60;
 export const MAX_PROXY_SERVERS = 100;
 
 /**
+ * The most bytes of an answer's body in one [`PageReadPart`]: under `MAX_FRAME_LEN` once in base64 and JSON.
+ */
+export const MAX_PAGE_READ_PART = 524288;
+
+/**
+ * The longest answer body a page read takes; the browser fails a longer one as [`PageReadFailure::TooLarge`].
+ */
+export const MAX_PAGE_READ_LEN = 33554432;
+
+/**
+ * The longest request body a page read carries.
+ */
+export const MAX_PAGE_READ_BODY = 262144;
+
+/**
+ * How long the app waits for the whole answer to a page read, in milliseconds: under yt-dlp's own 20 seconds, so a browser too slow fails the read and the run can read directly.
+ */
+export const PAGE_READ_TIMEOUT_MS = 15000;
+
+/**
  * Words that make a name a secret's when one of its segments is the word (see the module documentation for how a name is split). `key` alone counts, so `Invalid key: 5` loses its 5: a bare `key=` pair is most often an API key.
  */
 export const SECRET_WORDS: readonly string[] = [
@@ -443,6 +463,9 @@ export const CALL_SINCE: Readonly<Record<Call['method'], number>> = {
   notice_shown: 2,
   open_links: 2,
   page_options: 2,
+  page_read_answered: 2,
+  page_read_failed: 2,
+  page_read_part: 2,
   pause_all: 1,
   private_session_ended: 2,
   resume_all: 1,
@@ -459,6 +482,8 @@ export const EVENT_SINCE: Readonly<Record<Event['type'], number>> = {
   notice_requested: 2,
   notice_withdrawn: 2,
   options_changed: 2,
+  page_read_cancelled: 2,
+  page_read_requested: 2,
   queues_changed: 1,
   shell_config_changed: 2,
 };

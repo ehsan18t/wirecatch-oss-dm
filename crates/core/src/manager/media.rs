@@ -967,8 +967,10 @@ impl Manager {
             proxy.as_deref(),
         )
         .await;
+        let browser = self.browser_route(&self.lock(), &source.fetch.origin, &source.fetch.url);
         let ctx = ytdlp::Context {
             off_local_network,
+            browser: browser.as_ref(),
             tools,
             page: &source.fetch.url,
             cookies: cookies.as_deref(),

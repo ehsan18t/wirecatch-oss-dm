@@ -1245,6 +1245,7 @@ async fn a_recaptured_video_page_refreshes_the_original_download() -> TestResult
     fresh.browser_route = Some(Box::new(BrowserRoute {
         private_window: false,
         private_session: None,
+        profile: None,
         observed_page: Some(url.as_str().into()),
         page_redirect_urls: None,
         redirect_urls: Vec::new(),
@@ -1275,6 +1276,7 @@ async fn a_recaptured_stream_can_change_its_signature_but_keeps_its_selection() 
         capture.browser_route = Some(Box::new(BrowserRoute {
             private_window: false,
             private_session: None,
+            profile: None,
             observed_page: Some(page.into()),
             page_redirect_urls: None,
             redirect_urls: Vec::new(),

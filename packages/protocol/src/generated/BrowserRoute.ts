@@ -14,6 +14,10 @@ export type BrowserRoute = {
    */
   private_session?: string | null;
   /**
+   * The browser profile it comes from (D282): the app sets it from the connection's [`PageReads::profile`](crate::page_read::PageReads::profile), replacing what a client sends.
+   */
+  profile?: string | null;
+  /**
    * The full page observed in the browser, used to return there. The HTTP
    * referrer alone is insufficient to identify that page.
    */

@@ -296,6 +296,7 @@ where
         max_protocol_version: Some(VersionRange::THIS_BUILD.newest()),
         private_session: None,
         start_app: false,
+        page_reads: None,
     });
     let version = match ask(stream, 1, hello, deadline).await? {
         Reply::Hello(reply) => reply.protocol_version,

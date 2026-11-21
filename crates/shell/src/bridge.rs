@@ -405,6 +405,7 @@ mod tests {
                 max_protocol_version: Some(wirecatch_protocol::PROTOCOL_VERSION),
                 private_session: None,
                 start_app: true,
+                page_reads: None,
             }),
         };
         frame::write_async(&mut client, &hello).await.unwrap();

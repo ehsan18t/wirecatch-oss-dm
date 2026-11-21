@@ -31,6 +31,9 @@ pub struct BrowserSource {
     /// The private session it came from (D280). Never saved, since a private download is not.
     #[serde(skip)]
     pub private_session: Option<String>,
+    /// The browser profile it came from, whose browser alone makes its page reads (D282).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
     /// The browser's name, before the person or the app chose a different name on disk.
     pub file_name: Option<String>,
 }

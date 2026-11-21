@@ -396,6 +396,10 @@ export class Hub {
         return;
       case 'queues_changed':
         return;
+      case 'page_read_requested':
+      case 'page_read_cancelled':
+        // `PageReads` makes them, from the client's events (D282).
+        return;
       case 'notice_requested':
       case 'notice_withdrawn':
         void this.#deps.notices?.follow(event);

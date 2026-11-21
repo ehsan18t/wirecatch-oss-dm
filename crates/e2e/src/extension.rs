@@ -449,6 +449,7 @@ pub fn hello_call() -> Call {
         max_protocol_version: Some(PROTOCOL_VERSION),
         private_session: None,
         start_app: true,
+        page_reads: None,
     })
 }
 

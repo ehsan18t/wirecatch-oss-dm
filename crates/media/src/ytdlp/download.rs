@@ -13,8 +13,8 @@ use wirecatch_streams::process::{self, Output, RunError, RunOptions, STALL_TIMEO
 use super::cookies::CookiesFile;
 use super::guard::Guard;
 use super::{
-    Attempt, Context, YtDlpError, common_args, refused, refused_address, start_guard,
-    without_cookies,
+    Attempt, BrowserRoute, Context, RoutedHosts, YtDlpError, common_args, refused, refused_address,
+    start_guard, without_cookies,
 };
 use crate::MediaProgress;
 use crate::output::Container;
@@ -51,18 +51,43 @@ pub async fn download(
     progress: &MediaProgress,
     cancel: &CancellationToken,
 ) -> Result<Fetched, YtDlpError> {
+    match download_as_asked(ctx, format, merge_into, work, progress, cancel).await {
+        Err(Attempt::BrowserFailed(error)) => {
+            debug!(%error, "the browser made no answer to a request; downloading directly");
+            let direct = super::without_browser(ctx);
+            download_as_asked(&direct, format, merge_into, work, progress, cancel).await
+        }
+        fetched => fetched,
+    }
+    .map_err(Attempt::into_error)
+}
+
+async fn download_as_asked(
+    ctx: &Context<'_>,
+    format: &str,
+    merge_into: Option<Container>,
+    work: &Path,
+    progress: &MediaProgress,
+    cancel: &CancellationToken,
+) -> Result<Fetched, Attempt> {
     if let Some(anonymous) = without_cookies(ctx) {
         match download_once(&anonymous, format, merge_into, work, progress, cancel).await {
-            Ok(fetched) => return Ok(fetched),
             Err(Attempt::NeedsSignIn(error)) => {
                 debug!(%error, "downloading needs the browser's sign-in; trying with it");
             }
-            Err(Attempt::Failed(error)) => return Err(error),
+            fetched => return fetched,
         }
     }
-    download_once(ctx, format, merge_into, work, progress, cancel)
-        .await
-        .map_err(Attempt::into_error)
+    download_once(ctx, format, merge_into, work, progress, cancel).await
+}
+
+/// The run's browser route for the page's own host only: the run reads the page again through the browser, and downloads the video directly (D282).
+fn page_host_only(ctx: &Context<'_>) -> Option<BrowserRoute> {
+    let route = ctx.browser?;
+    Some(BrowserRoute {
+        reader: route.reader.clone(),
+        hosts: RoutedHosts::Page(ctx.page.host_str()?.to_owned()),
+    })
 }
 
 async fn download_once(
@@ -75,14 +100,23 @@ async fn download_once(
 ) -> Result<Fetched, Attempt> {
     super::make_dir(ctx.temp_dir).await?;
     let scratch = super::make_scratch(ctx.temp_dir).await?;
-    let guard = start_guard(ctx).await?;
+    let page_only = page_host_only(ctx);
+    let guard = start_guard(&Context {
+        browser: page_only.as_ref(),
+        ..*ctx
+    })
+    .await?;
     let guard_url = guard.as_ref().map(Guard::url);
     let ctx = &Context {
         proxy: guard_url.as_deref().or(ctx.proxy),
         ..*ctx
     };
+    let trusted = super::trust(guard.as_ref(), scratch.path()).await?;
     let cookies = CookiesFile::create(ctx).await?;
-    let args = download_args(ctx, cookies.as_ref(), format, merge_into);
+    let mut args = download_args(ctx, cookies.as_ref(), format, merge_into);
+    if trusted.is_some() {
+        args.splice(0..0, super::Trusted::args());
+    }
     let mut printed = None::<PathBuf>;
     let result = process::run(
         &ctx.tools.ytdlp,
@@ -91,7 +125,11 @@ async fn download_once(
         RunOptions::lines()
             .with_idle_timeout(STALL_TIMEOUT)
             .watching(work.to_path_buf())
-            .with_environment(super::run_environment(ctx, scratch.path())),
+            .with_environment(super::run_environment(
+                ctx,
+                scratch.path(),
+                trusted.as_ref(),
+            )),
         cancel,
         |output, line| {
             if let Some(report) = line
@@ -119,9 +157,9 @@ async fn download_once(
         return Err(if guard.as_ref().is_some_and(Guard::refused_any) {
             YtDlpError::LocalNetwork.into()
         } else if let Some(address) = ran.stderr.error_line().and_then(refused_address) {
-            refused(&ran).of_address(address)
+            super::failed_through(guard.as_ref(), refused(&ran).of_address(address))
         } else {
-            refused(&ran)
+            super::failed_through(guard.as_ref(), refused(&ran))
         });
     }
     let work = work.to_path_buf();
@@ -273,6 +311,7 @@ mod tests {
             proxy: None,
             rate_limit: Some(2048),
             off_local_network: false,
+            browser: None,
         };
         let args = download_args(&ctx, None, "best", merge_into);
         args.iter()

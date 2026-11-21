@@ -25,6 +25,7 @@ wirecatch-sites.workspace = true
 wirecatch-store.workspace = true
 wirecatch-streams.workspace = true
 wirecatch-updates.workspace = true
+base64.workspace = true
 futures-util.workspace = true
 jiff = { workspace = true, features = ["tz-system", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 serde.workspace = true
@@ -63,7 +64,6 @@ wirecatch-files = { workspace = true, features = ["testing"] }
 wirecatch-server.workspace = true
 wirecatch-sites = { workspace = true, features = ["testing"] }
 wirecatch-test-support = { path = "../test-support", features = ["downloads", "faults", "resume", "servers", "settings"] }
-base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
 ed25519-dalek = { version = "2.2.0", default-features = false, features = ["std"] }
 
 [lints]

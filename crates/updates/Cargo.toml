@@ -10,7 +10,7 @@ homepage.workspace = true
 publish = false
 
 [dependencies]
-base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
+base64.workspace = true
 ed25519-dalek = { version = "2.2.0", default-features = false, features = ["std"] }
 semver = "1.0.28"
 serde.workspace = true

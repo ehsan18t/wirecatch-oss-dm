@@ -1,15 +1,22 @@
 //! Running the media add-on's yt-dlp: reading a page's formats (`-J`) and, for
 //! formats Wirecatch cannot download itself, letting yt-dlp download them.
 //!
-//! The browser's cookies reach yt-dlp through a Netscape cookies file bound to the page's host, readable only by the current user (it is created inside the app's private data folder and restricted again), and deleted as soon as yt-dlp exits. yt-dlp gets the add-on's Deno as its only JavaScript runtime, ignores any configuration files and plugins on the machine, and keeps its cache in the add-on folder rather than the one other copies of yt-dlp share. Each run has a temporary folder of its own, and finds the app's PhantomJS stand-in first on its `PATH` (D281).
+//! The browser's cookies reach yt-dlp through a Netscape cookies file bound to the page's host, readable only by the current user (it is created inside the app's private data folder and restricted again), and deleted as soon as yt-dlp exits. yt-dlp gets the add-on's Deno as its only JavaScript runtime, ignores any configuration files and plugins on the machine, and keeps its cache in the add-on folder rather than the one other copies of yt-dlp share. Each run has a temporary folder of its own, and finds the app's PhantomJS stand-in first on its `PATH` (D281). A run kept off the local network may go through the browser the download came from, which then makes its requests to the page's site ([`BrowserRoute`], D282).
 
 #![forbid(unsafe_code)]
 
+mod browser;
 mod cookies;
 mod download;
 mod guard;
 mod info;
+mod relay;
 mod scratch;
+
+pub use browser::{
+    BrowserAnswer, BrowserFailed, BrowserReader, BrowserReading, BrowserRequest, BrowserRoute,
+    RoutedHosts,
+};
 
 pub use download::{Fetched, download};
 pub use info::{Chapter, Format, FormatId, Info, SubtitleFile, Transport, ids, selection};
@@ -47,6 +54,8 @@ pub struct Context<'a> {
     pub rate_limit: Option<u64>,
     /// Whether the run is kept off the local network (D136). Takes the place of [`proxy`](Self::proxy), so it is for a run that goes directly.
     pub off_local_network: bool,
+    /// The browser that makes the requests to the page's site, for a run kept off the local network (D282).
+    pub browser: Option<&'a BrowserRoute>,
 }
 
 /// Whether the browser's cookies go to yt-dlp from the first try for `page`.
@@ -69,27 +78,46 @@ pub(crate) fn cookies_first(page: &Url) -> bool {
 }
 
 /// The same context without the browser's cookies, when the page is read
-/// without them first (see [`cookies_first`]); `None` otherwise.
+/// without them first (see [`cookies_first`]); `None` otherwise. Such a read goes directly: the browser always sends its cookies (D282).
 fn without_cookies<'a>(ctx: &Context<'a>) -> Option<Context<'a>> {
     (ctx.cookies.is_some() && !cookies_first(ctx.page)).then_some(Context {
         cookies: None,
+        browser: None,
         ..*ctx
     })
 }
 
 /// Reads a page's formats with `yt-dlp -J`: on YouTube without the browser's
-/// cookies first, then with them if yt-dlp could not read the page that way.
+/// cookies first, then with them if yt-dlp could not read the page that way. When the browser made no answer to a request of the run, the page is read again directly.
 pub async fn extract(ctx: &Context<'_>, cancel: &CancellationToken) -> Result<Info, YtDlpError> {
+    match extract_as_asked(ctx, cancel).await {
+        Err(Attempt::BrowserFailed(error)) => {
+            debug!(%error, "the browser made no answer to a page read; reading the page directly");
+            extract_as_asked(&without_browser(ctx), cancel).await
+        }
+        read => read,
+    }
+    .map_err(Attempt::into_error)
+}
+
+async fn extract_as_asked(ctx: &Context<'_>, cancel: &CancellationToken) -> Result<Info, Attempt> {
     if let Some(anonymous) = without_cookies(ctx) {
         match extract_once(&anonymous, cancel).await {
-            Ok(info) => return Ok(info),
             Err(Attempt::NeedsSignIn(error)) => {
                 debug!(%error, "reading the page needs the browser's sign-in; trying with it");
             }
-            Err(Attempt::Failed(error)) => return Err(error),
+            read => return read,
         }
     }
-    extract_once(ctx, cancel).await.map_err(Attempt::into_error)
+    extract_once(ctx, cancel).await
+}
+
+/// The same context reading directly.
+fn without_browser<'a>(ctx: &Context<'a>) -> Context<'a> {
+    Context {
+        browser: None,
+        ..*ctx
+    }
 }
 
 /// Why yt-dlp did not do what it was asked.
@@ -193,6 +221,8 @@ enum Attempt {
     NeedsSignIn(YtDlpError),
     /// It failed for another reason (the video is gone, the network is down), was stopped, timed out, could not start, or printed nonsense: the browser's sign-in would not help.
     Failed(YtDlpError),
+    /// It failed after the browser made no answer to one of its requests: reading directly may work.
+    BrowserFailed(YtDlpError),
 }
 
 /// What yt-dlp's error says when a video needs the viewer signed in: an age check, a members-only or private video, or a refusal of an anonymous request. Only these are worth a second, signed-in try, which costs seconds and sends the person's cookies to the site. yt-dlp reports causes only as text, so its text is what is matched.
@@ -239,7 +269,7 @@ fn refusal(said: Option<&str>, otherwise: impl FnOnce() -> String) -> Attempt {
 impl Attempt {
     fn into_error(self) -> YtDlpError {
         match self {
-            Attempt::NeedsSignIn(e) | Attempt::Failed(e) => e,
+            Attempt::NeedsSignIn(e) | Attempt::Failed(e) | Attempt::BrowserFailed(e) => e,
         }
     }
 
@@ -252,6 +282,7 @@ impl Attempt {
         match self {
             Attempt::NeedsSignIn(e) => Attempt::NeedsSignIn(named(e)),
             Attempt::Failed(e) => Attempt::Failed(named(e)),
+            Attempt::BrowserFailed(e) => Attempt::BrowserFailed(named(e)),
         }
     }
 }
@@ -262,12 +293,54 @@ impl From<YtDlpError> for Attempt {
     }
 }
 
-/// The guard of a run that has one (D136).
+/// The guard of a run that has one (D136), through the browser when the run has one (D282).
 async fn start_guard(ctx: &Context<'_>) -> Result<Option<Guard>, YtDlpError> {
     if !ctx.off_local_network {
         return Ok(None);
     }
-    Guard::start().await.map(Some).map_err(YtDlpError::Guard)
+    // The browser always sends its cookies, so a read of a site read without them first (YouTube) takes it only with the download's own.
+    let browser = ctx
+        .browser
+        .filter(|_| ctx.cookies.is_some() || cookies_first(ctx.page))
+        .cloned();
+    Guard::start(browser)
+        .await
+        .map(Some)
+        .map_err(YtDlpError::Guard)
+}
+
+/// For a run through the browser: the certificates yt-dlp trusts, written into the run's folder.
+async fn trust(guard: Option<&Guard>, scratch: &Path) -> Result<Option<Trusted>, YtDlpError> {
+    let Some(bundle) = guard.and_then(Guard::bundle) else {
+        return Ok(None);
+    };
+    let file = scratch.join("trusted.pem");
+    tokio::fs::write(&file, bundle)
+        .await
+        .map_err(YtDlpError::Guard)?;
+    Ok(Some(Trusted { file }))
+}
+
+/// The certificates a run through the browser trusts: the computer's roots and the run's own authority.
+pub(crate) struct Trusted {
+    file: PathBuf,
+}
+
+impl Trusted {
+    /// `requests` reads `SSL_CERT_FILE` only without certifi; `curl_cffi` always does (yt-dlp 2026.10.26).
+    fn args() -> [OsString; 2] {
+        ["--compat-options".into(), "no-certifi".into()]
+    }
+}
+
+/// A failed run's attempt, marked when the browser made no answer to one of its requests.
+fn failed_through(guard: Option<&Guard>, error: Attempt) -> Attempt {
+    match (guard, error) {
+        (Some(guard), Attempt::Failed(e) | Attempt::NeedsSignIn(e)) if guard.browser_failed() => {
+            Attempt::BrowserFailed(e)
+        }
+        (_, error) => error,
+    }
 }
 
 async fn extract_once(ctx: &Context<'_>, cancel: &CancellationToken) -> Result<Info, Attempt> {
@@ -279,8 +352,12 @@ async fn extract_once(ctx: &Context<'_>, cancel: &CancellationToken) -> Result<I
         proxy: guard_url.as_deref().or(ctx.proxy),
         ..*ctx
     };
+    let trusted = trust(guard.as_ref(), scratch.path()).await?;
     let cookies = CookiesFile::create(ctx).await?;
     let mut args = common_args(ctx, cookies.as_ref());
+    if trusted.is_some() {
+        args.extend(Trusted::args());
+    }
     args.push("-J".into());
     args.push("--".into());
     args.push(ctx.page.as_str().into());
@@ -290,7 +367,7 @@ async fn extract_once(ctx: &Context<'_>, cancel: &CancellationToken) -> Result<I
         ctx.temp_dir,
         RunOptions::collect()
             .with_timeout(ctx.timeout)
-            .with_environment(run_environment(ctx, scratch.path())),
+            .with_environment(run_environment(ctx, scratch.path(), trusted.as_ref())),
         cancel,
         |_, _| {},
     )
@@ -302,7 +379,7 @@ async fn extract_once(ctx: &Context<'_>, cancel: &CancellationToken) -> Result<I
         return Err(if guard.as_ref().is_some_and(Guard::refused_any) {
             YtDlpError::LocalNetwork.into()
         } else {
-            refused(&ran)
+            failed_through(guard.as_ref(), refused(&ran))
         });
     }
     if ran.stdout_truncated {
@@ -333,12 +410,16 @@ async fn make_scratch(temp_dir: &Path) -> Result<Scratch, YtDlpError> {
         })
 }
 
-/// What a run gets in its environment: the proxy ([`proxy_environment`]), `scratch` as its temporary folder, and the PhantomJS stand-in when the app has it (D281).
+/// What a run gets in its environment: the proxy ([`proxy_environment`]), the certificates of a run through the browser (D282), `scratch` as its temporary folder, and the PhantomJS stand-in when the app has it (D281).
 pub(crate) fn run_environment(
     ctx: &Context<'_>,
     scratch: &Path,
+    trusted: Option<&Trusted>,
 ) -> Vec<(OsString, Option<OsString>)> {
     let mut environment = proxy_environment(ctx);
+    if let Some(trusted) = trusted {
+        environment.push(("SSL_CERT_FILE".into(), Some(trusted.file.clone().into())));
+    }
     environment.extend(
         ["TMP", "TEMP", "TMPDIR"]
             .into_iter()
@@ -493,6 +574,7 @@ mod tests {
             proxy: None,
             rate_limit: None,
             off_local_network: false,
+            browser: None,
         };
         let args = common_args(&ctx, None);
         let at = args.iter().position(|a| a == "--cache-dir");
@@ -521,6 +603,7 @@ mod tests {
                 proxy,
                 rate_limit: None,
                 off_local_network: false,
+                browser: None,
             };
             let args = common_args(&ctx, None);
             args.iter()
@@ -549,6 +632,7 @@ mod tests {
                 proxy,
                 rate_limit: None,
                 off_local_network: false,
+                browser: None,
             })
         };
         assert_eq!(environment(None), Vec::new());
@@ -586,8 +670,9 @@ mod tests {
                 proxy: None,
                 rate_limit: None,
                 off_local_network: false,
+                browser: None,
             };
-            let environment = run_environment(&ctx, Path::new("scratch"));
+            let environment = run_environment(&ctx, Path::new("scratch"), None);
             for name in ["TMP", "TEMP", "TMPDIR"] {
                 assert!(
                     environment.contains(&(name.into(), Some("scratch".into()))),
@@ -624,6 +709,7 @@ mod tests {
             proxy: None,
             rate_limit: None,
             off_local_network: false,
+            browser: None,
         };
         for args in [common_args(&ctx, None), version_args()] {
             for flag in ["--ignore-config", "--no-plugin-dirs"] {

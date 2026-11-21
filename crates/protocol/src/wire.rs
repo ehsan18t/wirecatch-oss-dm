@@ -14,6 +14,9 @@ use crate::extension::{
     AddedDownload, BrowserNotice, NewDownload, NoticeId, NoticePressed, NoticeShown,
     WithdrawOutcome, WithdrawRequest,
 };
+use crate::page_read::{
+    PageRead, PageReadAnswer, PageReadCancelled, PageReadFailed, PageReadPart, PageReads,
+};
 use crate::shell::{
     CheckAnswer, DownloadCheck, InvokeAction, OptionList, PageOptions, PageQuery,
     PrivateSessionEnded, SetOption, ShellConfig,
@@ -163,6 +166,12 @@ pub enum Call {
     /// Says the browser's last private window closed, so the app forgets that session's
     /// downloads; answered with [`Reply::Done`].
     PrivateSessionEnded(PrivateSessionEnded),
+    /// Carries part of the answer to [`Event::PageReadRequested`], in order; answered with [`Reply::Done`].
+    PageReadPart(PageReadPart),
+    /// Ends the answer to [`Event::PageReadRequested`]; answered with [`Reply::Done`].
+    PageReadAnswered(PageReadAnswer),
+    /// Says the browser could not make the request of [`Event::PageReadRequested`]; answered with [`Reply::Done`].
+    PageReadFailed(PageReadFailed),
 }
 
 impl Call {
@@ -188,6 +197,9 @@ impl Call {
             Call::PageOptions(_) => CallMethod::PageOptions,
             Call::CheckDownload(_) => CallMethod::CheckDownload,
             Call::PrivateSessionEnded(_) => CallMethod::PrivateSessionEnded,
+            Call::PageReadPart(_) => CallMethod::PageReadPart,
+            Call::PageReadAnswered(_) => CallMethod::PageReadAnswered,
+            Call::PageReadFailed(_) => CallMethod::PageReadFailed,
         }
     }
 }
@@ -234,6 +246,12 @@ pub enum CallMethod {
     CheckDownload,
     /// [`Call::PrivateSessionEnded`].
     PrivateSessionEnded,
+    /// [`Call::PageReadPart`].
+    PageReadPart,
+    /// [`Call::PageReadAnswered`].
+    PageReadAnswered,
+    /// [`Call::PageReadFailed`].
+    PageReadFailed,
     /// A method this build does not have, from a newer client.
     #[serde(other)]
     Unknown,
@@ -362,6 +380,10 @@ pub enum Event {
     ShellConfigChanged(Box<ShellConfig>),
     /// Sent to every connected client whenever the popup's options change, from any side.
     OptionsChanged(Box<OptionList>),
+    /// Sent to one browser that offers [`Hello::page_reads`]: make this request of yt-dlp's and answer with [`Call::PageReadPart`]s, then [`Call::PageReadAnswered`] or [`Call::PageReadFailed`] (D282).
+    PageReadRequested(PageRead),
+    /// Sent to the browser of a [`Event::PageReadRequested`] the app no longer waits for: it stops the request.
+    PageReadCancelled(PageReadCancelled),
 }
 
 impl Event {
@@ -374,6 +396,8 @@ impl Event {
             Event::NoticeWithdrawn(_) => EventKind::NoticeWithdrawn,
             Event::ShellConfigChanged(_) => EventKind::ShellConfigChanged,
             Event::OptionsChanged(_) => EventKind::OptionsChanged,
+            Event::PageReadRequested(_) => EventKind::PageReadRequested,
+            Event::PageReadCancelled(_) => EventKind::PageReadCancelled,
         }
     }
 }
@@ -393,6 +417,10 @@ pub enum EventKind {
     ShellConfigChanged,
     /// [`Event::OptionsChanged`].
     OptionsChanged,
+    /// [`Event::PageReadRequested`].
+    PageReadRequested,
+    /// [`Event::PageReadCancelled`].
+    PageReadCancelled,
 }
 
 /// The first call on a connection.
@@ -416,6 +444,10 @@ pub struct Hello {
     /// Whether the bridge may start the app when it is not running. The extension sets it only when the person did something that needs the app, such as a download from the browser; its checks on waking and its reconnects leave it off, so a Wirecatch the person closed stays closed (D25). Missing means yes, as before.
     #[serde(default = "start_app_by_default")]
     pub start_app: bool,
+    /// Present when the browser makes page reads for the app's media reads (D282).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub page_reads: Option<PageReads>,
 }
 
 fn start_app_by_default() -> bool {
@@ -661,8 +693,32 @@ mod tests {
             CallMethod::PrivateSessionEnded => {
                 Call::PrivateSessionEnded(PrivateSessionEnded { id: "s-1".into() })
             }
+            CallMethod::PageReadPart
+            | CallMethod::PageReadAnswered
+            | CallMethod::PageReadFailed => sample_page_read_call(method),
             CallMethod::Unknown => return None,
         })
+    }
+
+    /// A page read answer of `method`'s.
+    fn sample_page_read_call(method: CallMethod) -> Call {
+        let id = crate::page_read::PageReadId(1);
+        match method {
+            CallMethod::PageReadPart => Call::PageReadPart(PageReadPart {
+                id,
+                bytes: "b2s=".into(),
+            }),
+            CallMethod::PageReadAnswered => Call::PageReadAnswered(PageReadAnswer {
+                id,
+                status: 200,
+                headers: Vec::new(),
+                address: Some("93.184.215.14".into()),
+            }),
+            _ => Call::PageReadFailed(PageReadFailed {
+                id,
+                reason: crate::page_read::PageReadFailure::Network,
+            }),
+        }
     }
 
     /// An event of `kind`. A match, so a new kind cannot be left out.
@@ -693,6 +749,16 @@ mod tests {
                 revision: revision(),
                 groups: Vec::new(),
             })),
+            EventKind::PageReadRequested => Event::PageReadRequested(PageRead {
+                id: crate::page_read::PageReadId(1),
+                method: "GET".into(),
+                url: "https://example.com/".into(),
+                headers: Vec::new(),
+                body: None,
+            }),
+            EventKind::PageReadCancelled => Event::PageReadCancelled(PageReadCancelled {
+                id: crate::page_read::PageReadId(1),
+            }),
         }
     }
 
@@ -711,6 +777,7 @@ mod tests {
             max_protocol_version,
             private_session: None,
             start_app: true,
+            page_reads: None,
         }
     }
 

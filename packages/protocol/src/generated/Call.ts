@@ -7,6 +7,9 @@ import type { NoticePressed } from './NoticePressed';
 import type { NoticeShown } from './NoticeShown';
 import type { OpenLinks } from './OpenLinks';
 import type { PageQuery } from './PageQuery';
+import type { PageReadAnswer } from './PageReadAnswer';
+import type { PageReadFailed } from './PageReadFailed';
+import type { PageReadPart } from './PageReadPart';
 import type { PrivateSessionEnded } from './PrivateSessionEnded';
 import type { SetOption } from './SetOption';
 import type { WithdrawRequest } from './WithdrawRequest';
@@ -32,4 +35,7 @@ export type Call =
   | { method: 'invoke_action'; params: InvokeAction }
   | { method: 'page_options'; params: PageQuery }
   | { method: 'check_download'; params: DownloadCheck }
-  | { method: 'private_session_ended'; params: PrivateSessionEnded };
+  | { method: 'private_session_ended'; params: PrivateSessionEnded }
+  | { method: 'page_read_part'; params: PageReadPart }
+  | { method: 'page_read_answered'; params: PageReadAnswer }
+  | { method: 'page_read_failed'; params: PageReadFailed };
