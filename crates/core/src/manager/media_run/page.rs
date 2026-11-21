@@ -20,6 +20,7 @@ use super::save::{joined_container, save, stored_kept_ext};
 use super::workdir::Downloaded;
 use super::{Job, PageError, PageJob, ROLES, disk, workdir};
 use crate::headers;
+use crate::manager::failure_log::{Details, MediaFailure};
 use crate::manager::media::cookie_header;
 use crate::manager::run::MediaDone;
 
@@ -32,24 +33,30 @@ pub(super) async fn run_page(
     page: &PageJob,
     progress: &MediaProgress,
     cancel: &CancellationToken,
-) -> Result<MediaDone, UserError> {
+) -> Result<MediaDone, MediaFailure> {
     let mut delays = job.refresh_delays.iter();
+    let mut delegated = false;
     loop {
-        let attempt = page_attempt(job, page, progress, cancel).await;
+        let attempt = page_attempt(job, page, progress, cancel, delegated).await;
         // A reading serves only a pause: a refusal needs fresh addresses, and an end needs none.
-        if !matches!(attempt, Ok(MediaDone::Paused)) {
-            job.readings.forget(&job.url);
+        if !matches!(attempt, Ok(MediaDone::Paused) | Err(PageError::Delegate)) {
+            job.readings.forget(job.reading_owner);
         }
-        let status = match attempt {
+        let details = match attempt {
             Ok(done) => return Ok(done),
             Err(PageError::Failed(error)) => return Err(error),
-            Err(PageError::Refused { status }) => status,
+            Err(PageError::Refused(details)) => details,
+            Err(PageError::Delegate) => {
+                delegated = true;
+                continue;
+            }
         };
         let Some(delay) = delays.next() else {
-            return Err(describe::refused_after_refreshing(status));
+            let error = describe::refused_after_refreshing(details.status);
+            return Err(MediaFailure { error, details });
         };
         warn!(
-            status,
+            status = details.status,
             retry_in = ?delay,
             "the server refused a video address; reading the page again for fresh ones"
         );
@@ -67,11 +74,12 @@ pub(super) async fn run_page(
 /// and the subtitles, cover picture and metadata the output wants. Then the
 /// file is saved; a conversion that was paused or failed starts again from the
 /// downloaded parts, never from the download.
-pub(super) async fn page_attempt(
+async fn page_attempt(
     job: &Job,
     page: &PageJob,
     progress: &MediaProgress,
     cancel: &CancellationToken,
+    delegated: bool,
 ) -> Result<MediaDone, PageError> {
     let tools = job.tools.as_ref().ok_or_else(describe::addon_missing)?;
     let work = wirecatch_media::work_dir(&job.output);
@@ -98,22 +106,59 @@ pub(super) async fn page_attempt(
         rate_limit: tightest_limit(job),
     };
     let info = reading(job, &ctx, cancel).await?;
+    let source = Formats {
+        work: &work,
+        ctx: &ctx,
+        info: &info,
+    };
+    download_formats(job, page, source, progress, cancel, delegated)
+        .await
+        .map_err(|mut err| {
+            let details = match &mut err {
+                PageError::Refused(details) => details,
+                PageError::Failed(failure) => &mut failure.details,
+                PageError::Delegate => return err,
+            };
+            details.extractor.clone_from(&info.extractor_key);
+            err
+        })
+}
+
+struct Formats<'a> {
+    work: &'a Path,
+    ctx: &'a ytdlp::Context<'a>,
+    info: &'a Info,
+}
+
+async fn download_formats(
+    job: &Job,
+    page: &PageJob,
+    source: Formats<'_>,
+    progress: &MediaProgress,
+    cancel: &CancellationToken,
+    delegated: bool,
+) -> Result<MediaDone, PageError> {
+    let Formats { work, ctx, info } = source;
+    let tools = ctx.tools;
     // What an earlier attempt showed goes; this one adds its own parts.
     progress.start_over();
-    let (video, audio) = &formats_now(job, page, &info, &work).await?;
+    let (video, audio) = &formats_now(job, page, info, work).await?;
     let formats = info.all_formats();
     let wanted: Vec<&FormatId> = [video, audio].into_iter().flatten().collect();
     let found: Vec<&Format> = wanted
         .iter()
         .filter_map(|id| formats.iter().find(|f| &&f.id == id))
         .collect();
-    let ourselves = !wanted.is_empty()
+    let ourselves = !delegated
+        && !wanted.is_empty()
         && found.len() == wanted.len()
-        && found
-            .iter()
-            .all(|f| f.transport() != Transport::YtDlp && f.url.is_some());
+        && found.iter().all(|format| {
+            format.url.is_some()
+                && (format.transport() != Transport::YtDlp
+                    || format.native_cookies(&job.suffixes).is_some())
+        });
     let files = if ourselves {
-        match fetch_parts(job, &found, &work, progress, cancel).await? {
+        match fetch_parts(job, &found, work, progress, cancel).await? {
             Some(files) => files,
             None => return Ok(MediaDone::Paused),
         }
@@ -126,28 +171,37 @@ pub(super) async fn page_attempt(
         // yt-dlp joins two formats into the container its own table picks (AV1 with AAC into MP4); the offer named the shared policy's.
         let merge_into = (video.is_some() && audio.is_some())
             .then(|| joined_container(stored_kept_ext(page), job));
-        progress.expect_own(formats_ytdlp_takes(&info, &found).into_iter());
+        progress.expect_own(formats_ytdlp_takes(info, &found).into_iter());
         let format = ytdlp::selection(video.as_ref(), audio.as_ref());
-        match ytdlp::download(&ctx, &format, merge_into, &work, progress, cancel).await {
+        match ytdlp::download(ctx, &format, merge_into, work, progress, cancel).await {
             Ok(Fetched::Done(file)) => vec![file],
             Ok(Fetched::Cancelled) => return Ok(MediaDone::Paused),
             Err(YtDlpError::AddressRefused { status, .. }) => {
-                return Err(PageError::Refused { status });
+                let mut details = Details::new("format_transfer", "yt_dlp");
+                details.status = status;
+                return Err(PageError::Refused(Box::new(details)));
             }
-            Err(e) => return Err(describe::ytdlp(&e, tools).into()),
+            Err(e) => {
+                return Err(PageError::Failed(
+                    Details::new("format_transfer", "yt_dlp")
+                        .with_error(describe::ytdlp(&e, tools)),
+                ));
+            }
         }
     };
     let mut downloaded = Downloaded::of_media(&files);
     if let Some(output) = &page.output
-        && !fetch_extras(job, &info, output, &work, &mut downloaded, cancel).await
+        && !fetch_extras(job, info, output, work, &mut downloaded, cancel).await
     {
         return Ok(MediaDone::Paused);
     }
     downloaded
-        .write(&work)
+        .write(work)
         .await
         .map_err(|e| disk(&e, &job.output))?;
-    Ok(save(job, page, tools, &downloaded, &work, progress, cancel).await?)
+    save(job, page, tools, &downloaded, work, progress, cancel)
+        .await
+        .map_err(|e| PageError::Failed(Details::new("save", "media").with_error(e)))
 }
 
 /// The page's recent reading, else a new one, kept for the next start.
@@ -155,16 +209,22 @@ async fn reading(
     job: &Job,
     ctx: &ytdlp::Context<'_>,
     cancel: &CancellationToken,
-) -> Result<Arc<Info>, UserError> {
-    if let Some(info) = job.readings.fresh(&job.url, job.clock.unix_millis()) {
+) -> Result<Arc<Info>, PageError> {
+    if let Some(info) = job
+        .readings
+        .fresh(job.reading_owner, job.clock.unix_millis())
+    {
         return Ok(info);
     }
-    let info = ytdlp::extract(ctx, cancel)
-        .await
-        .map_err(|e| describe::ytdlp(&e, ctx.tools))?;
+    let info = ytdlp::extract(ctx, cancel).await.map_err(|e| {
+        PageError::Failed(
+            Details::new("page_read", "yt_dlp").with_error(describe::ytdlp(&e, ctx.tools)),
+        )
+    })?;
     let info = Arc::new(info);
+    let now = job.clock.unix_millis();
     job.readings
-        .put(&job.url, job.clock.unix_millis(), info.clone(), cancel);
+        .put(job.reading_owner, (now, info.clone()), now, cancel);
     Ok(info)
 }
 
@@ -260,12 +320,31 @@ pub(super) async fn fetch_parts(
         };
         rules.push(rule?);
     }
+    let selection = cancel.child_token();
     let parts = found
         .iter()
         .zip(ROLES)
         .zip(rules)
-        .map(|((f, role), rule)| fetch_part(job, f, role, rule, work, progress, cancel));
+        .map(|((format, role), rule)| {
+            let selection = &selection;
+            async move {
+                let result = fetch_part(job, format, role, rule, work, progress, selection).await;
+                if matches!(result, Err(PartError::Page(PageError::Delegate))) {
+                    selection.cancel();
+                }
+                result
+            }
+        });
     let results = futures_util::future::join_all(parts).await;
+    if cancel.is_cancelled() {
+        return Ok(None);
+    }
+    if results
+        .iter()
+        .any(|result| matches!(result, Err(PartError::Page(PageError::Delegate))))
+    {
+        return Err(PageError::Delegate);
+    }
     parts_end(job, results, progress)
 }
 
@@ -287,19 +366,21 @@ pub(super) fn parts_end(
             Ok(None) => return Ok(None),
             Err(PartError::Transfer(e)) => {
                 let told = wirecatch_messages::describe(&e, folder, worked_so_far(progress));
-                failed = failed.or(Some(told));
+                failed = failed
+                    .or_else(|| Some(Details::engine(&e, "format_transfer").with_error(told)));
             }
+            Err(PartError::Page(PageError::Delegate)) => return Err(PageError::Delegate),
             Err(PartError::Page(PageError::Failed(error))) => failed = failed.or(Some(error)),
-            Err(PartError::Page(PageError::Refused { status })) => {
-                refused = refused.or(Some(status));
+            Err(PartError::Page(PageError::Refused(details))) => {
+                refused = refused.or(Some(details));
             }
         }
     }
     if let Some(error) = failed {
         return Err(PageError::Failed(error));
     }
-    if let Some(status) = refused {
-        return Err(PageError::Refused { status });
+    if let Some(details) = refused {
+        return Err(PageError::Refused(details));
     }
     Ok(Some(files))
 }
@@ -378,11 +459,12 @@ pub(super) async fn fetch_part(
         match Box::pin(wirecatch_streams::download(request, stream, cancel.clone())).await {
             Ok(wirecatch_streams::Outcome::Completed { path, .. }) => path,
             Ok(_) | Err(wirecatch_streams::Error::Cancelled) => return Ok(None),
-            Err(wirecatch_streams::Error::Request(e)) if address_gone(&e) => {
-                return Err(refused(&e).into());
+            Err(e) if stream_address_gone(&e) => {
+                return Err(PageError::Refused(Box::new(Details::stream(&e))).into());
             }
             Err(e) => {
-                return Err(describe::stream(&e, work, job.tools.as_ref(), job.chosen_by).into());
+                let error = describe::stream(&e, work, job.tools.as_ref(), job.chosen_by);
+                return Err(PageError::Failed(Details::stream(&e).with_error(error)).into());
             }
         }
     } else {
@@ -402,7 +484,8 @@ pub(super) async fn fetch_part(
         {
             Ok(Outcome::Completed { .. }) => {
                 if holds_no_media(job, &path).await? {
-                    return Err(PageError::Refused { status: None }.into());
+                    let details = Details::new("format_transfer", "unexpected_content");
+                    return Err(PageError::Refused(Box::new(details)).into());
                 }
                 progress.finish_file(&file);
                 path
@@ -411,15 +494,22 @@ pub(super) async fn fetch_part(
             Err(EngineError::PrivateNetwork { .. }) => {
                 return Err(wirecatch_messages::private_network(job.chosen_by).into());
             }
-            Err(e) if address_gone(&e) => return Err(refused(&e).into()),
+            Err(EngineError::CookiesChanged) => return Err(PageError::Delegate.into()),
+            Err(e) if address_gone(&e) => {
+                let details = Details::engine(&e, "format_transfer");
+                return Err(PageError::Refused(Box::new(details)).into());
+            }
             Err(e) => return Err(PartError::Transfer(e)),
         }
     };
-    let name = crate::naming::file_name_of(&file);
-    tokio::fs::write(&marker, name)
-        .await
-        .map_err(|e| disk(&e, &job.output))?;
+    mark_part_done(job, &file, &marker).await?;
     Ok(Some(file))
+}
+
+async fn mark_part_done(job: &Job, file: &Path, marker: &Path) -> Result<(), UserError> {
+    tokio::fs::write(marker, crate::naming::file_name_of(file))
+        .await
+        .map_err(|e| disk(&e, &job.output))
 }
 
 /// Whether the format saved at `path` is nothing or a web page, as an address that stopped working can answer; such a file is removed, so a fresh address starts over. Refusing the other formats here would turn away what ffmpeg is never asked to read.
@@ -439,10 +529,18 @@ async fn holds_no_media(job: &Job, path: &Path) -> Result<bool, PageError> {
     checked.map_err(|e| disk(&e, &job.output).into())
 }
 
+fn stream_address_gone(error: &wirecatch_streams::Error) -> bool {
+    match error {
+        wirecatch_streams::Error::Request(e)
+        | wirecatch_streams::Error::Segment { cause: e, .. } => address_gone(e),
+        _ => false,
+    }
+}
+
 /// A format address the server refused, or one that no longer leads to the file: a fresh one
 /// from the page usually works.
 pub(super) fn address_gone(e: &EngineError) -> bool {
-    match e {
+    match e.cause() {
         EngineError::HttpStatus { status, .. } => ytdlp::REFUSED_ADDRESS_STATUSES.contains(status),
         EngineError::InvalidUrl(_)
         | EngineError::TooManyRedirects { .. }
@@ -450,15 +548,6 @@ pub(super) fn address_gone(e: &EngineError) -> bool {
         | EngineError::TargetRejected(_) => true,
         _ => false,
     }
-}
-
-/// The attempt's end for `e`, an [`address_gone`] error.
-fn refused(e: &EngineError) -> PageError {
-    let status = match e {
-        EngineError::HttpStatus { status, .. } => Some(*status),
-        _ => None,
-    };
-    PageError::Refused { status }
 }
 
 /// The request options for one format: the format's own headers only (the
@@ -470,12 +559,14 @@ pub(super) fn part_options(job: &Job, format: &Format, rule: PrivateNetwork) -> 
     let format_headers: Vec<Header> = format
         .http_headers
         .iter()
+        .filter(|(name, _)| !name.eq_ignore_ascii_case("cookie"))
         .map(|(name, value)| Header {
             name: name.clone(),
             value: value.clone(),
         })
         .collect();
     options.headers = headers::to_map(&format_headers);
+    options.http_cookies = format.native_cookies(&job.suffixes);
     if let Some(agent) = headers::find(&format_headers, "user-agent") {
         agent.clone_into(&mut options.user_agent);
     }

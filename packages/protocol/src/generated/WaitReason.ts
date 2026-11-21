@@ -62,6 +62,23 @@ export type WaitReason =
       };
     }
   | {
+      type: 'host_wait';
+      data: {
+        /**
+         * Whole seconds left until a timed wait ends. Zero means waiting for a slot or starting a retry.
+         */
+        seconds: number;
+        /**
+         * The number of the download's own retry, if any.
+         */
+        attempt: number | null;
+        /**
+         * The retry budget for that request.
+         */
+        of: number | null;
+      };
+    }
+  | {
       type: 'reconnecting';
       data: {
         /**

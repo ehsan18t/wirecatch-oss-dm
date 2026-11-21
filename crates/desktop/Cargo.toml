@@ -25,7 +25,7 @@ wirecatch-ipc.workspace = true
 wirecatch-logging = { workspace = true, features = ["setup"] }
 wirecatch-product.workspace = true
 wirecatch-protocol.workspace = true
-dirs = "7.0.0"
+dirs.workspace = true
 chrono.workspace = true
 jiff = { workspace = true, features = ["tz-system", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "sync", "time", "macros"] }

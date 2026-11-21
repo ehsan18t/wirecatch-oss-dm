@@ -25,10 +25,10 @@ base64.workspace = true
 httpdate = "1.0.3"
 # Only for the proxy matcher the HTTP client itself uses (see src/proxy.rs), so
 # the engine reads NO_PROXY exactly as reqwest does; reqwest already builds it.
-hyper-util = { version = "0.1.12", default-features = false, features = ["client-proxy"] }
+hyper-util = { workspace = true, features = ["client-proxy"] }
 # Only to tell, from the HTTP client's error, a reply that is not HTTP from a dropped connection
 # (`NetworkError::failure`); reqwest already builds both.
-hyper = { version = "1.4.0", default-features = false }
+hyper.workspace = true
 h2 = { version = "0.4.4", default-features = false }
 percent-encoding.workspace = true
 # Only the HTTP client: TLS comes preconfigured from the rustls dependency below,
@@ -51,10 +51,10 @@ tracing.workspace = true
 url.workspace = true
 
 # HTTP/3, only with the `http3` feature.
-h3 = { version = "0.0.8", optional = true }
-h3-quinn = { version = "0.0.10", optional = true }
+h3 = { workspace = true, optional = true }
+h3-quinn = { workspace = true, optional = true }
 http.workspace = true
-quinn = { version = "0.11.9", default-features = false, features = ["runtime-tokio", "rustls-ring"], optional = true }
+quinn = { workspace = true, features = ["runtime-tokio", "rustls-ring"], optional = true }
 
 [features]
 default = []
@@ -69,9 +69,9 @@ http3 = ["dep:h3", "dep:h3-quinn", "dep:quinn", "wirecatch-test-support/http3"]
 all-features = true
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { workspace = true, features = ["Win32_Storage_FileSystem"] }
+windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_System_IO", "Win32_System_Ioctl", "Win32_Storage_FileSystem"] }
 # The system's proxy setting (src/proxy.rs); the version the HTTP client's own reader uses.
-windows-registry = "0.6.1"
+windows-registry.workspace = true
 schannel = "0.1.30"
 # Roots Windows has not fetched yet (D116).
 webpki-root-certs.workspace = true
@@ -89,7 +89,7 @@ proptest = { version = "1.6.0", default-features = false, features = ["std"] }
 
 [target.'cfg(windows)'.dev-dependencies]
 # Process CPU time in the HTTP/3 benchmark.
-windows-sys = { workspace = true, features = ["Win32_System_Threading"] }
+windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_System_IO", "Win32_System_Ioctl", "Win32_System_Threading"] }
 
 [[example]]
 name = "bench_http3"

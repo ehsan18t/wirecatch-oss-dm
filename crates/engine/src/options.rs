@@ -17,6 +17,12 @@ pub const MAX_CONNECTIONS: usize = 64;
 /// Largest buffer one connection may fill before writing ([`DownloadOptions::buffer_size`]): 64 MiB. Each connection holds two, so this bounds memory, and a larger one would gain nothing.
 pub const MAX_BUFFER_SIZE: usize = 64 * MIB_USIZE;
 
+/// Supplies a credential header after checking the scope of the actual outgoing URL.
+pub trait HttpCookies: std::fmt::Debug + Send + Sync {
+    /// The header value for this request, if the destination is eligible.
+    fn header(&self, url: &url::Url) -> Option<http::HeaderValue>;
+}
+
 /// Tuning for a download. The defaults suit most connections.
 ///
 /// Start from [`DownloadOptions::default`] and change what you need:
@@ -36,6 +42,12 @@ pub struct DownloadOptions {
     /// file is too small to split that often, when the server does not accept
     /// byte ranges, or when the server refuses extra connections.
     pub connections: usize,
+    /// Shared admission to busy HTTP servers. File downloads with no shared pace retain their own retry behavior.
+    pub host_pace: Option<std::sync::Arc<crate::HostPace>>,
+    /// Optional live request counts and waits for this download's HTTP transfers.
+    pub host_progress: Option<std::sync::Arc<crate::HostProgress>>,
+    /// Scoped static cookies for one HTTP transfer. A successful response which sets a cookie returns `Error::CookiesChanged`.
+    pub http_cookies: Option<std::sync::Arc<dyn HttpCookies>>,
     /// A range is only split if both halves would be at least this big, in
     /// bytes (default 1 MiB).
     pub min_split: u64,
@@ -154,6 +166,9 @@ impl Default for DownloadOptions {
             connections: 8,
             min_split: MIB,
             buffer_size: MIB_USIZE,
+            host_pace: None,
+            host_progress: None,
+            http_cookies: None,
             max_retries: 6,
             retry_backoff: Backoff::default(),
             stall_timeout: Duration::from_secs(30),

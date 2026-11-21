@@ -8,10 +8,10 @@ use std::time::Duration;
 use tokio::sync::Notify;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use crate::download::Shared;
-use crate::error::{Chain, Error, Result};
+use crate::error::{Error, Result};
 use crate::http::Failure;
 use crate::limiter::{Paced, pace};
 use crate::numeric::clamp_to_len;
@@ -118,7 +118,9 @@ async fn run_assignment(
     let mut attempts = Attempts::new(Refusals::StepBack, shared.retries);
     // The furthest a failed attempt got: one that started over gains nothing until it passes this.
     let mut furthest = 0;
+    let mut retry_wait = None;
     loop {
+        let _retrying = retry_wait.take();
         if shared.request.cancel.is_cancelled() {
             return Ok(Ended::Cancelled);
         }
@@ -161,21 +163,22 @@ async fn run_assignment(
             Err(_) if shared.request.cancel.is_cancelled() => return Ok(Ended::Cancelled),
             Err(f) => {
                 let (now, _) = shared.table.lock().position(index);
-                let next =
-                    attempts.after_failure(&f.error, f.retry_after, now > from.max(furthest));
+                let next = attempts.after_request_failure(&f, now > from.max(furthest), false);
                 furthest = furthest.max(now);
                 let delay = match next {
-                    Next::GiveUp => return Err(f.error),
+                    Next::GiveUp => {
+                        return Err(f.terminal(&attempts, shared.opts.host_progress.as_deref()));
+                    }
                     Next::StepBackOrRetry(_)
                         if step_back(&shared.table, &shared.receiving, index) =>
                     {
-                        info!(error = %Chain(&f.error), "server refuses another connection; continuing with the open ones");
+                        info!("server refuses another connection; continuing with the open ones");
                         return Ok(Ended::SteppedBack);
                     }
                     Next::Retry(delay) | Next::StepBackOrRetry(delay) => delay,
                 };
-                warn!(error = %Chain(&f.error), retry_in = ?delay, "connection failed, retrying");
-                shared.progress.retrying(attempts.retry(), attempts.of());
+                f.log_retry(delay, "connection failed, retrying");
+                retry_wait = report_retry(shared, &attempts, &f, delay);
                 let cancel = &shared.request.cancel;
                 let waited = match next {
                     Next::StepBackOrRetry(_) => {
@@ -195,6 +198,23 @@ async fn run_assignment(
             }
         }
     }
+}
+
+fn report_retry(
+    shared: &Shared,
+    attempts: &Attempts,
+    failure: &Failure,
+    delay: Duration,
+) -> Option<crate::host_pace::WaitGuard> {
+    let wait = failure.retry_wait(
+        shared.opts.host_progress.as_ref(),
+        attempts.last_retry(),
+        delay,
+    );
+    if wait.is_none() {
+        shared.progress.retrying(attempts.retry(), attempts.of());
+    }
+    wait
 }
 
 /// Whether nothing in the first answer could show a later whole answer to be about another file, so its tail must not be joined to the bytes kept.

@@ -249,7 +249,10 @@ pub fn shown_wait(row: &DownloadSummary) -> Option<&WaitReason> {
     match (row.status, wait) {
         (DownloadStatus::Queued, _)
         | (DownloadStatus::Connecting, WaitReason::ServerRefused { .. })
-        | (DownloadStatus::Downloading, WaitReason::Reconnecting { .. }) => Some(wait),
+        | (DownloadStatus::Downloading, WaitReason::Reconnecting { .. })
+        | (DownloadStatus::Connecting | DownloadStatus::Downloading, WaitReason::HostWait { .. }) => {
+            Some(wait)
+        }
         _ => None,
     }
 }
@@ -325,6 +328,11 @@ pub fn wait_short(wait: &WaitReason, queue: Option<&str>) -> Sentence {
         WaitReason::ServerRefused { retry_at } => {
             said.text(&format!("Retrying at {}", clock(*retry_at)))
         }
+        WaitReason::HostWait {
+            seconds,
+            attempt,
+            of,
+        } => said.text(&host_wait(*seconds, attempt.zip(*of))),
         WaitReason::Reconnecting { attempt, of } => {
             said.text(&format!("Reconnecting (try {attempt} of {of})"))
         }
@@ -333,6 +341,17 @@ pub fn wait_short(wait: &WaitReason, queue: Option<&str>) -> Sentence {
 
 /// Where a download stands in its queue's line, up to the queue's name: `Next in `,
 /// `3rd to start in `.
+fn host_wait(seconds: u32, retry: Option<(u32, u32)>) -> String {
+    match (seconds, retry) {
+        (0, Some((attempt, of))) => format!("Retrying · {attempt} of {of}"),
+        (0, None) => "Waiting for server".into(),
+        (seconds, Some((attempt, of))) => {
+            format!("Waiting for server · {seconds} s · retry {attempt} of {of}")
+        }
+        (seconds, None) => format!("Waiting for server · {seconds} s"),
+    }
+}
+
 fn place(position: u32) -> String {
     match position {
         0 | 1 => "Next in ".to_owned(),
@@ -411,6 +430,7 @@ pub fn wait_long(wait: &WaitReason, queue: Option<&str>) -> Sentence {
             clock(*retry_at)
         )
         .into(),
+        WaitReason::HostWait { seconds, attempt, of } => host_wait(*seconds, attempt.zip(*of)).into(),
         WaitReason::Reconnecting { attempt, of } => format!(
             "The connection to the server was lost. {} is reconnecting (try {attempt} of {of}) and keeps what was already downloaded.",
             host::CHANNEL.name()

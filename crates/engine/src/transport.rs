@@ -5,11 +5,11 @@
 use std::sync::Arc;
 
 use bytes::Bytes;
-use reqwest::{Client, Response};
+use reqwest::Client;
 use tokio_util::sync::CancellationToken;
 use url::Url;
 
-use crate::error::{Chain, Error, Result};
+use crate::error::{Error, Result};
 use crate::ftp;
 use crate::http::{self, Clients, Failure, Session, Validators};
 #[cfg(feature = "http3")]
@@ -125,7 +125,7 @@ impl Connection {
 /// A response body being received.
 pub(crate) enum Body {
     Http {
-        response: Response,
+        response: http::HttpResponse,
         /// The chunk last handed out; kept so [`Body::next`] can lend it.
         chunk: Bytes,
     },
@@ -135,7 +135,7 @@ pub(crate) enum Body {
 }
 
 impl Body {
-    pub fn http(response: Response) -> Self {
+    pub fn http(response: http::HttpResponse) -> Self {
         Body::Http {
             response,
             chunk: Bytes::new(),
@@ -232,7 +232,7 @@ pub(crate) async fn open(
                 .map_err(|setting| Error::FtpProxyUnsupported { setting })?;
             let target = ftp::Target::new(url, opts, clients.tls(), via, guard)?;
             let retries = Retries::for_link(opts, clients.proxies(), url);
-            let probe = with_retries(retries, cancel, || ftp::probe(&target, cancel)).await?;
+            let probe = with_retries(retries, cancel, None, || ftp::probe(&target, cancel)).await?;
             Ok(Opened {
                 final_url: target.display_url().clone(),
                 ranged: probe.ranged,
@@ -264,12 +264,12 @@ async fn open_http(
     let client = clients.build()?;
     let limit = opts.request_limit();
     let retries = Retries::for_link(opts, clients.proxies(), &url);
-    let probe = with_retries(retries, cancel, || {
+    let probe = with_retries(retries, cancel, opts.host_progress.as_ref(), || {
         http::probe(&client, &url, &session, limit)
     })
     .await?;
     #[cfg(feature = "http3")]
-    let h3 = if opts.http3 {
+    let h3 = if opts.http3 && opts.http_cookies.is_none() {
         http3::Origin::advertised(
             &probe.final_url,
             probe.response.headers(),
@@ -310,6 +310,7 @@ async fn open_http(
 async fn with_retries<T, F, Fut>(
     retries: Retries,
     cancel: &CancellationToken,
+    progress: Option<&Arc<crate::HostProgress>>,
     mut attempt: F,
 ) -> Result<T>
 where
@@ -317,16 +318,19 @@ where
     Fut: Future<Output = Result<T, Failure>>,
 {
     let mut attempts = Attempts::new(Refusals::AsFailures, retries);
+    let mut retry_wait = None;
     loop {
+        let _retrying = retry_wait.take();
         let failure = match attempt().await {
             Ok(value) => return Ok(value),
             Err(failure) => failure,
         };
-        let delay = match attempts.after_failure(&failure.error, failure.retry_after, false) {
-            Next::GiveUp => return Err(failure.error),
+        let delay = match attempts.after_request_failure(&failure, false, false) {
+            Next::GiveUp => return Err(failure.terminal(&attempts, progress.map(Arc::as_ref))),
             Next::Retry(delay) | Next::StepBackOrRetry(delay) => delay,
         };
-        tracing::warn!(error = %Chain(&failure.error), retry_in = ?delay, "first request failed, retrying");
+        retry_wait = failure.retry_wait(progress, attempts.last_retry(), delay);
+        failure.log_retry(delay, "first request failed, retrying");
         tokio::select! {
             () = cancel.cancelled() => return Err(Error::Cancelled),
             () = tokio::time::sleep(delay) => {}

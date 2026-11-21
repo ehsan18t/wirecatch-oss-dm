@@ -999,6 +999,15 @@ pub enum WaitReason {
         /// When the next try starts, in Unix time in milliseconds.
         retry_at: UnixMillis,
     },
+    /// Native HTTP requests are waiting for admission to a busy host.
+    HostWait {
+        /// Whole seconds left until a timed wait ends. Zero means waiting for a slot or starting a retry.
+        seconds: u32,
+        /// The number of the download's own retry, if any.
+        attempt: Option<u32>,
+        /// The retry budget for that request.
+        of: Option<u32>,
+    },
     /// A connection failed or dropped and nothing arrives meanwhile; the download tries again by
     /// itself, keeping what was downloaded (D271). Only on a download that is downloading.
     Reconnecting {

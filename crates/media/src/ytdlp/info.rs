@@ -234,7 +234,7 @@ pub struct Format {
     pub filesize_approx: Option<f64>,
     #[serde(default, deserialize_with = "text_map")]
     pub http_headers: HashMap<String, Secret>,
-    /// The cookies the format's address needs, which yt-dlp lists here and not in `http_headers`. Never given to the engine: a page's cookies stay with the page.
+    /// The cookies the format's address needs, which yt-dlp lists here and not in `http_headers`.
     #[serde(default, deserialize_with = "lenient")]
     pub cookies: Option<Secret>,
     /// `true`, `false` or `"maybe"`.
@@ -321,6 +321,29 @@ impl Format {
         // yt-dlp's own default for a format that does not say.
         const UNRANKED: i64 = -1;
         self.language_preference.unwrap_or(UNRANKED)
+    }
+
+    /// The per-request cookie scope of a supported direct format, if the serialized cookies can be scoped safely.
+    #[must_use]
+    pub fn native_cookies(
+        &self,
+        suffixes: &wirecatch_sites::public_suffix::SuffixList,
+    ) -> Option<std::sync::Arc<dyn wirecatch_engine::HttpCookies>> {
+        if !matches!(
+            self.protocol.as_deref().unwrap_or("https"),
+            "http" | "https"
+        ) {
+            return None;
+        }
+        let url = wirecatch_engine::Url::parse(self.url.as_deref()?).ok()?;
+        if !matches!(url.scheme(), "http" | "https") {
+            return None;
+        }
+        super::format_cookies::FormatCookies::parse(self.cookies.as_ref()?, &url, suffixes).map(
+            |cookies| {
+                std::sync::Arc::new(cookies) as std::sync::Arc<dyn wirecatch_engine::HttpCookies>
+            },
+        )
     }
 
     /// Whether Wirecatch downloads this format itself: plain web addresses with

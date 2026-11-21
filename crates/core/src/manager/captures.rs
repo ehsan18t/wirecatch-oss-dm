@@ -448,6 +448,7 @@ impl Manager {
             &capture.handover_id,
             url.as_str(),
             super::private_sessions::capture_session(capture),
+            &origin_of(capture),
         ))
     }
 
@@ -459,11 +460,18 @@ impl Manager {
         handover: &str,
         url: &str,
         session: Option<&str>,
+        origin: &crate::headers::Origin,
     ) -> Option<AddedDownload> {
         let entry = state
             .unfinished()
             .filter(|entry| !entry.hold.is_removing())
             .filter(|entry| entry.private_session.as_deref() == session)
+            .filter(|entry| {
+                !matches!(
+                    entry.media_job,
+                    Some(wirecatch_media::MediaJob::Page { .. })
+                ) || super::media::same_reading_context(&entry.origin, origin)
+            })
             .find(|entry| unfinished(entry.row.status) && same_address(&entry.row.url, url))?;
         let id = entry.row.id;
         let action = match capture_action(&entry.row) {

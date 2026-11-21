@@ -269,7 +269,9 @@ mod tls {
 
         // Refused by default, before anything is sent over plain HTTP.
         let (session, url) = Session::new(&server.url, &opts, CancellationToken::new());
-        let failure = send(&client, &url, &session, None).await.unwrap_err();
+        let failure = send(&client, &url, &session, None, false)
+            .await
+            .unwrap_err();
         match failure.error {
             Error::InsecureRedirect { from, to } => {
                 assert_eq!(from, server.url.as_str());
@@ -282,9 +284,9 @@ mod tls {
         // Followed when the caller allows it.
         opts.allow_insecure_redirects = true;
         let (session, url) = Session::new(&server.url, &opts, CancellationToken::new());
-        let response = send(&client, &url, &session, None).await.unwrap();
+        let mut response = send(&client, &url, &session, None, false).await.unwrap();
         assert_eq!(response.url(), &plain);
-        assert_eq!(response.bytes().await.unwrap(), "ok");
+        assert_eq!(response.chunk().await.unwrap().unwrap(), "ok");
         assert_eq!(plain_requests.load(Ordering::SeqCst), 1);
     }
 
@@ -521,7 +523,7 @@ async fn a_stop_ends_a_check_that_has_not_answered() {
     cancel.cancel();
     let sent = tokio::time::timeout(
         wirecatch_test_support::PATIENCE,
-        send(&client, &url, &session, None),
+        send(&client, &url, &session, None, false),
     )
     .await
     .expect("the stop ends the check");

@@ -1870,3 +1870,17 @@ A video CDN answered `410` partway through HLS downloads, more often with two do
 1. A segment refused with `403`, `410` or `429` after the stream's other segments came is asked for again, at most four times, instead of stopping the download. A refusal before any segment came is the link's own and fails at once, so an expired link still reads the page again for fresh ones without waiting.
 2. Each refusal rests the host, for every stream download of the app: 2 seconds after the first, doubled after each refusal in a row, at most 30. The host then takes half as many requests at once as it had in flight, and one more after every eight segments it serves. A host is known by its name and port.
 3. ffmpeg runs in its own folder, never in a download's: Windows cannot start a program in a folder whose path passes 260 characters, which a long title in a deep folder reaches, and every path ffmpeg gets is already absolute.
+
+### D284. Native HTTP downloads share a server's pace
+
+Native file and stream requests share a pace by destination host and effective port. Every request holds its turn until the network body ends or is dropped. Redirects acquire a new turn at each hop. A wait stops new requests and gives the already open ones time to finish. The app holds its pace in memory, and the CLI gives each run its own.
+
+A `429` or `503` rests the host, including an accepted `Retry-After`. A `403` or `410` can do the same after that host served data for this transfer. A peer's wait gives a fresh link no extra retries. The file's usual retry budget applies, with four retries for an ambiguous segment refusal (D283). An expired redirect or format address follows its existing renewal path. The scale starts with two seconds and half the in-flight count, with at least one request after the rest. Consecutive refusals double the automatic wait up to 30 seconds. Eight consecutive successful responses recover one slot. A later result cannot shorten a promised rest.
+
+The row shows its countdown and its own retry budget where applicable. A peer waiting for a turn preserves its retry budget. Each regular refusal that changes the pace can be logged with just the responding host, status, rest and limit. The private logging rule in D280 applies to those events.
+
+### D285. Direct media formats can carry their own scoped cookies
+
+A page reading that supplied a quality choice serves that choice and its resulting download. The app keeps it in memory by download ID within D223's lifetime. Separate browser sign-ins keep separate readings even when they open the same video. A fresh link invalidates the earlier reading and removal drops it, including on private-session teardown.
+
+The engine can fetch a supported direct HTTP(S) format with static, scoping information from yt-dlp. Each outgoing request checks the cookie's domain, path, secure flag and expiry. A cookie format with unsupported scope, a cookie-bearing stream, a mixed selection that requires yt-dlp, or a direct format whose response sets cookies leaves the full selection to yt-dlp. The early local-network check applies to any cookie format left to yt-dlp (D136).

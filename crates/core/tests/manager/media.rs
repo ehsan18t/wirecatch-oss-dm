@@ -1598,39 +1598,116 @@ async fn a_page_waits_for_the_add_on_and_continues_once_it_is_installed() -> Tes
     Ok(())
 }
 
-/// A format whose address needs cookies goes to yt-dlp, which holds them: the engine, which is never given a page's cookies, would only be refused.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_format_that_needs_cookies_is_left_to_yt_dlp() -> TestResult {
+async fn the_same_page_in_two_profiles_uses_each_formats_own_cookies() -> TestResult {
+    use wirecatch_protocol::extension::BrowserRoute;
+
     let server = FileServer::start().await;
     let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
     assert_eq!(install(&h).await?.state, AddonState::Installed);
-    server.put("fmt/gated.mp4", mp4_data(64 * KIB_USIZE));
+    let mut ui = h.manager.subscribe();
+    let payload = mp4_data(300 * KIB_USIZE);
+    let mut selections = Vec::new();
+    for profile in ["first", "second"] {
+        let path = format!("fmt/{profile}.mp4");
+        server.put(&path, payload.clone());
+        let info = serde_json::json!({
+            "id": "same-video", "extractor_key": "Fixture", "title": "Signed in only",
+            "formats": [{"format_id": "0", "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "height": 360,
+                "protocol": "http", "url": server.url(&path).as_str(),
+                "downloader_options": {"http_chunk_size": 64 * KIB},
+                "cookies": format!("sid={profile}; Domain=127.0.0.1; Path=/fmt")}],
+        });
+        tell_tool(&h, "info.json", &info.to_string())?;
+        let mut capture = media_capture(server.url("watch/91"), MediaKind::Page, None);
+        capture.handover_id = profile.into();
+        capture.browser_route = Some(Box::new(BrowserRoute {
+            private_window: false,
+            private_session: None,
+            profile: Some(profile.into()),
+            observed_page: None,
+            page_redirect_urls: None,
+            redirect_urls: Vec::new(),
+        }));
+        h.manager.add_capture(capture).await?;
+        selections.push((profile, path, choice_requested(&mut ui).await.id));
+    }
+
+    for (profile, path, question) in selections {
+        let mut selection = select("0");
+        selection.file_name = Some(format!("{profile}.mp4"));
+        let id = h.manager.choose_media(question, selection).await?;
+        let done = h
+            .wait_for(id, "media transfer result", |row| {
+                matches!(
+                    row.status,
+                    DownloadStatus::Completed | DownloadStatus::Failed
+                )
+            })
+            .await;
+        assert_eq!(done.status, DownloadStatus::Completed, "{:?}", done.error);
+        assert_eq!(std::fs::read(&done.path)?, payload);
+        let seen = server.seen_at(&path);
+        assert!(seen.len() > 1, "expected parallel ranges for {profile}");
+        let expected = format!("sid={profile}");
+        assert!(
+            seen.iter()
+                .all(|request| request.header("cookie") == Some(expected.as_str()))
+        );
+    }
+    let calls = ytdlp_calls(&h)?;
+    assert_eq!(calls.len(), 2);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_busy_direct_format_that_rotates_a_cookie_hands_the_selection_to_yt_dlp() -> TestResult {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    server.put("rotating.mp4", mp4_data(KIB_USIZE));
+    server.set_cookie("rotating.mp4", "sid=next; Path=/");
+    server.fail("rotating.mp4", 1, 503);
     let info = serde_json::json!({
-        "title": "Signed in only",
+        "title": "Rotating cookie",
         "formats": [{"format_id": "0", "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "height": 360,
-            "protocol": "https", "url": server.url("fmt/gated.mp4").as_str(),
-            "cookies": "sid=abc123; Domain=127.0.0.1; Path=/"}],
+            "protocol": "http", "url": server.url("rotating.mp4").as_str(),
+            "cookies": "sid=initial; Domain=127.0.0.1; Path=/"}],
     });
     tell_tool(&h, "info.json", &info.to_string())?;
     let mut ui = h.manager.subscribe();
     h.manager
-        .add_capture(media_capture(server.url("watch/91"), MediaKind::Page, None))
+        .add_capture(media_capture(
+            server.url("watch/rotate"),
+            MediaKind::Page,
+            None,
+        ))
         .await?;
-    let choice = choice_requested(&mut ui).await;
-    h.manager.choose_media(choice.id, select("0")).await?;
-    let id = h.manager.list_downloads()[0].id;
-
-    let done = h.wait_status(id, DownloadStatus::Completed).await;
-
-    assert_eq!(server.requests("fmt/gated.mp4"), 0);
+    let id = h
+        .manager
+        .choose_media(choice_requested(&mut ui).await.id, select("0"))
+        .await?;
+    let done = h
+        .wait_for(id, "media transfer result", |row| {
+            matches!(
+                row.status,
+                DownloadStatus::Completed | DownloadStatus::Failed
+            )
+        })
+        .await;
+    assert_eq!(done.status, DownloadStatus::Completed, "{:?}", done.error);
+    let requests = server.seen_at("rotating.mp4");
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].status, 503);
     assert_eq!(
-        std::fs::read_to_string(&done.path)?,
+        std::fs::read_to_string(done.path)?,
         r#"downloaded by fake yt-dlp: b*[format_id="0"]"#
     );
+    assert_eq!(ytdlp_calls(&h)?.len(), 2);
     Ok(())
 }
 
-/// Runs a page whose two formats only yt-dlp can fetch, the video in `vcodec`, and returns the arguments yt-dlp downloaded with.
+/// Runs a selection whose audio needs yt-dlp and whose direct video has scoped cookies.
 async fn left_to_yt_dlp(vcodec: &str, page: &str) -> TestResult<Vec<String>> {
     let server = FileServer::start().await;
     let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
@@ -1639,7 +1716,8 @@ async fn left_to_yt_dlp(vcodec: &str, page: &str) -> TestResult<Vec<String>> {
         "title": "Dash only",
         "formats": [
             {"format_id": "dash-v", "ext": "mp4", "vcodec": vcodec, "acodec": "none", "height": 720,
-             "protocol": "http_dash_segments", "url": server.url("x.mpd").as_str()},
+             "protocol": "http", "url": server.url("video.mp4").as_str(),
+             "cookies": "sid=video; Domain=127.0.0.1; Path=/"},
             {"format_id": "dash-a", "ext": "m4a", "vcodec": "none", "acodec": "mp4a",
              "protocol": "http_dash_segments", "url": server.url("x.mpd").as_str()},
         ]
@@ -1660,9 +1738,20 @@ async fn left_to_yt_dlp(vcodec: &str, page: &str) -> TestResult<Vec<String>> {
         std::fs::read_to_string(&done.path)?,
         r#"downloaded by fake yt-dlp: b*[format_id="dash-v"]+b*[format_id="dash-a"]"#
     );
+    assert_eq!(server.requests("video.mp4"), 0);
     let download_call = ytdlp_calls(&h)?
         .pop()
         .ok_or("yt-dlp was not run to download")?;
+    let cwd = Path::new(
+        download_call["cwd"]
+            .as_str()
+            .ok_or("yt-dlp has no working directory")?,
+    );
+    assert!(
+        cwd.starts_with(h.root.path().join("data")),
+        "{}",
+        cwd.display()
+    );
     args(&download_call)
 }
 

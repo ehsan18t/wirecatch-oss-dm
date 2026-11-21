@@ -39,7 +39,7 @@ tracing.workspace = true
 # `CARGO_BIN_EXE_fake_media_tool`, so cargo builds it for every test run.
 # Whether a file left in a work folder is the one already linked at its name: Windows' file ids are not in stable std.
 same-file = "1.0.6"
-sha2 = "0.10.9"
+sha2.workspace = true
 [[bin]]
 name = "fake_media_tool"
 path = "src/bin/fake_media_tool.rs"
@@ -49,14 +49,14 @@ doc = false
 [dev-dependencies]
 anyhow.workspace = true
 # Building the media add-on releases the manager tests install: .zip and signed .tar.xz.
-lzma-rust2 = { version = "0.23.0", default-features = false, features = ["std", "xz", "encoder"] }
-pgp = { version = "0.21.0", default-features = false }
-rand = "0.8.6"
+lzma-rust2 = { workspace = true, features = ["std", "xz", "encoder"] }
+pgp.workspace = true
+rand.workspace = true
 rusqlite.workspace = true
-tar = { version = "0.4.44", default-features = false }
-zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+tar.workspace = true
+zip = { workspace = true, features = ["deflate-flate2-zlib-rs"] }
 tempfile.workspace = true
-tracing-subscriber.workspace = true
+tracing-subscriber = { workspace = true, features = ["default", "env-filter"] }
 tokio = { workspace = true, features = ["io-util", "test-util"] }
 # Logging for the headless example.
 wirecatch-logging = { workspace = true, features = ["setup"] }
@@ -64,7 +64,7 @@ wirecatch-files = { workspace = true, features = ["testing"] }
 wirecatch-server.workspace = true
 wirecatch-sites = { workspace = true, features = ["testing"] }
 wirecatch-test-support = { path = "../test-support", features = ["downloads", "faults", "resume", "servers", "settings"] }
-ed25519-dalek = { version = "2.2.0", default-features = false, features = ["std"] }
+ed25519-dalek = { workspace = true, features = ["std"] }
 
 [lints]
 workspace = true

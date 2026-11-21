@@ -123,6 +123,12 @@ pub fn real_deno() -> Option<PathBuf> {
     real_program("deno", "DENO")
 }
 
+/// A real yt-dlp from `WIRECATCH_TEST_YTDLP` or the `PATH`; required under `WIRECATCH_REQUIRE_YTDLP=1`.
+#[must_use]
+pub fn real_ytdlp() -> Option<PathBuf> {
+    real_program("yt-dlp", "YTDLP")
+}
+
 /// The program `name` from `WIRECATCH_TEST_<VARIABLE>` or the `PATH`.
 ///
 /// Without one the test is skipped with a note, unless

@@ -86,7 +86,7 @@ fn insecure_redirect() -> UserError {
 /// Describes why a download failed, saved in `folder`.
 #[must_use]
 pub fn describe(error: &EngineError, folder: &Path, worked: Worked) -> UserError {
-    match error {
+    match error.cause() {
         EngineError::HttpStatus { status, .. } => http_status(*status, worked),
         EngineError::InvalidUrl(_) => fix(
             "This link is not a valid web address. Refresh the link with one copied from the page.",
@@ -275,7 +275,7 @@ pub fn describe_run(
     chosen_by: ChosenBy,
     through_proxy: Option<&str>,
 ) -> UserError {
-    match (error, through_proxy) {
+    match (error.cause(), through_proxy) {
         (EngineError::PrivateNetwork { .. }, _) => private_network(chosen_by),
         // Through a proxy, the first connection is the proxy's (D73.4).
         (EngineError::Network(e), Some(proxy)) if e.is_connect() => fix(

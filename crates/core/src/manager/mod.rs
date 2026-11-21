@@ -8,6 +8,7 @@ mod arrival;
 mod browser;
 mod captures;
 mod downloads;
+mod failure_log;
 #[cfg(test)]
 mod fake;
 mod file_exists;
@@ -347,6 +348,7 @@ struct Inner {
     media_refresh_delays: Arc<[Duration]>,
     /// Each reading of a page is a request to its site, and many soon after one another get the app refused as a bot.
     page_readings: Arc<page_readings::PageReadings>,
+    host_pace: Arc<wirecatch_engine::HostPace>,
     /// The browsers that make page reads for media reads (D282).
     page_readers: Arc<page_reads::PageReaders>,
     retry_backoff: Backoff,
@@ -491,6 +493,7 @@ impl Manager {
             media_timeout: config.media_timeout,
             media_refresh_delays: config.media_refresh_delays.into(),
             page_readings: Arc::default(),
+            host_pace: Arc::default(),
             page_readers: Arc::default(),
             retry_backoff: config.retry_backoff,
             global_limiter,

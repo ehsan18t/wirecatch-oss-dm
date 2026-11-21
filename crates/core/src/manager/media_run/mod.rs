@@ -36,6 +36,7 @@ pub(super) use self::network::ytdlp_off_local_network;
 use self::page::run_page;
 use self::placement::{Reserve, Taken, finish, waiting_to_place};
 use super::Manager;
+use super::failure_log::{Details, MediaFailure};
 use super::media::media_options;
 use super::page_readings::PageReadings;
 use super::policy::RunPolicy;
@@ -66,6 +67,8 @@ struct Job {
     clock: Arc<dyn Clock>,
     /// Recent readings of pages, so a start soon after the last one does not read the page again.
     readings: Arc<PageReadings>,
+    reading_owner: DownloadId,
+    suffixes: Arc<wirecatch_sites::public_suffix::SuffixList>,
     /// Reserves a path for the finished file among the paths other downloads
     /// hold; `false` if one of them holds it already.
     reserve: Reserve,
@@ -126,6 +129,7 @@ impl Manager {
         options.connections = policy.connections;
         options.rate_limiters = policy.limiters;
         options.retry_backoff = policy.retry_backoff;
+        options.host_pace = Some(policy.host_pace);
         let tools = state.addon.tools.clone();
         let manager = Arc::downgrade(&self.inner);
         let quality = entry.row.media.as_ref().map(|m| m.quality.clone());
@@ -142,12 +146,9 @@ impl Manager {
             timeout: self.inner.media_timeout,
             refresh_delays: self.inner.media_refresh_delays.clone(),
             clock: self.inner.clock.clone(),
-            // A private page's reading (signed addresses, its cookies) is never shared (D280).
-            readings: if entry.private_session.is_some() {
-                Arc::default()
-            } else {
-                self.inner.page_readings.clone()
-            },
+            readings: self.inner.page_readings.clone(),
+            reading_owner: id,
+            suffixes: state.suffixes.clone(),
             reserve: self.reserve_for(id),
             placing: {
                 let manager = Arc::downgrade(&self.inner);
@@ -161,21 +162,28 @@ impl Manager {
             taken: Taken::of(entry.on_existing, state.settings.when_file_exists),
             browser: self.browser_route(state, &entry.origin, &url),
         };
-        self.launch(state, id, run_id, answered, move |cancel, file_work| {
-            let work = Job { file_work, ..work };
-            let progress = Arc::new(MediaProgress::default());
-            let gauge = Gauge::Media(progress.clone());
-            (gauge, async move {
-                let end = run(work, job, &progress, &cancel).await;
-                if tools.is_some_and(|t| t.is_broken())
-                    && let Some(manager) = Manager::from_weak(&manager)
-                {
-                    // A program that would not start: check every file closely.
-                    manager.spawn_addon_rescan(Check::Hashes);
-                }
-                RunEnd::Media(end)
-            })
-        });
+        self.launch(
+            state,
+            id,
+            run_id,
+            answered,
+            move |cancel, file_work, host_progress| {
+                let mut work = Job { file_work, ..work };
+                work.options.host_progress = Some(host_progress);
+                let progress = Arc::new(MediaProgress::default());
+                let gauge = Gauge::Media(progress.clone());
+                (gauge, async move {
+                    let end = run(work, job, &progress, &cancel).await;
+                    if tools.is_some_and(|t| t.is_broken())
+                        && let Some(manager) = Manager::from_weak(&manager)
+                    {
+                        // A program that would not start: check every file closely.
+                        manager.spawn_addon_rescan(Check::Hashes);
+                    }
+                    RunEnd::Media(end)
+                })
+            },
+        );
     }
 }
 
@@ -184,10 +192,10 @@ async fn run(
     what: MediaJob,
     progress: &MediaProgress,
     cancel: &CancellationToken,
-) -> Result<MediaDone, UserError> {
+) -> Result<MediaDone, MediaFailure> {
     let work = wirecatch_media::work_dir(&job.output);
     if let Some((file, sidecars)) = waiting_to_place(&work, &job.url).await {
-        return finish(&file, &job, &work, &sidecars).await;
+        return Ok(finish(&file, &job, &work, &sidecars).await?);
     }
     let result = match what {
         MediaJob::Stream { video, audio } => run_stream(&job, video, audio, progress, cancel).await,
@@ -206,7 +214,7 @@ async fn run(
             };
             run_page(&job, &page, progress, cancel).await
         }
-        MediaJob::Unreadable => return Err(wirecatch_media::unreadable()),
+        MediaJob::Unreadable => return Err(wirecatch_media::unreadable().into()),
     };
     match result {
         Err(_) if cancel.is_cancelled() => Ok(MediaDone::Paused),
@@ -228,7 +236,7 @@ async fn run_stream(
     audio: Pick,
     progress: &MediaProgress,
     cancel: &CancellationToken,
-) -> Result<MediaDone, UserError> {
+) -> Result<MediaDone, MediaFailure> {
     // The stream is saved in the work folder first and put in place by
     // `finish`, which marks it as downloaded from the internet before it is
     // ever at its final name.
@@ -243,15 +251,15 @@ async fn run_stream(
     progress.add_stream(stream.clone());
     match wirecatch_streams::download(request, stream, cancel.clone()).await {
         Ok(wirecatch_streams::Outcome::Completed { path, .. }) => {
-            finish(&path, job, &work, &[]).await
+            Ok(finish(&path, job, &work, &[]).await?)
         }
         Ok(_) | Err(wirecatch_streams::Error::Cancelled) => Ok(MediaDone::Paused),
-        Err(e) => Err(describe::stream(
+        Err(e) => Err(Details::stream(&e).with_error(describe::stream(
             &e,
             job.output.parent().unwrap_or(Path::new("")),
             job.tools.as_ref(),
             job.chosen_by,
-        )),
+        ))),
     }
 }
 
@@ -276,15 +284,14 @@ enum PageError {
     /// The server refused a format's address or said it expired (`status`,
     /// when it answered with one). Reading the page again gives fresh
     /// addresses, which usually work at once.
-    Refused {
-        status: Option<u16>,
-    },
-    Failed(UserError),
+    Refused(Box<Details>),
+    Failed(MediaFailure),
+    Delegate,
 }
 
 impl From<UserError> for PageError {
     fn from(error: UserError) -> Self {
-        PageError::Failed(error)
+        PageError::Failed(error.into())
     }
 }
 

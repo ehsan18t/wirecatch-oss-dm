@@ -249,6 +249,62 @@ async fn aes_128_segments_are_decrypted_with_explicit_and_sequence_ivs() {
 }
 
 #[tokio::test]
+async fn encrypted_streams_and_files_share_the_servers_request_limit() -> TestResult {
+    use wirecatch_engine::DownloadRequest;
+
+    let server = FileServer::start().await;
+    let pace = Arc::new(wirecatch_engine::HostPace::default());
+    let dir = private_dir("hls-shared-pace")?;
+    server.put("busy.bin", "busy");
+    server.fail("busy.bin", 1, 503);
+    let mut refused = DownloadRequest::new(server.url("busy.bin"), dir.join("."));
+    refused.options.host_pace = Some(pace.clone());
+    refused.options.max_retries = 0;
+    let transfer =
+        |request| wirecatch_engine::download(request, Arc::default(), CancellationToken::new());
+    assert!(matches!(
+        transfer(refused).await,
+        Err(wirecatch_engine::Error::HttpStatus { status: 503, .. })
+    ));
+
+    let key = *b"0123456789abcdef";
+    let plain = ts_segment(50, 1000);
+    server.put("key", key.to_vec());
+    server.put("encrypted.ts", encrypt(&plain, &key, &[0; 16]));
+    server.put_typed("stream.m3u8",
+        "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"key\"\n#EXTINF:2,\nencrypted.ts\n#EXT-X-ENDLIST\n",
+        MPEGURL);
+    server.put("file.bin", "ordinary file");
+    server.put("expired.bin", "expired");
+    server.fail("expired.bin", 1, 410);
+    let mut stream = request(server.url("stream.m3u8"), dir.join("stream.ts"));
+    stream.options.host_pace = Some(pace.clone());
+    let mut file = DownloadRequest::new(server.url("file.bin"), dir.join("."));
+    file.options.host_pace = Some(pace.clone());
+    let mut expired = DownloadRequest::new(server.url("expired.bin"), dir.join("."));
+    expired.options.host_pace = Some(pace);
+    let (stream, file, expired) = tokio::time::timeout(
+        PATIENCE,
+        Box::pin(async { tokio::join!(run(stream), transfer(file), transfer(expired)) }),
+    )
+    .await?;
+    let (stream, _) = completed(stream?);
+    assert_eq!(std::fs::read(stream)?, plain);
+    let wirecatch_engine::Outcome::Completed { path, .. } = file? else {
+        return Err("the file did not finish".into());
+    };
+    assert_eq!(std::fs::read(path)?, b"ordinary file");
+    assert!(matches!(
+        expired,
+        Err(wirecatch_engine::Error::HttpStatus { status: 410, .. })
+    ));
+    assert_eq!(server.requests("expired.bin"), 1);
+    assert_eq!(server.requests("key"), 1);
+    assert_eq!(server.max_active(), 1);
+    Ok(())
+}
+
+#[tokio::test]
 async fn a_wrong_key_is_a_clear_error() {
     let server = FileServer::start().await;
     server.put("k", b"0123456789abcdef".to_vec());
@@ -735,6 +791,9 @@ async fn a_failing_segment_is_retried_and_then_reported_clearly() {
     let before = server.requests("f/seg2.ts");
     let mut req = request(server.url("f/index.m3u8"), dir.join("b.ts"));
     req.options.max_retries = 2;
+    req.options.host_progress = Some(Arc::new(
+        wirecatch_engine::HostProgress::with_failure_details(),
+    ));
     let error = run(req).await.unwrap_err();
     assert!(
         matches!(
@@ -742,7 +801,14 @@ async fn a_failing_segment_is_retried_and_then_reported_clearly() {
             Error::Segment {
                 number: 3,
                 total: 5,
-                ..
+                cause: wirecatch_engine::Error::RequestFailed {
+                    retry: Some(wirecatch_engine::Retry {
+                        attempt: 2,
+                        of: 2,
+                        ..
+                    }),
+                    ..
+                },
             }
         ),
         "{error}"
@@ -782,6 +848,30 @@ async fn a_segment_refused_after_others_came_is_asked_again() {
     let error = run(req).await.unwrap_err();
     assert!(matches!(error, Error::Segment { number: 1, .. }), "{error}");
     assert_eq!(server.requests("r/seg0.ts"), 1);
+
+    server.fail("r/seg3.ts", 1, 472);
+    let mut req = request(server.url("r/index.m3u8"), dir.join("c.ts"));
+    req.options.connections = 1;
+    req.options.host_progress = Some(Arc::new(
+        wirecatch_engine::HostProgress::with_failure_details(),
+    ));
+    let error = run(req).await.unwrap_err();
+    assert!(
+        matches!(
+            error,
+            Error::Segment {
+                number: 4,
+                cause: wirecatch_engine::Error::RequestFailed {
+                    ref cause,
+                    had_data: Some(true),
+                    retry: None
+                },
+                ..
+            } if matches!(**cause, wirecatch_engine::Error::HttpStatus { status: 472, .. })
+        ),
+        "{error}"
+    );
+    assert_eq!(server.requests("r/seg3.ts"), 1);
     dir.remove().unwrap();
 }
 
