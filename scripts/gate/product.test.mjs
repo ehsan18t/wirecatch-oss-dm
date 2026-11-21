@@ -5,8 +5,8 @@ import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { generate } from '../product/generate.mjs';
 import { UNDECIDED_VALUES } from '../product/identity-samples.mjs';
-import { setTomlKey, tomlString } from '../product/manifests.mjs';
-import { outputs } from '../product/outputs.mjs';
+import { crateManifests, setTomlKey, tomlString } from '../product/manifests.mjs';
+import { lockMismatches, outputs } from '../product/outputs.mjs';
 import {
   crateMetadataProblems,
   handCopiedPlaceholders,
@@ -25,7 +25,8 @@ let root;
 
 before(() => {
   root = mkdtempSync(join(tmpdir(), 'product-check-'));
-  for (const path of [...INPUTS, ...outputs(ROOT).map((output) => output.path)]) {
+  const inputs = new Set([...INPUTS, ...crateManifests(ROOT), ...outputs(ROOT).map((o) => o.path)]);
+  for (const path of inputs) {
     cpSync(join(ROOT, path), join(root, path), { recursive: true });
   }
 });
@@ -72,6 +73,23 @@ test('a generated file edited by hand, or missing, is reported until generated a
   assert.deepEqual(await staleOutputs(root), ['packages/product/src/index.ts', 'SECURITY.md']);
   await generate(root);
   assert.deepEqual(await staleOutputs(root), []);
+});
+
+test('a patched dependency keeps its version outside the workspace', () => {
+  const lock = `[[package]]
+name = "app"
+version = "0.0.0-stale"
+
+[[package]]
+name = "backend"
+version = "2.3.4"
+
+[[package]]
+name = "app"
+version = "4.5.6"
+source = "registry+https://example.com/index"
+`;
+  assert.deepEqual(lockMismatches(lock, '0.1.0', new Set(['app'])), ['app 0.0.0-stale']);
 });
 
 test('a Cargo.lock that still records another version of a workspace crate is stale', async () => {

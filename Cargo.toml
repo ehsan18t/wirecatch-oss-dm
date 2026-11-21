@@ -2,6 +2,14 @@
 resolver = "3"
 # New crates under crates/ join automatically.
 members = ["crates/*"]
+exclude = [".cache/rust-backports/accesskit_windows", ".cache/rust-backports/gpui-pre-windows"]
+
+[patch.crates-io]
+# Prepared from pinned crates.io archives by scripts/prepare-rust-backports.mjs.
+# Return a UI Automation error when a provider is queried after its HWND closes.
+accesskit_windows = { path = ".cache/rust-backports/accesskit_windows" }
+# Backport the Windows activation callback fix to the snapshot gpui-kit pins.
+gpui-pre-windows = { path = ".cache/rust-backports/gpui-pre-windows" }
 
 [workspace.package]
 version = "0.1.0"

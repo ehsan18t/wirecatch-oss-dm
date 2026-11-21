@@ -41,6 +41,9 @@ jobs:
           tool: ${{ steps.tools.outputs.specs }}
           fallback: none
 
+      - name: Prepare Rust backports
+        run: node scripts/prepare-rust-backports.mjs
+
       - name: Rust advisories
         run: cargo deny --locked check advisories
 

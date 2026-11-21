@@ -32,11 +32,13 @@ function builtInto(triple) {
   );
 }
 
-/** Every crate from a registry in the installer for `triple`. The workspace's own crates are the app, under its own licence. */
+/** Every third-party crate in the installer, including local patches outside the workspace. */
 export function installerPackages(triple) {
   const built = builtInto(triple);
-  return cargoMetadata({ deps: true })
-    .packages.filter((pkg) => pkg.source && built.has(`${pkg.name} ${pkg.version}`))
+  const { packages, workspace_members: workspaceMembers } = cargoMetadata({ deps: true });
+  const workspace = new Set(workspaceMembers);
+  return packages
+    .filter((pkg) => !workspace.has(pkg.id) && built.has(`${pkg.name} ${pkg.version}`))
     .map((pkg) => ({
       name: pkg.name,
       version: pkg.version,

@@ -10,6 +10,7 @@ import {
   setPathDependencyVersions,
   setTomlKey,
   tomlString,
+  workspaceCrateNames,
 } from './manifests.mjs';
 import { readProduct } from './read.mjs';
 import { rustSource, typescriptSource } from './sources.mjs';
@@ -144,22 +145,27 @@ export async function expectedOutputs(root) {
 
 export const CARGO_LOCK = 'Cargo.lock';
 
-/** The workspace crates (lock entries with no `source`) that Cargo.lock records at another version than `version`, as `name version`. */
-export function lockMismatches(lockText, version) {
+/** The workspace crates that Cargo.lock records at another version than `version`, as `name version`. */
+export function lockMismatches(lockText, version, workspace) {
   return lockText
     .split('[[package]]')
     .slice(1)
     .filter((entry) => !/^source\s*=/m.test(entry))
     .flatMap((entry) => {
       const name = /^name\s*=\s*"([^"]+)"/m.exec(entry)?.[1];
+      if (!workspace.has(name)) return [];
       const recorded = /^version\s*=\s*"([^"]+)"/m.exec(entry)?.[1];
-      return recorded === version ? [] : [`${name ?? '?'} ${recorded ?? '?'}`];
+      return recorded === version ? [] : [`${name} ${recorded ?? '?'}`];
     });
 }
 
 /** The workspace crates Cargo.lock under `root` records at another version than the product's. */
 export function staleLock(root, product) {
-  return lockMismatches(current(root, CARGO_LOCK), product.product.version);
+  return lockMismatches(
+    current(root, CARGO_LOCK),
+    product.product.version,
+    workspaceCrateNames(root),
+  );
 }
 
 /** Brings Cargo.lock's workspace crates to the product version, offline and touching nothing else, so `--locked` builds keep working after a version change. */
