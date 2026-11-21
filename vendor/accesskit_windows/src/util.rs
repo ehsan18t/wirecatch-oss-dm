@@ -377,15 +377,9 @@ pub(crate) fn not_supported() -> Error {
 pub(crate) fn client_top_left(hwnd: WindowHandle) -> Result<Point> {
     let mut result = POINT::default();
     // UI Automation may query a provider as its native window is destroyed.
-    unsafe { ClientToScreen(hwnd.0, &mut result) }
-        .ok()
-        .map_err(|error| {
-            if error.code() == HRESULT::from_win32(ERROR_INVALID_WINDOW_HANDLE.0) {
-                element_not_available()
-            } else {
-                error
-            }
-        })?;
+    if !unsafe { ClientToScreen(hwnd.0, &mut result) }.as_bool() {
+        return Err(element_not_available());
+    }
     Ok(Point::new(result.x.into(), result.y.into()))
 }
 
