@@ -129,6 +129,29 @@ async fn ffmpeg_gets_each_path_as_one_untouched_argument() {
     root.remove().unwrap();
 }
 
+/// A long title in a deep folder puts the work folder past Windows' 260 characters, which a program cannot be started in: ffmpeg still joins the parts.
+#[tokio::test]
+async fn ffmpeg_joins_in_a_folder_past_the_windows_path_limit() {
+    let ffmpeg = fake_ffmpeg().unwrap();
+    let server = FileServer::start().await;
+    video_and_audio(&server).unwrap();
+    let root = private_dir("ffmpeg-long-path").unwrap();
+    let title = "t".repeat(120);
+    let dir = root.join(&title);
+    std::fs::create_dir_all(&dir).unwrap();
+    let output = dir.join(format!("{title}.mp4"));
+    let work = wirecatch_engine::naming::partial_path(&output, wirecatch_streams::DIR_SUFFIX);
+    assert!(work.as_os_str().len() > 260, "{}", work.display());
+    let mut request = request(server.url("master.m3u8"), &output);
+    request.ffmpeg = Some(ffmpeg);
+
+    match run(request).await.unwrap() {
+        Outcome::Completed { path, .. } => assert_eq!(path, output),
+        other => panic!("{other:?}"),
+    }
+    root.remove().unwrap();
+}
+
 /// ffmpeg's last lines are rarely the cause: the error keeps all it wrote, for the wording table.
 #[tokio::test]
 async fn a_cause_ffmpeg_named_early_stays_in_the_error() {

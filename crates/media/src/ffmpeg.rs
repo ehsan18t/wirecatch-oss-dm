@@ -70,7 +70,7 @@ pub enum FfmpegError {
         /// Which download.
         role: Role,
     },
-    /// The output path has no folder to run ffmpeg in.
+    /// The ffmpeg program has no folder to run in.
     #[error("{} is not in a folder", .0.display())]
     NoFolder(PathBuf),
     /// A file's path cannot be given to ffmpeg, so ffmpeg was not started.
@@ -78,12 +78,12 @@ pub enum FfmpegError {
     Path(#[from] wirecatch_streams::ffmpeg::FileArgumentError),
 }
 
-/// The folder ffmpeg runs in: the one it writes into. Output paths are always absolute, inside a download's work folder.
-pub(crate) fn ffmpeg_dir(output: &Path) -> Result<&Path, FfmpegError> {
-    output
+/// The folder ffmpeg runs in: its own. Every path it gets is absolute, and a download's work folder can be too long for Windows to start a program in.
+pub(crate) fn ffmpeg_dir(program: &Path) -> Result<&Path, FfmpegError> {
+    program
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
-        .ok_or_else(|| FfmpegError::NoFolder(output.to_path_buf()))
+        .ok_or_else(|| FfmpegError::NoFolder(program.to_path_buf()))
 }
 
 /// Runs the add-on's ffmpeg with `args` to make `output`, passing each line of its progress report to `on_progress`. It counts as done only when ffmpeg succeeded and the file is there; whenever it ends otherwise, a partial `output` is removed. A run that reports nothing for [`STALL_TIMEOUT`] is stopped; `timeout` limits the whole run when given.
@@ -95,7 +95,7 @@ pub(crate) async fn run(
     cancel: &CancellationToken,
     mut on_progress: impl FnMut(&str),
 ) -> Result<Finished, FfmpegError> {
-    let dir = ffmpeg_dir(output)?;
+    let dir = ffmpeg_dir(&tools.ffmpeg)?;
     let mut options = RunOptions::lines()
         .with_idle_timeout(STALL_TIMEOUT)
         .watching(output.to_path_buf());
@@ -164,13 +164,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ffmpeg_runs_in_its_output_folder_and_needs_one() {
+    fn ffmpeg_runs_in_its_own_folder_and_needs_one() {
         assert_eq!(
-            ffmpeg_dir(Path::new("/work/out.mp4")).unwrap(),
-            Path::new("/work")
+            ffmpeg_dir(Path::new("/addons/media/ffmpeg/ffmpeg")).unwrap(),
+            Path::new("/addons/media/ffmpeg")
         );
         assert!(matches!(
-            ffmpeg_dir(Path::new("out.mp4")),
+            ffmpeg_dir(Path::new("ffmpeg")),
             Err(FfmpegError::NoFolder(_))
         ));
     }
