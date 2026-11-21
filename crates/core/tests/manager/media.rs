@@ -1661,12 +1661,13 @@ async fn the_same_page_in_two_profiles_uses_each_formats_own_cookies() -> TestRe
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_direct_format_that_rotates_a_cookie_hands_the_selection_to_yt_dlp() -> TestResult {
+async fn a_busy_direct_format_that_rotates_a_cookie_hands_the_selection_to_yt_dlp() -> TestResult {
     let server = FileServer::start().await;
     let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
     assert_eq!(install(&h).await?.state, AddonState::Installed);
     server.put("rotating.mp4", mp4_data(KIB_USIZE));
     server.set_cookie("rotating.mp4", "sid=next; Path=/");
+    server.fail("rotating.mp4", 1, 503);
     let info = serde_json::json!({
         "title": "Rotating cookie",
         "formats": [{"format_id": "0", "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "height": 360,
@@ -1695,7 +1696,9 @@ async fn a_direct_format_that_rotates_a_cookie_hands_the_selection_to_yt_dlp() -
         })
         .await;
     assert_eq!(done.status, DownloadStatus::Completed, "{:?}", done.error);
-    assert_eq!(server.requests("rotating.mp4"), 1);
+    let requests = server.seen_at("rotating.mp4");
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].status, 503);
     assert_eq!(
         std::fs::read_to_string(done.path)?,
         r#"downloaded by fake yt-dlp: b*[format_id="0"]"#

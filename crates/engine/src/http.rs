@@ -131,6 +131,7 @@ pub(crate) struct Failure {
     pub error: Error,
     pub retry_after: Option<Duration>,
     pub paced_refusal: Option<Refusal>,
+    had_data: Option<bool>,
 }
 
 impl From<Error> for Failure {
@@ -139,6 +140,7 @@ impl From<Error> for Failure {
             error,
             retry_after: None,
             paced_refusal: None,
+            had_data: None,
         }
     }
 }
@@ -157,22 +159,46 @@ impl Failure {
         failure
     }
 
+    pub(crate) fn terminal(
+        self,
+        attempts: &crate::retry::Attempts,
+        progress: Option<&crate::HostProgress>,
+    ) -> Error {
+        let retry = attempts.last_retry();
+        if progress.is_some_and(crate::HostProgress::reports_failures)
+            && (self.had_data.is_some() || (self.error.is_retryable() && retry.is_some()))
+        {
+            return Error::RequestFailed {
+                cause: Box::new(self.error),
+                had_data: self.had_data,
+                retry,
+            };
+        }
+        self.error
+    }
+
+    pub(crate) fn log_retry(&self, delay: Duration, message: &str) {
+        log_request_failure(&self.error, Some(delay), message);
+    }
+
     pub(crate) fn retry_wait(
         &self,
         progress: Option<&std::sync::Arc<crate::HostProgress>>,
-        retry: crate::Retry,
+        retry: Option<crate::Retry>,
         delay: Duration,
     ) -> Option<WaitGuard> {
         let paced = self.paced_refusal?;
         let until = paced.until.max(tokio::time::Instant::now() + delay);
-        Some(progress?.record(Some(until), Some(retry)))
+        Some(progress?.record(Some(until), retry))
     }
 
     pub(crate) fn pace(&mut self, turn: Option<&Turn>, ambiguous: bool) {
         if let Error::HttpStatus { status, .. } = self.error
             && let Some(turn) = turn
         {
-            self.paced_refusal = turn.refused(status, self.retry_after, ambiguous);
+            let (had_data, rest) = turn.refused(status, self.retry_after, ambiguous);
+            self.had_data = Some(had_data);
+            self.paced_refusal = rest;
         }
     }
 
@@ -197,6 +223,20 @@ impl Failure {
             error,
             retry_after,
             paced_refusal: None,
+            had_data: None,
+        }
+    }
+}
+
+pub(crate) fn log_request_failure(error: &Error, delay: Option<Duration>, message: &str) {
+    match error.cause() {
+        Error::HttpStatus { status, url } => {
+            let url = Url::parse(url).ok();
+            let host = url.as_ref().and_then(Url::host_str);
+            tracing::warn!(status, host, retry_in = ?delay, "{message}");
+        }
+        cause => {
+            tracing::warn!(error = %crate::error::Chain(cause), retry_in = ?delay, "{message}");
         }
     }
 }
@@ -350,6 +390,11 @@ impl Session {
             .unwrap_or_else(|| first.clone())
     }
 
+    #[cfg(feature = "http3")]
+    pub fn is_original(&self, url: &Url) -> bool {
+        *url == self.link
+    }
+
     pub async fn turn(&self, url: &Url) -> Result<Option<Turn>, Failure> {
         let Some(pace) = &self.pace else {
             return Ok(None);
@@ -432,10 +477,13 @@ pub(crate) async fn send(
         let response = send_once(client, &url, session, range).await?;
         let status = response.status();
         if session.cookies.is_some()
-            && !is_busy(status)
             && status != StatusCode::PROXY_AUTHENTICATION_REQUIRED
             && response.headers().contains_key(reqwest::header::SET_COOKIE)
         {
+            if is_busy(status) {
+                Failure::from_status(status, response.headers(), response.url())
+                    .pace(turn.as_ref(), false);
+            }
             return Err(Error::CookiesChanged.into());
         }
         if !matches!(
@@ -649,7 +697,10 @@ pub(crate) async fn fetch(
     if !refused || target == session.link {
         return answer;
     }
-    debug!(target = %target, "the redirect target refused the request; following the link again");
+    debug!(
+        host = target.host_str(),
+        "the redirect target refused the request; following the link again"
+    );
     let (response, skip) =
         fetch_from(client, &session.link, request, session, from, to, true).await?;
     session.renew_target(response.url());

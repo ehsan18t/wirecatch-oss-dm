@@ -284,7 +284,7 @@ enum PageError {
     /// The server refused a format's address or said it expired (`status`,
     /// when it answered with one). Reading the page again gives fresh
     /// addresses, which usually work at once.
-    Refused(Details),
+    Refused(Box<Details>),
     Failed(MediaFailure),
     Delegate,
 }

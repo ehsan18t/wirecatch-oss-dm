@@ -18,13 +18,15 @@ function registry(declaration) {
 function declarationLine(text, key, section, target) {
   const lines = text.split('\n');
   const keyPattern = new RegExp(String.raw`^\s*["']?${key}["']?\s*(?:=|\.)`);
+  const prefix = target
+    ? `target.${target.replaceAll('"', '').replaceAll("'", '')}.${section}`
+    : section;
   let sectionLine = -1;
   for (const [index, line] of lines.entries()) {
     const header = /^\s*\[([^\]]+)\]/u.exec(line);
     if (header) {
       const table = header[1];
       const normalized = table.replaceAll('"', '').replaceAll("'", '');
-      const prefix = target ? `target.${target}.${section}` : section;
       sectionLine = normalized === prefix ? index : -1;
       if (normalized === `${prefix}.${key}`) return index + 1;
     }

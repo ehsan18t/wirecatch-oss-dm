@@ -6,7 +6,11 @@ test('reports direct shared dependencies, aliases and workspace overrides', () =
   const workspace = '[workspace.dependencies]\nshared = "1"';
   const manifests = new Map([
     ['a/Cargo.toml', '[dependencies]\nrenamed = { package = "actual", version = "1" }'],
-    ['b/Cargo.toml', '[target."cfg(unix)".build-dependencies]\nactual = "1"'],
+    [
+      'b/Cargo.toml',
+      `[target.'cfg(target_os = "windows")'.build-dependencies]
+actual = "1"`,
+    ],
     ['c/Cargo.toml', '[dev-dependencies.shared]\nversion = "1"'],
     [
       'd/Cargo.toml',

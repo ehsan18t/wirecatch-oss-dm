@@ -849,9 +849,12 @@ impl Manager {
             ..
         } = kind
         {
-            self.inner
-                .page_readings
-                .put(id, *read_at, info.clone(), &self.inner.stopped);
+            self.inner.page_readings.put(
+                id,
+                (*read_at, info.clone()),
+                self.inner.clock.unix_millis(),
+                &self.inner.stopped,
+            );
         }
         self.inner.store.save_last_ids(state.ids.last());
         id

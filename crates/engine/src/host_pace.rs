@@ -24,6 +24,7 @@ pub struct HostPace {
 /// The native HTTP activity of one download. Give the same progress to each of its media tracks.
 #[derive(Debug, Default)]
 pub struct HostProgress {
+    report_failures: bool,
     used: AtomicBool,
     active: AtomicUsize,
     delivering: AtomicUsize,
@@ -52,6 +53,19 @@ pub(crate) struct Refusal {
 }
 
 impl HostProgress {
+    /// Tracks native HTTP waits and attaches request observations to terminal errors.
+    #[must_use]
+    pub fn with_failure_details() -> Self {
+        Self {
+            report_failures: true,
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn reports_failures(&self) -> bool {
+        self.report_failures
+    }
+
     /// Number of requests in flight, when this download uses native HTTP pacing.
     #[must_use]
     pub fn connections(&self) -> Option<usize> {
@@ -72,12 +86,12 @@ impl HostProgress {
             .pending
             .values()
             .copied()
-            .max_by_key(|(until, retry)| (retry.is_some(), *until))?;
-        let latest = waits.pending.values().filter_map(|(at, _)| *at).max();
+            .max_by_key(|(until, retry)| {
+                let counting_down = until.is_some_and(|at| at > now);
+                (counting_down && retry.is_some(), retry.is_none(), *until)
+            })?;
         Some(HostWait {
-            remaining: until
-                .max(latest)
-                .map_or(Duration::ZERO, |at| at.saturating_duration_since(now)),
+            remaining: until.map_or(Duration::ZERO, |at| at.saturating_duration_since(now)),
             retry,
         })
     }
@@ -217,22 +231,17 @@ impl Turn {
         status: u16,
         retry_after: Option<Duration>,
         ambiguous: bool,
-    ) -> Option<Refusal> {
+    ) -> (bool, Option<Refusal>) {
         let busy = matches!(status, 429 | 503);
         let had_data = lock(&self.scope.received).contains(&self.host);
         let later_refusal = ambiguous && matches!(status, 403 | 410) && had_data;
-        tracing::debug!(
-            host = self.host.name,
-            port = self.host.port,
-            status,
-            had_data,
-            "server refused a request"
-        );
         if !busy && !later_refusal {
-            return None;
+            return (had_data, None);
         }
         let mut hosts = lock(&self.scope.pace.hosts);
-        let load = hosts.get_mut(&self.host)?;
+        let Some(load) = hosts.get_mut(&self.host) else {
+            return (had_data, None);
+        };
         let factor = 2_u32.saturating_pow(load.refusals);
         load.refusals = load.refusals.saturating_add(1);
         load.successes = 0;
@@ -251,10 +260,13 @@ impl Turn {
             rest = ?until.duration_since(now), limit = load.limit,
             "waiting before sending more requests to the server"
         );
-        Some(Refusal {
-            until,
-            ambiguous: later_refusal,
-        })
+        (
+            had_data,
+            Some(Refusal {
+                until,
+                ambiguous: later_refusal,
+            }),
+        )
     }
 
     pub fn data(&mut self, media: bool) {
@@ -320,15 +332,46 @@ mod tests {
         turn.data(true);
         assert!(
             turn.refused(410, Some(Duration::from_secs(12)), true)
+                .1
                 .is_some()
         );
-        assert!(turn.refused(403, None, true).is_some());
+        assert!(turn.refused(403, None, true).1.is_some());
         drop(turn);
         let before = Instant::now();
         let turn = peer.turn(&url).await.unwrap();
         assert_eq!(before.elapsed(), Duration::from_secs(12));
-        assert!(turn.refused(410, None, true).is_none());
+        let (had_data, rest) = turn.refused(410, None, true);
+        assert!(!had_data);
+        assert!(rest.is_none());
     }
+    #[tokio::test(start_paused = true)]
+    async fn the_countdown_and_retry_describe_the_same_request() {
+        let progress = Arc::new(HostProgress::default());
+        let retry = Retry { attempt: 2, of: 6 };
+        let now = Instant::now();
+        let own = progress.record(Some(now + INITIAL_REST), Some(retry));
+        let peer = progress.record(Some(now + MAX_AUTO_REST), None);
+        assert_eq!(
+            progress.waiting(),
+            Some(HostWait {
+                remaining: INITIAL_REST,
+                retry: Some(retry),
+            })
+        );
+        tokio::time::advance(INITIAL_REST).await;
+        peer.until(None);
+        assert_eq!(
+            progress.waiting(),
+            Some(HostWait {
+                remaining: Duration::ZERO,
+                retry: None,
+            })
+        );
+        drop(peer);
+        assert_eq!(progress.waiting().unwrap().retry, Some(retry));
+        drop(own);
+    }
+
     #[tokio::test(start_paused = true)]
     async fn cancelling_a_waiter_releases_its_progress_before_the_rest_ends() {
         use std::future::Future as _;
@@ -337,7 +380,7 @@ mod tests {
         let trigger = Scope::new(shared.clone(), None);
         let url = Url::parse("https://cdn.example/file").unwrap();
         let turn = trigger.turn(&url).await.unwrap();
-        turn.refused(429, None, false).unwrap();
+        assert!(turn.refused(429, None, false).1.is_some());
         drop(turn);
 
         let progress = Arc::new(HostProgress::default());
@@ -369,7 +412,7 @@ mod tests {
         first.data(true);
         let second = owner.turn(&url).await.unwrap();
         let third = owner.turn(&url).await.unwrap();
-        assert!(third.refused(403, None, true).is_some());
+        assert!(third.refused(403, None, true).1.is_some());
         drop(third);
         let next = owner.turn(&url);
         tokio::pin!(next);

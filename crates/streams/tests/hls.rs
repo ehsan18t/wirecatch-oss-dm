@@ -791,6 +791,9 @@ async fn a_failing_segment_is_retried_and_then_reported_clearly() {
     let before = server.requests("f/seg2.ts");
     let mut req = request(server.url("f/index.m3u8"), dir.join("b.ts"));
     req.options.max_retries = 2;
+    req.options.host_progress = Some(Arc::new(
+        wirecatch_engine::HostProgress::with_failure_details(),
+    ));
     let error = run(req).await.unwrap_err();
     assert!(
         matches!(
@@ -798,7 +801,14 @@ async fn a_failing_segment_is_retried_and_then_reported_clearly() {
             Error::Segment {
                 number: 3,
                 total: 5,
-                ..
+                cause: wirecatch_engine::Error::RequestFailed {
+                    retry: Some(wirecatch_engine::Retry {
+                        attempt: 2,
+                        of: 2,
+                        ..
+                    }),
+                    ..
+                },
             }
         ),
         "{error}"
@@ -838,6 +848,30 @@ async fn a_segment_refused_after_others_came_is_asked_again() {
     let error = run(req).await.unwrap_err();
     assert!(matches!(error, Error::Segment { number: 1, .. }), "{error}");
     assert_eq!(server.requests("r/seg0.ts"), 1);
+
+    server.fail("r/seg3.ts", 1, 472);
+    let mut req = request(server.url("r/index.m3u8"), dir.join("c.ts"));
+    req.options.connections = 1;
+    req.options.host_progress = Some(Arc::new(
+        wirecatch_engine::HostProgress::with_failure_details(),
+    ));
+    let error = run(req).await.unwrap_err();
+    assert!(
+        matches!(
+            error,
+            Error::Segment {
+                number: 4,
+                cause: wirecatch_engine::Error::RequestFailed {
+                    ref cause,
+                    had_data: Some(true),
+                    retry: None
+                },
+                ..
+            } if matches!(**cause, wirecatch_engine::Error::HttpStatus { status: 472, .. })
+        ),
+        "{error}"
+    );
+    assert_eq!(server.requests("r/seg3.ts"), 1);
     dir.remove().unwrap();
 }
 

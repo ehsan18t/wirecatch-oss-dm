@@ -514,8 +514,9 @@ async fn complete_earlier_run(request: &DownloadRequest, url: &str) -> Result<Op
 fn still_stands(saved: &ResumeState, opened: &Result<Opened>) -> bool {
     match opened {
         Ok(opened) => saved.describes(opened.total, &opened.validators),
-        Err(Error::HttpStatus { status, .. }) => REFUSED_LINK_STATUSES.contains(status),
-        Err(_) => false,
+        Err(error) => {
+            matches!(error.cause(), Error::HttpStatus { status, .. } if REFUSED_LINK_STATUSES.contains(status))
+        }
     }
 }
 
@@ -678,7 +679,7 @@ async fn join_workers(mut workers: JoinSet<Result<()>>) -> Option<Error> {
     while let Some(joined) = workers.join_next().await {
         let result = joined.unwrap_or_else(|e| Err(Error::task(&e)));
         if let Err(e) = result {
-            warn!(error = %Chain(&e), "connection gave up");
+            crate::http::log_request_failure(&e, None, "connection gave up");
             first_error.get_or_insert(e);
         }
     }

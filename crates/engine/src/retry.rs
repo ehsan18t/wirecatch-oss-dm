@@ -156,6 +156,7 @@ pub(crate) struct Attempts {
     retries: Retries,
     /// Attempts in a row that received nothing.
     failures: u32,
+    last_retry: Option<crate::Retry>,
     /// Of those, attempts the server turned away.
     refusals: u32,
 }
@@ -167,6 +168,7 @@ impl Attempts {
             refusal_policy,
             retries,
             failures: 0,
+            last_retry: None,
             refusals: 0,
         }
     }
@@ -181,20 +183,9 @@ impl Attempts {
         self.retries.max
     }
 
-    /// Decides what follows a failed attempt. `progressed` says whether it
-    /// received anything, which resets the count.
-    ///
-    /// With [`Refusals::StepBack`], a refusal is retried even when the error
-    /// alone would not be: an FTP server turning away one more login (530)
-    /// already accepted the same login on another connection.
-    pub fn report(&self, failure: &http::Failure, segment: bool) -> crate::Retry {
-        let ambiguous = failure
-            .paced_refusal
-            .is_some_and(|refusal| refusal.ambiguous);
-        crate::Retry {
-            attempt: self.retry(),
-            of: self.budget(segment && ambiguous),
-        }
+    /// The last retry applied to this request, with the budget used for that decision.
+    pub fn last_retry(&self) -> Option<crate::Retry> {
+        self.last_retry
     }
 
     fn budget(&self, ambiguous_segment: bool) -> u32 {
@@ -205,6 +196,11 @@ impl Attempts {
         }
     }
 
+    /// Decides what follows a failed attempt. Progress resets the count.
+    ///
+    /// With [`Refusals::StepBack`], a refusal is retried even when the error
+    /// alone would not be: an FTP server turning away one more login (530)
+    /// already accepted the same login on another connection.
     pub fn after_request_failure(
         &mut self,
         failure: &http::Failure,
@@ -266,6 +262,10 @@ impl Attempts {
         } else {
             0
         };
+        self.last_retry = Some(crate::Retry {
+            attempt: self.retry(),
+            of: max,
+        });
         let backoff = self.retries.backoff;
         let delay = backoff.delay(self.failures, retry_after);
         let long_wait = retry_after.is_some();

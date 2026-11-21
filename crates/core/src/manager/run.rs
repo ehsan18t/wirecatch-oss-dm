@@ -97,11 +97,7 @@ impl Ended {
             RunEnd::Engine(Ok(_))
             | RunEnd::Media(Ok(MediaDone::Paused | MediaDone::FileExists(_))) => Ended::Stopped,
             RunEnd::Engine(Err(error)) => {
-                let retry = match &run.gauge {
-                    Gauge::Engine(progress) => progress.retry(),
-                    Gauge::Media(_) => None,
-                };
-                record(Details::engine(&error, "file_transfer", retry));
+                record(Details::engine(&error, "file_transfer"));
                 Ended::Failed(wirecatch_messages::describe_run(
                     &error,
                     folder,
@@ -246,7 +242,7 @@ impl Manager {
             file_work: file_work.clone(),
             reported: false,
         };
-        let host_progress = Arc::default();
+        let host_progress = Arc::new(wirecatch_engine::HostProgress::with_failure_details());
         let (gauge, work) = work(
             cancel.clone(),
             file_work.clone(),

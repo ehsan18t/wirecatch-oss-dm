@@ -26,7 +26,8 @@ pub(super) struct Details {
     host: Option<String>,
     segment: Option<(usize, usize)>,
     pub extractor: Option<String>,
-    pub retry: Option<Retry>,
+    retry: Option<Retry>,
+    had_data: Option<bool>,
 }
 
 impl Details {
@@ -39,6 +40,7 @@ impl Details {
             segment: None,
             extractor: None,
             retry: None,
+            had_data: None,
         }
     }
 
@@ -49,8 +51,9 @@ impl Details {
         }
     }
 
-    pub fn engine(error: &Error, stage: &'static str, retry: Option<Retry>) -> Self {
-        let category = match error {
+    pub fn engine(error: &Error, stage: &'static str) -> Self {
+        let cause = error.cause();
+        let category = match cause {
             Error::HttpStatus { .. } => "http",
             Error::FtpReply { .. } => "ftp",
             Error::Network(_) | Error::PrematureEof { .. } => "network",
@@ -63,8 +66,14 @@ impl Details {
             _ => "transfer",
         };
         let mut details = Self::new(stage, category);
-        details.retry = retry;
-        match error {
+        if let Error::RequestFailed {
+            retry, had_data, ..
+        } = error
+        {
+            details.retry = *retry;
+            details.had_data = *had_data;
+        }
+        match cause {
             Error::HttpStatus { url, status }
             | Error::FtpReply {
                 url, code: status, ..
@@ -85,11 +94,11 @@ impl Details {
                 total,
                 cause,
             } => {
-                let mut details = Self::engine(cause, "segment", None);
+                let mut details = Self::engine(cause, "segment");
                 details.segment = Some((*number, *total));
                 details
             }
-            Stream::Request(e) => Self::engine(e, "manifest", None),
+            Stream::Request(e) => Self::engine(e, "manifest"),
             Stream::Ffmpeg(_)
             | Stream::FfmpegRun(_)
             | Stream::FfmpegMissing(_)
@@ -131,6 +140,7 @@ impl Details {
             source_host,
             responding_host = self.host.as_deref(),
             status = self.status,
+            had_data = self.had_data,
             extractor,
             retry = self.retry.map(|retry| retry.attempt),
             retry_budget = self.retry.map(|retry| retry.of),
@@ -194,9 +204,13 @@ mod tests {
         let error = wirecatch_streams::Error::Segment {
             number: 51,
             total: 120,
-            cause: Error::HttpStatus {
-                status: 472,
-                url: "https://cdn.example/path-secret?sign=query-secret".into(),
+            cause: Error::RequestFailed {
+                cause: Box::new(Error::HttpStatus {
+                    status: 472,
+                    url: "https://cdn.example/path-secret?sign=query-secret".into(),
+                }),
+                had_data: Some(true),
+                retry: None,
             },
         };
         tracing::subscriber::with_default(subscriber, || {
@@ -214,6 +228,7 @@ mod tests {
             "page.example",
             "cdn.example",
             "status=472",
+            "had_data=true",
             "segment=51",
             "segments=120",
             "ffmpeg",

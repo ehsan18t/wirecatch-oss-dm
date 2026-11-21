@@ -107,6 +107,32 @@ fn an_answer_about_another_version_of_the_file_is_a_changed_file() {
     ));
 }
 
+#[test]
+fn a_gone_response_is_available_to_the_shared_pacer() {
+    let context = RequestContext {
+        url: Url::parse("https://files.example/a.iso").unwrap(),
+        ranged: true,
+        total: Some(100),
+        validators: http::Validators::default(),
+        cancel: CancellationToken::new(),
+        stall_timeout: Duration::from_secs(5),
+    };
+    let answer = ::http::Response::builder()
+        .status(StatusCode::GONE)
+        .body(())
+        .unwrap();
+    assert!(matches!(
+        check_response(&answer, &context, 10),
+        Err(H3Failure::Status(
+            Failure {
+                error: Error::HttpStatus { status: 410, .. },
+                ..
+            },
+            StatusCode::GONE
+        ))
+    ));
+}
+
 fn test_data(len: usize) -> Bytes {
     Bytes::from(wirecatch_test_support::test_data(len))
 }

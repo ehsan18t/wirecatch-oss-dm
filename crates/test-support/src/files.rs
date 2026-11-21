@@ -292,7 +292,7 @@ async fn serve(
             let status = StatusCode::from_u16(file.fail_status).unwrap();
             (
                 status,
-                Response::builder().status(status).body(Body::empty()),
+                with_cookie(Response::builder().status(status), file).body(Body::empty()),
             )
         }
         Some((file, false)) => answer(file, &headers),
@@ -332,13 +332,23 @@ fn gated(
     })
 }
 
+fn with_cookie(
+    builder: axum::http::response::Builder,
+    file: &File,
+) -> axum::http::response::Builder {
+    match &file.set_cookie {
+        Some(cookie) => builder.header(header::SET_COOKIE, cookie),
+        None => builder,
+    }
+}
+
 /// The file, or the part of it the `Range` header asks for.
 fn answer(file: &File, headers: &HeaderMap) -> (StatusCode, axum::http::Result<Response>) {
     let len = file.body.len() as u64;
-    let mut builder = Response::builder().header(header::ACCEPT_RANGES, "bytes");
-    if let Some(cookie) = &file.set_cookie {
-        builder = builder.header(header::SET_COOKIE, cookie);
-    }
+    let mut builder = with_cookie(
+        Response::builder().header(header::ACCEPT_RANGES, "bytes"),
+        file,
+    );
     if let Some(content_type) = &file.content_type {
         builder = builder.header(header::CONTENT_TYPE, content_type);
     }

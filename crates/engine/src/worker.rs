@@ -8,10 +8,10 @@ use std::time::Duration;
 use tokio::sync::Notify;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use crate::download::Shared;
-use crate::error::{Chain, Error, Result};
+use crate::error::{Error, Result};
 use crate::http::Failure;
 use crate::limiter::{Paced, pace};
 use crate::numeric::clamp_to_len;
@@ -166,16 +166,18 @@ async fn run_assignment(
                 let next = attempts.after_request_failure(&f, now > from.max(furthest), false);
                 furthest = furthest.max(now);
                 let delay = match next {
-                    Next::GiveUp => return Err(f.error),
+                    Next::GiveUp => {
+                        return Err(f.terminal(&attempts, shared.opts.host_progress.as_deref()));
+                    }
                     Next::StepBackOrRetry(_)
                         if step_back(&shared.table, &shared.receiving, index) =>
                     {
-                        info!(error = %Chain(&f.error), "server refuses another connection; continuing with the open ones");
+                        info!("server refuses another connection; continuing with the open ones");
                         return Ok(Ended::SteppedBack);
                     }
                     Next::Retry(delay) | Next::StepBackOrRetry(delay) => delay,
                 };
-                warn!(error = %Chain(&f.error), retry_in = ?delay, "connection failed, retrying");
+                f.log_retry(delay, "connection failed, retrying");
                 retry_wait = report_retry(shared, &attempts, &f, delay);
                 let cancel = &shared.request.cancel;
                 let waited = match next {
@@ -206,7 +208,7 @@ fn report_retry(
 ) -> Option<crate::host_pace::WaitGuard> {
     let wait = failure.retry_wait(
         shared.opts.host_progress.as_ref(),
-        attempts.report(failure, false),
+        attempts.last_retry(),
         delay,
     );
     if wait.is_none() {

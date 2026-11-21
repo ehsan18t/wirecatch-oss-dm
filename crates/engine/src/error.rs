@@ -57,6 +57,18 @@ pub enum Error {
         url: String,
     },
 
+    /// A request failed with observations enabled by [`crate::HostProgress::with_failure_details`].
+    #[error("{cause}")]
+    RequestFailed {
+        /// The underlying error, including any HTTP status and responding URL.
+        #[source]
+        cause: Box<Error>,
+        /// Whether the responding HTTP host already served bytes for this transfer, if tracked.
+        had_data: Option<bool>,
+        /// Retries already made for this request and its retry budget, if retried.
+        retry: Option<crate::Retry>,
+    },
+
     /// The server set cookies during a transfer using a static, caller-supplied cookie set.
     #[error("the server changed the cookies needed for this download")]
     CookiesChanged,
@@ -260,10 +272,19 @@ pub enum Error {
 }
 
 impl Error {
+    /// The failure itself, without optional request observations.
+    #[must_use]
+    pub fn cause(&self) -> &Self {
+        match self {
+            Self::RequestFailed { cause, .. } => cause,
+            error => error,
+        }
+    }
+
     /// Whether retrying the same request later can reasonably succeed.
     #[must_use]
     pub fn is_retryable(&self) -> bool {
-        match self {
+        match self.cause() {
             Error::Network(_) | Error::PrematureEof { .. } | Error::Stalled { .. } => true,
             Error::HttpStatus { status, .. } => {
                 StatusCode::from_u16(*status).is_ok_and(crate::http::status::is_retryable_status)

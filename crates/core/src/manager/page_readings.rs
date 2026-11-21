@@ -30,12 +30,12 @@ impl PageReadings {
     pub(crate) fn put(
         &self,
         owner: DownloadId,
+        reading: (UnixMillis, Arc<Info>),
         now: UnixMillis,
-        info: Arc<Info>,
         cancel: &CancellationToken,
     ) {
         let mut recent = self.recent();
-        if cancel.is_cancelled() {
+        if cancel.is_cancelled() || !fresh(reading.0, now) {
             return;
         }
         recent.retain(|_, (at, _)| fresh(*at, now));
@@ -47,7 +47,7 @@ impl PageReadings {
         {
             recent.remove(&oldest);
         }
-        recent.insert(owner, (now, info));
+        recent.insert(owner, reading);
     }
 
     /// The reading of `page` made less than [`READING_LIFETIME`] before `now`.
@@ -81,8 +81,8 @@ mod tests {
         let other = DownloadId(2);
         readings.put(
             page,
+            (AT, Arc::new(Info::default())),
             AT,
-            Arc::new(Info::default()),
             &CancellationToken::new(),
         );
         let almost = AT.saturating_add(READING_LIFETIME.saturating_sub(Duration::from_millis(1)));
@@ -100,13 +100,30 @@ mod tests {
     }
 
     #[test]
+    fn confirming_an_older_selection_keeps_a_newer_reading() {
+        let readings = PageReadings::default();
+        let running = CancellationToken::new();
+        let older = DownloadId(1);
+        let newer = DownloadId(2);
+        let later = AT.saturating_add(Duration::from_secs(1));
+        readings.put(newer, (later, Arc::new(Info::default())), later, &running);
+        readings.put(older, (AT, Arc::new(Info::default())), later, &running);
+
+        assert!(readings.fresh(newer, later).is_some());
+        let older_expired = AT.saturating_add(READING_LIFETIME);
+        assert!(readings.fresh(older, older_expired).is_none());
+        assert!(readings.fresh(newer, older_expired).is_some());
+    }
+
+    #[test]
     fn the_oldest_reading_makes_room() {
         let readings = PageReadings::default();
         let running = CancellationToken::new();
         let page = |n: usize| DownloadId(i64::try_from(n).unwrap());
         let at = |n: usize| AT.saturating_add(Duration::from_millis(n as u64));
         for n in 0..=MOST_KEPT {
-            readings.put(page(n), at(n), Arc::new(Info::default()), &running);
+            let time = at(n);
+            readings.put(page(n), (time, Arc::new(Info::default())), time, &running);
         }
         let now = at(MOST_KEPT);
         assert!(readings.fresh(page(0), now).is_none());

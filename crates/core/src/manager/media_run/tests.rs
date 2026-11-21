@@ -868,7 +868,7 @@ fn a_failure_promises_the_part_that_finished_after_it() {
         after: Duration::from_secs(1),
     };
     let results = vec![
-        Err(PartError::Transfer(stalled, None)),
+        Err(PartError::Transfer(stalled)),
         Ok(Some(dir.path().join("video.mp4"))),
     ];
     let Err(PageError::Failed(told)) = parts_end(&job, results, &progress) else {

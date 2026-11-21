@@ -255,7 +255,7 @@ async fn receive_piece(shared: &Shared, job: &Job) -> Result<PathBuf> {
     if let Some(kept) = kept
         && saved.as_ref().is_err_and(|error| {
             !matches!(
-                error,
+                error.cause(),
                 wirecatch_engine::Error::HttpStatus {
                     status: 403 | 410 | 429 | 503,
                     ..

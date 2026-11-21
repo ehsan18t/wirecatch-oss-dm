@@ -245,10 +245,16 @@ pub(crate) async fn open(
             turn,
             remaining,
         })),
-        Err(H3Failure::Answer(mut failure)) => {
-            failure.pace(turn.as_ref(), false);
-            Err(failure)
+        Err(H3Failure::Status(mut failure, status)) => {
+            failure.pace(turn.as_ref(), session.is_original(&context.url));
+            if failure.paced_refusal.is_some() || http::is_busy(status) {
+                return Err(failure);
+            }
+            origin.mark_broken(&format_args!("server answered {status}"));
+            *slot = None;
+            Ok(None)
         }
+        Err(H3Failure::Answer(failure)) => Err(failure),
         Err(H3Failure::Unusable(why)) => {
             origin.mark_broken(&why);
             *slot = None;
@@ -259,8 +265,9 @@ pub(crate) async fn open(
 
 /// Why a request over HTTP/3 did not start a body.
 enum H3Failure {
-    /// The server answered "busy", or with another version of the file:
-    /// handled like the same answer over TCP.
+    /// A status that may require host pacing before deciding whether HTTP/3 can continue.
+    Status(Failure, StatusCode),
+    /// A changed file is handled like the same answer over TCP.
     Answer(Failure),
     /// HTTP/3 does not work here.
     Unusable(Error),
@@ -347,26 +354,19 @@ fn build_request(
 }
 
 /// Whether `response` is the range asked for, starting at `from`, of the same
-/// file: a busy answer and a changed file are handled like the same answer over
-/// TCP, any other answer means HTTP/3 is not usable here.
+/// file. A changed file is terminal. The caller decides whether an HTTP
+/// refusal should rest the host or continue over TCP.
 fn check_response(
     response: &::http::Response<()>,
     context: &RequestContext,
     from: u64,
 ) -> std::result::Result<(), H3Failure> {
     let status = response.status();
-    if http::is_busy(status) {
-        return Err(H3Failure::Answer(Failure::from_status(
-            status,
-            response.headers(),
-            &context.url,
-        )));
-    }
     if status != StatusCode::PARTIAL_CONTENT {
-        return Err(H3Failure::Unusable(Error::HttpStatus {
-            status: status.as_u16(),
-            url: context.url.to_string(),
-        }));
+        return Err(H3Failure::Status(
+            Failure::from_status(status, response.headers(), &context.url),
+            status,
+        ));
     }
     match http::check_partial(response.headers(), from, context.total, &context.validators) {
         Ok(_) => Ok(()),

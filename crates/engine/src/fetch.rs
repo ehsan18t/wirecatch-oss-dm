@@ -13,10 +13,9 @@ use reqwest::header::CONTENT_TYPE;
 use reqwest::{Client, Response, StatusCode};
 use tokio::io::{AsyncSeekExt, AsyncWriteExt, BufWriter};
 use tokio_util::sync::CancellationToken;
-use tracing::warn;
 use url::Url;
 
-use crate::error::{Chain, Error, IoAction, IoContext, Result};
+use crate::error::{Error, IoAction, IoContext, Result};
 use crate::http::{self, Clients, Failure, RequestRange, Session, Validators};
 use crate::limiter::{Paced, RateLimiter, pace};
 use crate::net_guard::{PrivateGuard, PrivateNetwork, private_guard};
@@ -457,15 +456,17 @@ impl Fetcher {
             };
             let progressed = position.counted > before;
             let delay = match attempts.after_request_failure(&f, progressed, segment) {
-                Next::GiveUp => return Err(f.error),
+                Next::GiveUp => {
+                    return Err(f.terminal(&attempts, self.inner.host_progress.as_deref()));
+                }
                 Next::Retry(delay) | Next::StepBackOrRetry(delay) => delay,
             };
             retry_wait = f.retry_wait(
                 self.inner.host_progress.as_ref(),
-                attempts.report(&f, segment),
+                attempts.last_retry(),
                 delay,
             );
-            warn!(error = %Chain(&f.error), %url, retry_in = ?delay, "request failed, retrying");
+            f.log_retry(delay, "request failed, retrying");
             tokio::select! {
                 () = self.inner.cancel.cancelled() => return Err(Error::Cancelled),
                 () = tokio::time::sleep(delay) => {}

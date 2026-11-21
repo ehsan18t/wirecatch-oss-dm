@@ -53,7 +53,7 @@ pub(super) async fn run_page(
         };
         let Some(delay) = delays.next() else {
             let error = describe::refused_after_refreshing(details.status);
-            return Err(details.with_error(error));
+            return Err(MediaFailure { error, details });
         };
         warn!(
             status = details.status,
@@ -179,7 +179,7 @@ async fn download_formats(
             Err(YtDlpError::AddressRefused { status, .. }) => {
                 let mut details = Details::new("format_transfer", "yt_dlp");
                 details.status = status;
-                return Err(PageError::Refused(details));
+                return Err(PageError::Refused(Box::new(details)));
             }
             Err(e) => {
                 return Err(PageError::Failed(
@@ -222,12 +222,9 @@ async fn reading(
         )
     })?;
     let info = Arc::new(info);
-    job.readings.put(
-        job.reading_owner,
-        job.clock.unix_millis(),
-        info.clone(),
-        cancel,
-    );
+    let now = job.clock.unix_millis();
+    job.readings
+        .put(job.reading_owner, (now, info.clone()), now, cancel);
     Ok(info)
 }
 
@@ -367,11 +364,10 @@ pub(super) fn parts_end(
         match result {
             Ok(Some(file)) => files.push(file),
             Ok(None) => return Ok(None),
-            Err(PartError::Transfer(e, retry)) => {
+            Err(PartError::Transfer(e)) => {
                 let told = wirecatch_messages::describe(&e, folder, worked_so_far(progress));
-                failed = failed.or_else(|| {
-                    Some(Details::engine(&e, "format_transfer", retry).with_error(told))
-                });
+                failed = failed
+                    .or_else(|| Some(Details::engine(&e, "format_transfer").with_error(told)));
             }
             Err(PartError::Page(PageError::Delegate)) => return Err(PageError::Delegate),
             Err(PartError::Page(PageError::Failed(error))) => failed = failed.or(Some(error)),
@@ -404,7 +400,7 @@ fn worked_so_far(progress: &MediaProgress) -> wirecatch_messages::Worked {
 pub(super) enum PartError {
     Page(PageError),
     /// A failure of the transfer, put in words once every part has ended.
-    Transfer(EngineError, Option<wirecatch_engine::Retry>),
+    Transfer(EngineError),
 }
 
 impl From<PageError> for PartError {
@@ -464,7 +460,7 @@ pub(super) async fn fetch_part(
             Ok(wirecatch_streams::Outcome::Completed { path, .. }) => path,
             Ok(_) | Err(wirecatch_streams::Error::Cancelled) => return Ok(None),
             Err(e) if stream_address_gone(&e) => {
-                return Err(PageError::Refused(Details::stream(&e)).into());
+                return Err(PageError::Refused(Box::new(Details::stream(&e))).into());
             }
             Err(e) => {
                 let error = describe::stream(&e, work, job.tools.as_ref(), job.chosen_by);
@@ -489,7 +485,7 @@ pub(super) async fn fetch_part(
             Ok(Outcome::Completed { .. }) => {
                 if holds_no_media(job, &path).await? {
                     let details = Details::new("format_transfer", "unexpected_content");
-                    return Err(PageError::Refused(details).into());
+                    return Err(PageError::Refused(Box::new(details)).into());
                 }
                 progress.finish_file(&file);
                 path
@@ -500,10 +496,10 @@ pub(super) async fn fetch_part(
             }
             Err(EngineError::CookiesChanged) => return Err(PageError::Delegate.into()),
             Err(e) if address_gone(&e) => {
-                let details = Details::engine(&e, "format_transfer", file.retry());
-                return Err(PageError::Refused(details).into());
+                let details = Details::engine(&e, "format_transfer");
+                return Err(PageError::Refused(Box::new(details)).into());
             }
-            Err(e) => return Err(PartError::Transfer(e, file.retry())),
+            Err(e) => return Err(PartError::Transfer(e)),
         }
     };
     mark_part_done(job, &file, &marker).await?;
@@ -544,7 +540,7 @@ fn stream_address_gone(error: &wirecatch_streams::Error) -> bool {
 /// A format address the server refused, or one that no longer leads to the file: a fresh one
 /// from the page usually works.
 pub(super) fn address_gone(e: &EngineError) -> bool {
-    match e {
+    match e.cause() {
         EngineError::HttpStatus { status, .. } => ytdlp::REFUSED_ADDRESS_STATUSES.contains(status),
         EngineError::InvalidUrl(_)
         | EngineError::TooManyRedirects { .. }
