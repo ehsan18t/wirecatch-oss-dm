@@ -529,8 +529,6 @@ mod tests {
             forgot_sign_in: forgot,
             browser_source: Some(Box::new(BrowserSource {
                 observed_page: None,
-                page_redirect_urls: Vec::new(),
-                redirect_urls: Vec::new(),
                 private_window: private,
                 private_session: private.then(|| "session-1".into()),
                 profile: profile.map(Into::into),
