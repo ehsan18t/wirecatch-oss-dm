@@ -283,6 +283,7 @@ impl Manager {
                 deciding: None,
             };
             state.handovers.insert(&capture.handover_id, handover);
+            super::refresh::claim_kind_switch(&mut state, &capture.handover_id);
             self.emit(UiEvent::CaptureRepeated(Repeated::Question(id)));
             return Ok(reply);
         }
@@ -310,6 +311,7 @@ impl Manager {
                 deciding: None,
             },
         );
+        super::refresh::claim_kind_switch(&mut state, &capture.handover_id);
         Ok(reply)
     }
 
@@ -608,10 +610,12 @@ impl Manager {
                     for handover in &pending.handovers {
                         state.handovers.retarget(handover, Target::Confirmed(row));
                     }
+                    if let Some(old) = state.handovers.take_replaced(&pending.handovers) {
+                        self.take_over(&mut state, old, row);
+                    }
                 }
                 self.gave_way(&pending);
                 self.emit(UiEvent::ConfirmationClosed { id });
-                self.take_over(&pending.handovers, row).await;
                 if matches!(picker, Picker::Person) {
                     self.remember_media_choice(&choice, &selection);
                 }

@@ -350,6 +350,7 @@ fn restore_entry(
         chosen_by: stored.chosen_by,
         naming: stored.naming,
         expect: stored.answers.expect,
+        replaces: stored.answers.replaces,
         run: None,
         resume_first: false,
         through_proxy: None,

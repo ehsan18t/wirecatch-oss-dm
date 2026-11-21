@@ -18,7 +18,7 @@ use wirecatch_sites::local_network::ChosenBy;
 use wirecatch_store::NameChoice;
 
 use super::Manager;
-use super::arrival::{Fetch, Kind, NewEntry, Wanted};
+use super::arrival::{CaptureReceipt, Fetch, Kind, NewEntry, Wanted};
 use super::file_exists::give_up_the_name;
 use super::handovers::{Handover, Target};
 use super::placement::{Candidate, QueueRequest};
@@ -424,12 +424,14 @@ impl Manager {
     /// Hides downloads at once, as [`remove`](Self::remove) does, and finishes
     /// removing them in the background.
     pub(super) fn remove_in_background(&self, ids: Vec<DownloadId>) {
-        let (under_way, private) = {
-            let mut state = self.lock();
-            let private = any_private(&state, &ids);
-            self.begin_removing(&mut state, &ids);
-            (removal_under_way(&mut state), private)
-        };
+        self.remove_in_background_locked(&mut self.lock(), ids);
+    }
+
+    /// Begins removal while the caller's decision is still protected by the manager lock.
+    pub(super) fn remove_in_background_locked(&self, state: &mut State, ids: Vec<DownloadId>) {
+        let private = any_private(state, &ids);
+        self.begin_removing(state, &ids);
+        let under_way = removal_under_way(state);
         let manager = self.clone();
         self.spawn(super::private_sessions::private_scope(
             private,
@@ -482,7 +484,19 @@ impl Manager {
         entry.refuse_if_stranded()?;
         self.close_questions_of(state, id);
         state.handovers.forget_takeovers_of(id);
+        let replacements: Vec<_> = state
+            .unfinished()
+            .filter(|entry| entry.replaces == Some(id))
+            .map(|entry| entry.row.id)
+            .collect();
+        for replacement in replacements {
+            if let Ok(entry) = state.entry_mut(replacement) {
+                entry.replaces = None;
+                self.save(state, replacement);
+            }
+        }
         let entry = state.entry_mut(id)?;
+        entry.replaces = None;
         match replacement {
             Replacement::Pasted(from) => {
                 let same_site =
@@ -772,7 +786,11 @@ impl Manager {
         let private_session = super::private_sessions::session_of(&fetch.origin);
         self.refused_private_session(private_session.as_deref())?;
         let id = self.allocate_download(state, &kind);
-        let (handover, expect, media, video_check) = kind.into_parts();
+        let (receipt, expect, media, video_check) = kind.into_parts();
+        let replaces = match &receipt {
+            Some(CaptureReceipt::Confirmed(handovers)) => state.handovers.take_replaced(handovers),
+            _ => None,
+        };
         let position = state.ids.position();
         let row = DownloadSummary {
             id,
@@ -817,6 +835,7 @@ impl Manager {
                 folder: wanted.folder.map(|f| f.to_string_lossy().into_owned()),
             },
             expect,
+            replaces,
             run: None,
             resume_first: false,
             through_proxy: None,
@@ -834,11 +853,25 @@ impl Manager {
             activity: Activity::default(),
             private_session,
         });
+        self.finish_adding_entry(state, id, receipt)
+    }
+
+    fn finish_adding_entry(
+        &self,
+        state: &mut State,
+        id: DownloadId,
+        receipt: Option<CaptureReceipt>,
+    ) -> Result<DownloadSummary> {
         self.save(state, id);
         self.reconcile(state);
         let row = state.entry(id)?.summary();
-        if let Some(handover) = &handover {
-            remember_handover(state, handover, &row);
+        if let Some(CaptureReceipt::Automatic(handover)) = receipt {
+            remember_handover(state, &handover, &row);
+            if row.status == DownloadStatus::Queued {
+                self.accept_captured_file(state, &handover, id);
+            } else if capture_action(&row) == AddAction::Queued {
+                state.handovers.discard_replacement(&handover);
+            }
         }
         Ok(row)
     }

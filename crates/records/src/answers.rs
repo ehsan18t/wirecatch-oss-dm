@@ -1,6 +1,7 @@
 //! What has been decided about a download and must hold after a restart.
 
 use serde::{Deserialize, Serialize};
+use wirecatch_protocol::DownloadId;
 
 /// What a download does about the file already in its folder, once decided (D88).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -46,4 +47,7 @@ pub struct Answers {
     pub confirmed_name: Option<String>,
     /// What the server's last answer means for the next run, so no message promises more.
     pub next_run: NextRun,
+    /// The watched download this file replaces once its server offers the file (D286.5).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replaces: Option<DownloadId>,
 }

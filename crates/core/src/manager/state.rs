@@ -229,6 +229,8 @@ pub(super) struct Entry {
     pub naming: NameChoice,
     /// What the browser saw of a captured file, checked when the server answers.
     pub expect: Option<Expectation>,
+    /// See [`Answers::replaces`].
+    pub replaces: Option<DownloadId>,
     /// Present while the engine works on it.
     pub run: Option<Run>,
     /// Was running when the app last stopped, so it gets the first free slot.
@@ -880,6 +882,7 @@ impl Entry {
                 plain_name: self.plain_name.clone(),
                 confirmed_name: self.confirmed_name.clone(),
                 next_run: self.next_run,
+                replaces: self.replaces,
             },
             files: self.files.clone(),
             activity: self.activity.clone(),
@@ -980,6 +983,7 @@ pub(super) fn idle_entry(url: &str, chosen_by: ChosenBy) -> Entry {
         next_run: NextRun::Continues,
         confirmed_name: None,
         offered_file: false,
+        replaces: None,
         stranded: None,
         files: DownloadFiles::default(),
         media_job: None,
@@ -1028,6 +1032,7 @@ mod tests {
             next_run: NextRun::Continues,
             confirmed_name: None,
             offered_file: false,
+            replaces: None,
             stranded: None,
             files: DownloadFiles::default(),
             media_job: None,

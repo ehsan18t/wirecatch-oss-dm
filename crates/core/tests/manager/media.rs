@@ -1473,18 +1473,27 @@ fn file_from_the_page(url: &str) -> NewDownload {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_file_captured_for_a_watched_stream_takes_its_place() -> TestResult {
+async fn a_queued_file_takes_the_place_of_a_watched_stream_after_reopening() -> TestResult {
     let server = FileServer::start().await;
     hls(&server, false, false);
-    let h = Harness::new().await?;
+    server.put("video.mp4", test_data(KIB_USIZE));
+    let mut h = Harness::new().await?;
     let (stream, result) = watch_a_stream(&h, &server).await?;
+    h.manager.pause(stream)?;
     let mut later = wirecatch_test_support::downloads::capture("https://files.example/later.bin");
     later.browser_route = None;
     let later = h.manager.add_capture(later).await?.id.ok_or("not added")?;
 
-    let file = file_from_the_page("https://files.example/video.mp4");
+    h.manager.pause(later)?;
+    let file = file_from_the_page(server.url("video.mp4").as_str());
     let added = h.manager.add_capture(file).await?.id.ok_or("not added")?;
     tokio::time::timeout(PATIENCE, result).await??;
+    assert_eq!(h.row(stream).status, DownloadStatus::Paused);
+
+    h.shutdown().await;
+    h.reopen().await?;
+    h.manager.set_queue_paused(DEFAULT_QUEUE_ID, false)?;
+    h.wait_status(added, DownloadStatus::Completed).await;
 
     let order: Vec<_> = h
         .manager
@@ -1501,11 +1510,13 @@ async fn a_file_captured_for_a_watched_stream_takes_its_place() -> TestResult {
 async fn a_confirmed_file_takes_the_place_of_a_watched_stream() -> TestResult {
     let server = FileServer::start().await;
     hls(&server, false, false);
+    server.put("video.mp4", test_data(KIB_USIZE));
     let h = Harness::new().await?;
     let (stream, result) = watch_a_stream(&h, &server).await?;
     tune(&h.manager, |s| s.extension.ask_before_download = true)?;
 
-    let file = file_from_the_page("https://files.example/video.mp4");
+    h.manager.pause(stream)?;
+    let file = file_from_the_page(server.url("video.mp4").as_str());
     assert_eq!(h.manager.add_capture(file).await?.id, None);
     // The question about the file takes over from the watch.
     tokio::time::timeout(PATIENCE, result).await??;
@@ -1519,6 +1530,9 @@ async fn a_confirmed_file_takes_the_place_of_a_watched_stream() -> TestResult {
         .manager
         .confirm_capture(asked.id, CaptureConfirmation::default())
         .await?;
+    assert_eq!(h.row(stream).status, DownloadStatus::Paused);
+    h.manager.set_queue_paused(DEFAULT_QUEUE_ID, false)?;
+    h.wait_status(added, DownloadStatus::Completed).await;
 
     let order: Vec<_> = h
         .manager
@@ -1559,6 +1573,123 @@ async fn a_refused_file_leaves_the_watched_stream_and_its_watch() -> TestResult 
     assert_eq!(order, [stream]);
     assert!(matches!(
         result.try_recv(),
+        Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+    ));
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_queued_or_confirmed_file_refused_at_start_leaves_the_watched_stream() -> TestResult {
+    let server = FileServer::start().await;
+    hls(&server, false, false);
+    let refusing = TestServer::start(
+        test_data(KIB_USIZE),
+        Config {
+            refuse_paths: vec![("/video.mp4".into(), 410)],
+            ..Config::default()
+        },
+    )
+    .await;
+    for ask in [false, true] {
+        let h = Harness::new().await?;
+        let (stream, result) = watch_a_stream(&h, &server).await?;
+        h.manager.pause(stream)?;
+        tune(&h.manager, |s| s.extension.ask_before_download = ask)?;
+
+        let file = file_from_the_page(refusing.url("video.mp4").as_str());
+        let reply = h.manager.add_capture(file).await?;
+        tokio::time::timeout(PATIENCE, result).await??;
+        let added = if let Some(id) = reply.id {
+            id
+        } else {
+            let [asked] = h
+                .manager
+                .pending_confirmations()
+                .try_into()
+                .map_err(|_| "not one question")?;
+            h.manager
+                .confirm_capture(asked.id, CaptureConfirmation::default())
+                .await?
+        };
+
+        h.manager.set_queue_paused(DEFAULT_QUEUE_ID, false)?;
+        h.wait_status(added, DownloadStatus::Failed).await;
+        assert_eq!(h.row(stream).status, DownloadStatus::Paused);
+    }
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cancelling_the_replacement_files_name_question_keeps_the_watched_stream() -> TestResult {
+    let server = FileServer::start().await;
+    hls(&server, false, false);
+    server.put("video.mp4", test_data(KIB_USIZE));
+    let h = Harness::new().await?;
+    tune(&h.manager, |settings| {
+        settings.when_file_exists = WhenFileExists::Ask;
+    })?;
+
+    let url = server.url("video.mp4");
+    let existing = h.add(url.as_str()).await?;
+    h.wait_status(existing.id, DownloadStatus::Completed).await;
+    let (stream, result) = watch_a_stream(&h, &server).await?;
+    h.manager.pause(stream)?;
+    h.manager.set_queue_paused(DEFAULT_QUEUE_ID, false)?;
+
+    let mut ui = h.manager.subscribe();
+    let reply = h
+        .manager
+        .add_capture(file_from_the_page(url.as_str()))
+        .await?;
+    tokio::time::timeout(PATIENCE, result).await??;
+    let question = next_event(
+        &mut ui,
+        "the replacement's name is taken",
+        |event| match event {
+            UiEvent::FileExistsRequested(question) => Some(question.clone()),
+            _ => None,
+        },
+    )
+    .await;
+    assert_eq!(reply.id, Some(question.download));
+    h.manager.answer_file_exists(
+        question.id,
+        FileExistsAnswer {
+            choice: FileExistsChoice::Cancel,
+            remember: false,
+        },
+    )?;
+    assert_eq!(h.row(stream).status, DownloadStatus::Paused);
+    assert_eq!(h.row(question.download).status, DownloadStatus::Cancelled);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_in_flight_file_capture_cannot_answer_a_new_watch_on_the_same_stream() -> TestResult {
+    let server = FileServer::start().await;
+    hls(&server, false, false);
+    let waiting = TestServer::start(test_data(KIB_USIZE), Config::default()).await;
+    waiting.hold();
+    let h = Harness::new().await?;
+    let (stream, first) = watch_a_stream(&h, &server).await?;
+    h.manager.pause(stream)?;
+    h.manager.set_queue_paused(DEFAULT_QUEUE_ID, false)?;
+
+    let file = file_from_the_page(waiting.url("video.mp4").as_str());
+    let manager = h.manager.clone();
+    let capturing = tokio::spawn(async move { manager.add_capture(file).await });
+    waiting.wait_for_request("/video.mp4", PATIENCE).await;
+
+    let (saved, mut second) = tokio::sync::oneshot::channel();
+    h.manager
+        .watch_link(stream, saved, wirecatch_engine::CancellationToken::new())?;
+    assert!(first.await.is_err());
+    waiting.release();
+    let added = tokio::time::timeout(PATIENCE, capturing).await???.id;
+    assert!(added.is_some());
+    assert_eq!(h.row(stream).status, DownloadStatus::Paused);
+    assert!(matches!(
+        second.try_recv(),
         Err(tokio::sync::oneshot::error::TryRecvError::Empty)
     ));
     Ok(())

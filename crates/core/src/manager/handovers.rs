@@ -2,6 +2,7 @@
 //! repeated add gets the same answer and a withdrawal finds what it refers to.
 
 use std::collections::{HashMap, VecDeque};
+use std::sync::Arc;
 
 use wirecatch_engine::CancellationToken;
 use wirecatch_protocol::extension::AddedDownload;
@@ -56,7 +57,15 @@ pub(super) struct Handovers {
     order: VecDeque<String>,
     known: HashMap<String, Handover>,
     /// The watched download that the download added for a handover replaces (D286.5).
-    takeovers: HashMap<String, DownloadId>,
+    takeovers: HashMap<String, Takeover>,
+}
+
+#[derive(Debug)]
+struct Takeover {
+    download: DownloadId,
+    /// The watch must still be active at the first successful answer or question.
+    /// Once a question has claimed it, only the question's outcome matters.
+    watch: Option<Arc<()>>,
 }
 
 impl Handovers {
@@ -86,24 +95,59 @@ impl Handovers {
         }
     }
 
-    /// The download added for handover `id` is to replace `watched`.
-    pub fn replace_with(&mut self, id: &str, watched: DownloadId) {
-        self.takeovers.insert(id.to_string(), watched);
+    pub fn has_replacement(&self, id: &str) -> bool {
+        self.takeovers.contains_key(id)
     }
 
-    /// The download that the one added for handover `id` replaces, taken out.
-    pub fn take_replaced(&mut self, id: &str) -> Option<DownloadId> {
-        self.takeovers.remove(id)
+    /// The download added for handover `id` is to replace `download`.
+    pub fn replace_with(&mut self, id: &str, download: DownloadId, watch: Arc<()>) {
+        self.takeovers.entry(id.to_string()).or_insert(Takeover {
+            download,
+            watch: Some(watch),
+        });
     }
 
-    /// The download that the one added for handover `id` is to replace.
-    pub fn replaced_by(&self, id: &str) -> Option<DownloadId> {
-        self.takeovers.get(id).copied()
+    /// Lets the capture claim its own watch once. A cancelled or superseded
+    /// watch leaves the capture on its regular path.
+    pub fn claim_replacement(&mut self, id: &str, watch: Option<&Arc<()>>) -> bool {
+        let Some(takeover) = self.takeovers.get_mut(id) else {
+            return false;
+        };
+        let Some(expected) = takeover.watch.as_ref() else {
+            return false;
+        };
+        if watch.is_some_and(|watch| Arc::ptr_eq(watch, expected)) {
+            takeover.watch = None;
+            true
+        } else {
+            self.discard_replacement(id);
+            false
+        }
     }
 
-    /// `watched` got a link of its own, so no other download replaces it.
+    /// The watched download that the answer to a claimed capture can replace.
+    pub fn take_replaced(&mut self, handovers: &[String]) -> Option<DownloadId> {
+        handovers
+            .iter()
+            .filter_map(|id| self.take_replacement(id))
+            .last()
+    }
+
+    pub fn take_replacement(&mut self, id: &str) -> Option<DownloadId> {
+        self.takeovers
+            .remove(id)
+            .filter(|takeover| takeover.watch.is_none())
+            .map(|takeover| takeover.download)
+    }
+
+    pub fn discard_replacement(&mut self, id: &str) {
+        self.takeovers.remove(id);
+    }
+
+    /// The watched download got a link of its own, so no other one replaces it.
     pub fn forget_takeovers_of(&mut self, watched: DownloadId) {
-        self.takeovers.retain(|_, replaced| *replaced != watched);
+        self.takeovers
+            .retain(|_, takeover| takeover.download != watched);
     }
 
     /// The downloads of handovers still waiting for the server.
@@ -116,6 +160,9 @@ impl Handovers {
 
     /// Points a handover at what it became, keeping its first answer.
     pub fn retarget(&mut self, id: &str, target: Target) {
+        if target == Target::Dismissed {
+            self.discard_replacement(id);
+        }
         if let Some(handover) = self.known.get_mut(id) {
             handover.target = target;
         }

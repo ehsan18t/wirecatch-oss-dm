@@ -39,12 +39,16 @@ pub(super) struct Wanted {
     pub category: Option<Category>,
 }
 
+pub(super) enum CaptureReceipt {
+    Automatic(String),
+    Confirmed(Vec<String>),
+}
+
 pub(super) enum Kind {
     /// `video_check`: a web page the server answers with is read for its video (D51).
     File { video_check: bool },
     Captured {
-        /// Set while the extension waits for the answer.
-        handover: Option<String>,
+        receipt: CaptureReceipt,
         expect: Expectation,
         /// A video or audio file linked directly.
         media: Option<StoredMedia>,
@@ -62,8 +66,11 @@ pub(super) enum Kind {
 impl Kind {
     pub fn handover(&self) -> Option<&str> {
         match self {
-            Self::Captured { handover, .. } => handover.as_deref(),
-            Self::File { .. } | Self::Media { .. } => None,
+            Self::Captured {
+                receipt: CaptureReceipt::Automatic(handover),
+                ..
+            } => Some(handover),
+            _ => None,
         }
     }
 
@@ -71,7 +78,7 @@ impl Kind {
     pub fn into_parts(
         self,
     ) -> (
-        Option<String>,
+        Option<CaptureReceipt>,
         Option<Expectation>,
         Option<StoredMedia>,
         bool,
@@ -79,10 +86,10 @@ impl Kind {
         match self {
             Self::File { video_check } => (None, None, None, video_check),
             Self::Captured {
-                handover,
+                receipt,
                 expect,
                 media,
-            } => (handover, Some(expect), media, false),
+            } => (Some(receipt), Some(expect), media, false),
             Self::Media { media, .. } => (None, None, Some(media), false),
         }
     }

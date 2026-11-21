@@ -23,11 +23,12 @@ use wirecatch_sites::cookie_scope;
 use wirecatch_sites::local_network::{self, ChosenBy};
 
 use super::Manager;
-use super::arrival::{Fetch, Kind, NewEntry, Wanted};
+use super::arrival::{CaptureReceipt, Fetch, Kind, NewEntry, Wanted};
 use super::downloads::{capture_action, parse_url};
 use super::handovers::{self, Handover, Target};
 use super::placement::{Candidate, Placed, QueueRequest};
 use super::questions::Withdrawn;
+use super::refresh::claim_kind_switch;
 use super::state::{Expectation, Pending, State};
 use crate::error::{CoreError, Result};
 use crate::headers::Origin;
@@ -93,18 +94,14 @@ impl Manager {
             return Ok(refreshed);
         }
         let handover = capture.handover_id.clone();
-        let joined = match self.join_unfinished(&capture, &url) {
-            Ok(None) => None,
-            Ok(Some(joined)) => Some(Ok(joined)),
-            Err(e) => Some(Err(e)),
+        let added = match self.join_unfinished(&capture, &url) {
+            Ok(Some(joined)) => Ok(joined),
+            Ok(None) => self.add_new_capture(capture, url, chosen_by, arrived).await,
+            Err(e) => Err(e),
         };
-        if let Some(joined) = joined {
-            // Joined to a download already in the list, it replaces nothing.
-            self.settle_kind_switch(&handover, false);
-            return joined;
+        if added.is_err() {
+            self.lock().handovers.discard_replacement(&handover);
         }
-        let added = self.add_new_capture(capture, url, chosen_by, arrived).await;
-        self.settle_kind_switch(&handover, added.is_ok());
         added
     }
 
@@ -144,7 +141,10 @@ impl Manager {
                 wanted: wanted_by(&capture),
                 placed,
                 start: true,
-                kind: captured(&capture, Some(capture.handover_id.clone())),
+                kind: captured(
+                    &capture,
+                    CaptureReceipt::Automatic(capture.handover_id.clone()),
+                ),
             })
             .await?;
         let Some(row) = added else {
@@ -165,19 +165,13 @@ impl Manager {
             id: Some(row.id),
             action: capture_action(&row),
         };
-        let handovers = [handover.to_string()];
         if reply.action == AddAction::Queued {
             // The link has not been tried; the extension decides what that means.
-            let id = row.id;
             self.emit(UiEvent::Captured(row));
-            self.take_over(&handovers, id).await;
             return Ok(reply);
         }
         match self.await_answer(row.id, handover, arrived, &reply).await {
-            Ok(()) => {
-                self.take_over(&handovers, row.id).await;
-                Ok(reply)
-            }
+            Ok(()) => Ok(reply),
             Err(reason) => {
                 // Answer at once: stopping the attempt can take up to the stop
                 // timeout, and the extension does not wait that long. The attempt
@@ -231,6 +225,7 @@ impl Manager {
             }
         };
         state.handovers.decide(handover, reply.clone());
+        self.accept_captured_file(&mut state, handover, id);
         self.emit(UiEvent::Captured(summary));
         Ok(())
     }
@@ -290,8 +285,8 @@ impl Manager {
     /// [`CoreError::Closed`] once the manager has shut down. A handover that is unknown
     /// or already started is an outcome, not an error.
     pub fn withdraw_capture(&self, handover_id: &str) -> Result<WithdrawOutcome> {
+        let mut state = self.lock_open()?;
         let download = {
-            let mut state = self.lock_open()?;
             let Some(known) = state.handovers.get(handover_id).cloned() else {
                 return Ok(WithdrawOutcome::NotFound);
             };
@@ -332,7 +327,7 @@ impl Manager {
         };
         // Hidden and never started again from now on; stopping it may take up to
         // the stop timeout, which the extension should not have to wait for.
-        self.remove_in_background(vec![download]);
+        self.remove_in_background_locked(&mut state, vec![download]);
         Ok(WithdrawOutcome::Withdrawn)
     }
 
@@ -398,7 +393,6 @@ impl Manager {
                     }
                 }
                 self.emit(UiEvent::ConfirmationClosed { id });
-                self.take_over(&pending.handovers, row.id).await;
                 Ok(row.id)
             }
             Err(e) => {
@@ -528,6 +522,7 @@ impl Manager {
             deciding: None,
         };
         state.handovers.insert(handover, record);
+        state.handovers.discard_replacement(handover);
         self.emit(UiEvent::CaptureRepeated(Repeated::Download(id)));
         Some(reply)
     }
@@ -586,6 +581,7 @@ impl Manager {
                 deciding: None,
             };
             state.handovers.insert(&capture.handover_id, handover);
+            claim_kind_switch(&mut state, &capture.handover_id);
             self.emit(UiEvent::CaptureRepeated(Repeated::Question(id)));
             return Ok(reply);
         }
@@ -616,6 +612,7 @@ impl Manager {
                 deciding: None,
             },
         );
+        claim_kind_switch(&mut state, &capture.handover_id);
         state.pending.insert(
             id,
             Pending {
@@ -669,7 +666,10 @@ impl Manager {
                     answer.queue,
                 ),
                 start: !answer.later,
-                kind: captured(request, None),
+                kind: captured(
+                    request,
+                    CaptureReceipt::Confirmed(pending.handovers.clone()),
+                ),
             })
             .await?;
         match added {
@@ -717,9 +717,9 @@ fn wanted_by(capture: &NewDownload) -> Wanted {
 }
 
 /// `handover`: set while the extension waits for the answer.
-fn captured(capture: &NewDownload, handover: Option<String>) -> Kind {
+fn captured(capture: &NewDownload, receipt: CaptureReceipt) -> Kind {
     Kind::Captured {
-        handover,
+        receipt,
         expect: expectation_of(capture),
         media: direct_media(capture),
     }
