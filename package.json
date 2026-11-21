@@ -9,7 +9,7 @@
   },
   "scripts": {
     "gate": "node scripts/gate.mjs",
-    "prepare": "node scripts/install-hooks.mjs",
+    "prepare": "node scripts/prepare-rust-backports.mjs && node scripts/install-hooks.mjs",
     "protocol:generate": "pnpm --filter @wirecatch/protocol generate",
     "product:generate": "node scripts/product/generate.mjs",
     "check": "node scripts/gate.mjs js-check",

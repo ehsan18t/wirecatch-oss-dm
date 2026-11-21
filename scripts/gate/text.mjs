@@ -8,8 +8,7 @@ const EM_DASH = 0x2014;
 // The character is built and the entity split so this line does not match itself. The character itself, not `\x{2014}`, goes to git: without a UTF-8 locale git's PCRE refuses code points above 255, and a literal matches its bytes in any locale.
 export const EM_DASH_LITERAL = `${String.fromCodePoint(EM_DASH)}|&${'mdash;'}`;
 const EM_DASH_ESCAPED = String.raw`\\u2014|\\u\{2014\}`;
-// Preserve upstream source verbatim. Credential scanning still covers vendor/.
-const TEXT_SCOPE = ['.', ':!Cargo.lock', ':!pnpm-lock.yaml', ':!vendor/**'];
+const TEXT_SCOPE = ['.', ':!Cargo.lock', ':!pnpm-lock.yaml'];
 const ESCAPE_SCOPE = [
   '*.ts',
   '*.js',
