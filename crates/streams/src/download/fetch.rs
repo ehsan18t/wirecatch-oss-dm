@@ -16,7 +16,6 @@ use tracing::{debug, warn};
 use url::Url;
 use wirecatch_engine::{Fetcher, FileWork};
 
-use super::pace::{HOSTS, REFUSED_TRIES};
 use super::{blocking, discarded};
 use crate::crypto;
 use crate::error::{Error, KeyProblem, Result, map_engine};
@@ -96,7 +95,6 @@ pub(super) fn queue(plan: &mut Plan, work: &WorkDir) -> Queue {
                     index,
                     number,
                     piece,
-                    refusals: 0,
                 });
             }
         }
@@ -115,7 +113,7 @@ async fn fetch_all(shared: Arc<Shared>, workers: usize) -> Result<()> {
     let mut first_error = None;
     while let Some(joined) = set.join_next().await {
         if let Err(e) = joined.map_err(Error::Task).and_then(|r| r) {
-            warn!(error = %e, "segment download failed; stopping the others");
+            debug!("segment download failed; stopping the others");
             shared.stop.cancel();
             first_error.get_or_insert(e);
         }
@@ -130,8 +128,6 @@ pub(super) struct Job {
     /// Position among all pieces, from 1, for messages.
     number: usize,
     piece: Piece,
-    /// How many times its host refused it in this run.
-    refusals: u32,
 }
 
 pub(super) struct Shared {
@@ -152,55 +148,15 @@ async fn worker(shared: Arc<Shared>) -> Result<()> {
         if shared.stop.is_cancelled() {
             return Ok(());
         }
-        let Some(mut job) = lock(&shared.queue).pop_front() else {
+        let Some(job) = lock(&shared.queue).pop_front() else {
             return Ok(());
         };
-        let host = host_of(&job.piece.url);
-        let Some(turn) = shared.stop.run_until_cancelled(HOSTS.turn(&host)).await else {
-            return Ok(());
-        };
-        let fetched = fetch_piece(&shared, &job, &mut buffer).await;
-        match fetched {
-            Ok(()) => {
-                HOSTS.served(&host);
-                shared.progress.segment_done();
-            }
-            // Cancelled, or stopped because another segment failed.
+        match fetch_piece(&shared, &job, &mut buffer).await {
+            Ok(()) => shared.progress.segment_done(),
             Err(_) if shared.stop.is_cancelled() => return Ok(()),
-            Err(e) if job.refusals < REFUSED_TRIES && throttled(&e, &shared) => {
-                warn!(error = %e, host, "the host refused a segment; slowing down and trying it again");
-                HOSTS.refused(&host);
-                drop(turn);
-                job.refusals += 1;
-                lock(&shared.queue).push_front(job);
-            }
             Err(e) => return Err(e),
         }
     }
-}
-
-/// The host and port a piece comes from, which [`HOSTS`] paces.
-fn host_of(url: &Url) -> String {
-    format!(
-        "{}:{}",
-        url.host_str().unwrap_or_default(),
-        url.port_or_known_default().unwrap_or_default()
-    )
-}
-
-/// Whether `error` is a host limiting how much it is asked: a refusal of a segment after it served others of this stream.
-fn throttled(error: &Error, shared: &Shared) -> bool {
-    let refused = matches!(
-        error,
-        Error::Segment {
-            cause: wirecatch_engine::Error::HttpStatus {
-                status: 403 | 410 | 429,
-                ..
-            },
-            ..
-        }
-    );
-    refused && shared.progress.segments_done() > 0
 }
 
 /// Fetches one piece into its `.part` file, decrypts it if needed, moves it
@@ -284,7 +240,7 @@ async fn receive_piece(shared: &Shared, job: &Job) -> Result<PathBuf> {
     let counted = Arc::new(AtomicU64::new(0));
     let save = |kept: u64| {
         let (progress, counted) = (shared.progress.clone(), counted.clone());
-        shared.fetcher.save_after(
+        shared.fetcher.save_segment_after(
             &job.piece.url,
             job.piece.range.clone(),
             &part,
@@ -297,7 +253,15 @@ async fn receive_piece(shared: &Shared, job: &Job) -> Result<PathBuf> {
     };
     let mut saved = save(kept.unwrap_or(0)).await;
     if let Some(kept) = kept
-        && saved.is_err()
+        && saved.as_ref().is_err_and(|error| {
+            !matches!(
+                error.cause(),
+                wirecatch_engine::Error::HttpStatus {
+                    status: 403 | 410 | 429 | 503,
+                    ..
+                }
+            )
+        })
         && !shared.stop.is_cancelled()
     {
         warn!(

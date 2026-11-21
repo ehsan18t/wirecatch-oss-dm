@@ -156,6 +156,7 @@ pub(crate) struct Attempts {
     retries: Retries,
     /// Attempts in a row that received nothing.
     failures: u32,
+    last_retry: Option<crate::Retry>,
     /// Of those, attempts the server turned away.
     refusals: u32,
 }
@@ -167,6 +168,7 @@ impl Attempts {
             refusal_policy,
             retries,
             failures: 0,
+            last_retry: None,
             refusals: 0,
         }
     }
@@ -181,17 +183,58 @@ impl Attempts {
         self.retries.max
     }
 
-    /// Decides what follows a failed attempt. `progressed` says whether it
-    /// received anything, which resets the count.
+    /// The last retry applied to this request, with the budget used for that decision.
+    pub fn last_retry(&self) -> Option<crate::Retry> {
+        self.last_retry
+    }
+
+    fn budget(&self, ambiguous_segment: bool) -> u32 {
+        if ambiguous_segment {
+            self.retries.max.min(4)
+        } else {
+            self.retries.max
+        }
+    }
+
+    /// Decides what follows a failed attempt. Progress resets the count.
     ///
     /// With [`Refusals::StepBack`], a refusal is retried even when the error
     /// alone would not be: an FTP server turning away one more login (530)
     /// already accepted the same login on another connection.
+    pub fn after_request_failure(
+        &mut self,
+        failure: &http::Failure,
+        progressed: bool,
+        segment: bool,
+    ) -> Next {
+        self.decide(
+            &failure.error,
+            failure.retry_after,
+            progressed,
+            failure
+                .paced_refusal
+                .is_some_and(|refusal| refusal.ambiguous),
+            segment,
+        )
+    }
+
+    #[cfg(test)]
     pub fn after_failure(
         &mut self,
         error: &Error,
         retry_after: Option<Duration>,
         progressed: bool,
+    ) -> Next {
+        self.decide(error, retry_after, progressed, false, false)
+    }
+
+    fn decide(
+        &mut self,
+        error: &Error,
+        retry_after: Option<Duration>,
+        progressed: bool,
+        paced_refusal: bool,
+        segment: bool,
     ) -> Next {
         // A proxy that refuses connections is not running, and waiting does not
         // start it (D102).
@@ -201,14 +244,15 @@ impl Attempts {
             return Next::GiveUp;
         }
         let refused = self.refusal_policy == Refusals::StepBack && is_refusal(error);
-        if !(error.is_retryable() || refused) {
+        if !(error.is_retryable() || refused || paced_refusal) {
             return Next::GiveUp;
         }
         // Only attempts that received nothing count against the budget
         // (`DownloadOptions::max_retries`).
+        let max = self.budget(segment && paced_refusal);
         if progressed {
             self.failures = 0;
-        } else if self.failures >= self.retries.max {
+        } else if self.failures >= max {
             return Next::GiveUp;
         } else {
             self.failures += 1;
@@ -218,6 +262,10 @@ impl Attempts {
         } else {
             0
         };
+        self.last_retry = Some(crate::Retry {
+            attempt: self.retry(),
+            of: max,
+        });
         let backoff = self.retries.backoff;
         let delay = backoff.delay(self.failures, retry_after);
         let long_wait = retry_after.is_some();

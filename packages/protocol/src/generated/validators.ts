@@ -2009,6 +2009,14 @@ export function isWaitReason(value: unknown): value is WaitReason {
       ))(value) ||
     ((value1: unknown): boolean =>
       isRecord(value1) &&
+      value1['type'] === 'host_wait' &&
+      ((value2: unknown): boolean =>
+        isRecord(value2) &&
+        typeof value2['seconds'] === 'number' &&
+        (typeof value2['attempt'] === 'number' || value2['attempt'] === null) &&
+        (typeof value2['of'] === 'number' || value2['of'] === null))(value1['data']))(value) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) &&
       value1['type'] === 'reconnecting' &&
       ((value2: unknown): boolean =>
         isRecord(value2) &&

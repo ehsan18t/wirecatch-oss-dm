@@ -22,8 +22,9 @@ use crate::output::Container;
 /// The longest extension a finished file of yt-dlp's may have.
 const MAX_RESULT_EXT: usize = 10;
 
-/// Where yt-dlp saves the finished file, inside the folder it runs in.
+/// Relative to yt-dlp's home path.
 const OUTPUT_TEMPLATE: &str = "media.%(ext)s";
+const OUTPUT_DIR_ENV: &str = "WIRECATCH_YTDLP_OUTPUT_DIR";
 
 /// How a download by yt-dlp itself ended without failing.
 #[derive(Debug)]
@@ -117,19 +118,17 @@ async fn download_once(
     if trusted.is_some() {
         args.splice(0..0, super::Trusted::args());
     }
+    let mut environment = super::run_environment(ctx, scratch.path(), trusted.as_ref());
+    environment.push((OUTPUT_DIR_ENV.into(), Some(work.as_os_str().into())));
     let mut printed = None::<PathBuf>;
     let result = process::run(
         &ctx.tools.ytdlp,
         &args,
-        work,
+        scratch.path(),
         RunOptions::lines()
             .with_idle_timeout(STALL_TIMEOUT)
             .watching(work.to_path_buf())
-            .with_environment(super::run_environment(
-                ctx,
-                scratch.path(),
-                trusted.as_ref(),
-            )),
+            .with_environment(environment),
         cancel,
         |output, line| {
             if let Some(report) = line
@@ -158,6 +157,8 @@ async fn download_once(
             YtDlpError::LocalNetwork.into()
         } else if let Some(address) = ran.stderr.error_line().and_then(refused_address) {
             super::failed_through(guard.as_ref(), refused(&ran).of_address(address))
+        } else if ran.stderr.error_line().is_some_and(output_path_is_too_long) {
+            YtDlpError::OutputPathTooLong.into()
         } else {
             super::failed_through(guard.as_ref(), refused(&ran))
         });
@@ -213,15 +214,28 @@ fn download_args(
         &progress_template,
         "--print",
         "after_move:filepath",
-        "-o",
     ] {
         args.push(arg.into());
     }
-    // Relative: yt-dlp runs in `work`, and reads `%` and `$` in a full path as its own fields and variables.
-    args.push(OUTPUT_TEMPLATE.into());
+    // yt-dlp expands the variable once, so template or variable syntax inside the folder stays literal.
+    args.extend([
+        "--paths".into(),
+        format!("${OUTPUT_DIR_ENV}").into(),
+        "-o".into(),
+        OUTPUT_TEMPLATE.into(),
+    ]);
     args.push("--".into());
     args.push(ctx.page.as_str().into());
     args
+}
+
+fn output_path_is_too_long(line: &str) -> bool {
+    let error = line.strip_prefix("ERROR: ").unwrap_or(line);
+    let system = error
+        .strip_prefix("unable to open for writing:")
+        .unwrap_or(error)
+        .trim_start();
+    system.starts_with("[Errno 36]") || system.starts_with("[WinError 206]")
 }
 
 /// The bytes done, when known the total (exact, else estimated), and the format, from a
@@ -296,6 +310,71 @@ fn largest_result(work: &Path) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn real_ytdlp_downloads_into_the_literal_work_folder()
+    -> wirecatch_test_support::TestResult {
+        use wirecatch_test_support::files::FileServer;
+        use wirecatch_test_support::{PATIENCE, real_ytdlp};
+
+        let Some(program) = real_ytdlp() else {
+            return Ok(());
+        };
+        let dir = tempfile::tempdir()?;
+        let name = format!("100% ${OUTPUT_DIR_ENV} %{OUTPUT_DIR_ENV}% %(title)s");
+        let work = dir
+            .path()
+            .join("nested".repeat(16))
+            .join("nested".repeat(16))
+            .join(name);
+        assert!(work.as_os_str().len() > 260);
+        std::fs::create_dir_all(&work)?;
+        let server = FileServer::start().await;
+        let bytes = b"media fixture";
+        server.put("sample.mp4", bytes.as_slice());
+        let mut tools = crate::MediaTools::for_test(Path::new("ffmpeg"));
+        tools.ytdlp = program;
+        tools.ytdlp_cache = dir.path().join("cache");
+        let page = server.url("sample.mp4");
+        let ctx = Context {
+            tools: &tools,
+            page: &page,
+            cookies: None,
+            user_agent: None,
+            temp_dir: dir.path(),
+            timeout: PATIENCE,
+            proxy: Some(""),
+            rate_limit: None,
+            off_local_network: false,
+            browser: None,
+        };
+        let progress = MediaProgress::default();
+        let cancel = CancellationToken::new();
+        let fetched = tokio::time::timeout(
+            PATIENCE,
+            download(&ctx, "best", None, &work, &progress, &cancel),
+        )
+        .await??;
+        let Fetched::Done(result) = fetched else {
+            return Err("yt-dlp did not finish".into());
+        };
+        assert_eq!(result, work.join("media.mp4"));
+        assert_eq!(std::fs::read(result)?, bytes);
+        Ok(())
+    }
+
+    #[test]
+    fn only_an_operating_system_path_error_suggests_a_shorter_folder() {
+        assert!(output_path_is_too_long(
+            "ERROR: unable to open for writing: [Errno 36] File name too long: 'media.mp4'"
+        ));
+        assert!(output_path_is_too_long(
+            "ERROR: [WinError 206] The filename or extension is too long: 'media.mp4'"
+        ));
+        assert!(!output_path_is_too_long(
+            "ERROR: missing video named file name too long"
+        ));
+    }
 
     /// The value yt-dlp is given for `option` when it merges into `merge_into`.
     fn value_of(option: &str, merge_into: Option<Container>) -> Option<String> {

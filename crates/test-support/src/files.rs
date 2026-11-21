@@ -45,6 +45,7 @@ use crate::http::{ByteGate, Seen, index, parse_range, path_key, throttled};
 struct File {
     body: Bytes,
     content_type: Option<String>,
+    set_cookie: Option<String>,
     /// The next this many requests get `fail_status` instead of the file.
     failures: usize,
     fail_status: u16,
@@ -115,6 +116,11 @@ impl FileServer {
     /// Serves `body` at `path` with `content_type`, replacing any file there.
     pub fn put_typed(&self, path: &str, body: impl Into<Bytes>, content_type: &str) {
         self.insert(path, body.into(), Some(content_type.to_string()));
+    }
+
+    /// Adds a Set-Cookie header to the response for this file.
+    pub fn set_cookie(&self, path: &str, value: &str) {
+        self.change(path, |file| file.set_cookie = Some(value.to_owned()));
     }
 
     /// The next `times` requests for the file at `path` are answered with
@@ -286,7 +292,7 @@ async fn serve(
             let status = StatusCode::from_u16(file.fail_status).unwrap();
             (
                 status,
-                Response::builder().status(status).body(Body::empty()),
+                with_cookie(Response::builder().status(status), file).body(Body::empty()),
             )
         }
         Some((file, false)) => answer(file, &headers),
@@ -326,10 +332,23 @@ fn gated(
     })
 }
 
+fn with_cookie(
+    builder: axum::http::response::Builder,
+    file: &File,
+) -> axum::http::response::Builder {
+    match &file.set_cookie {
+        Some(cookie) => builder.header(header::SET_COOKIE, cookie),
+        None => builder,
+    }
+}
+
 /// The file, or the part of it the `Range` header asks for.
 fn answer(file: &File, headers: &HeaderMap) -> (StatusCode, axum::http::Result<Response>) {
     let len = file.body.len() as u64;
-    let mut builder = Response::builder().header(header::ACCEPT_RANGES, "bytes");
+    let mut builder = with_cookie(
+        Response::builder().header(header::ACCEPT_RANGES, "bytes"),
+        file,
+    );
     if let Some(content_type) = &file.content_type {
         builder = builder.header(header::CONTENT_TYPE, content_type);
     }

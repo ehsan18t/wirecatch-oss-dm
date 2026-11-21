@@ -136,7 +136,7 @@ impl Manager {
             return Ok(None);
         }
 
-        // Without a size from the browser the server's decides: the engine starts another file over (D284.4).
+        // Without a size from the browser the server's decides: the engine starts another file over (D286.4).
         let expect = entry.media_job.is_none().then(|| expectation_of(capture));
         self.replace_link(
             &mut state,
@@ -216,7 +216,7 @@ fn source_page(source: &BrowserSource) -> Option<Url> {
         .and_then(|page| web_url(page.expose()))
 }
 
-/// D284: while the watch is open, the next capture of the same kind refreshes the row, whatever its address or size.
+/// D286: while the watch is open, the next capture of the same kind refreshes the row, whatever its address or size.
 fn matches_capture(entry: &super::Entry, capture: &NewDownload) -> bool {
     // A video file sent by the download button downloads as any other file.
     let delivery = |kind: Option<MediaKind>| kind.filter(|kind| *kind != MediaKind::Direct);

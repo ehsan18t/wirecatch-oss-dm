@@ -50,14 +50,20 @@ pub(super) enum Kind {
         media: Option<StoredMedia>,
     },
     /// A stream or page; its path is final from the start.
-    Media(StoredMedia),
+    Media {
+        media: StoredMedia,
+        reading: Option<(
+            wirecatch_protocol::UnixMillis,
+            std::sync::Arc<wirecatch_media::ytdlp::Info>,
+        )>,
+    },
 }
 
 impl Kind {
     pub fn handover(&self) -> Option<&str> {
         match self {
             Self::Captured { handover, .. } => handover.as_deref(),
-            Self::File { .. } | Self::Media(_) => None,
+            Self::File { .. } | Self::Media { .. } => None,
         }
     }
 
@@ -77,7 +83,7 @@ impl Kind {
                 expect,
                 media,
             } => (handover, Some(expect), media, false),
-            Self::Media(media) => (None, None, Some(media), false),
+            Self::Media { media, .. } => (None, None, Some(media), false),
         }
     }
 }

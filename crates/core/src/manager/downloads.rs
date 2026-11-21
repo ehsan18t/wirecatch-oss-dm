@@ -347,6 +347,7 @@ impl Manager {
                 let Some(entry) = state.remove_entry(*id) else {
                     continue;
                 };
+                self.inner.page_readings.forget(*id);
                 leaving.push((entry.path().to_path_buf(), *id));
                 if entry.row.status == DownloadStatus::Completed {
                     if completed == RemoveFiles::Delete {
@@ -511,7 +512,7 @@ impl Manager {
             entry.row.status = DownloadStatus::Queued;
         }
         // A reading made with the earlier sign-in is not reused.
-        self.inner.page_readings.forget(url);
+        self.inner.page_readings.forget(id);
         self.save(state, id);
         self.reconcile(state);
         Ok(())
@@ -718,6 +719,7 @@ impl Manager {
                         handover,
                         new.fetch.url.as_str(),
                         session.as_deref(),
+                        &new.fetch.origin,
                     )
                     .is_some()
             {
@@ -766,11 +768,10 @@ impl Manager {
             start,
             kind,
         } = new;
-        let (handover, expect, media, video_check) = kind.into_parts();
         let private_session = super::private_sessions::session_of(&fetch.origin);
         self.refused_private_session(private_session.as_deref())?;
-        let id = state.ids.download();
-        self.inner.store.save_last_ids(state.ids.last());
+        let id = self.allocate_download(state, &kind);
+        let (handover, expect, media, video_check) = kind.into_parts();
         let position = state.ids.position();
         let row = DownloadSummary {
             id,
@@ -839,6 +840,24 @@ impl Manager {
             remember_handover(state, handover, &row);
         }
         Ok(row)
+    }
+
+    fn allocate_download(&self, state: &mut State, kind: &Kind) -> DownloadId {
+        let id = state.ids.download();
+        if let Kind::Media {
+            reading: Some((read_at, info)),
+            ..
+        } = kind
+        {
+            self.inner.page_readings.put(
+                id,
+                (*read_at, info.clone()),
+                self.inner.clock.unix_millis(),
+                &self.inner.stopped,
+            );
+        }
+        self.inner.store.save_last_ids(state.ids.last());
+        id
     }
 }
 

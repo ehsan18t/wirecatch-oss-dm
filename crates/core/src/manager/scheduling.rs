@@ -159,7 +159,11 @@ impl Manager {
                 && entry.run.is_some()
                 && matches!(
                     entry.row.waiting,
-                    Some(WaitReason::ServerRefused { .. } | WaitReason::Reconnecting { .. })
+                    Some(
+                        WaitReason::ServerRefused { .. }
+                            | WaitReason::Reconnecting { .. }
+                            | WaitReason::HostWait { .. }
+                    )
                 )
             {
                 continue;

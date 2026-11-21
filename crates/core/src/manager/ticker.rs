@@ -180,6 +180,20 @@ fn sample(entry: &mut Entry, now: Instant) -> bool {
     };
     let row = &mut entry.row;
     let reading = run.gauge.read();
+    let connections = run
+        .host_progress
+        .connections()
+        .unwrap_or(reading.connections);
+    let host_wait = run
+        .host_progress
+        .waiting()
+        .map(|wait| WaitReason::HostWait {
+            seconds: saturating_cast(
+                wait.remaining.as_secs() + u64::from(wait.remaining.subsec_nanos() != 0),
+            ),
+            attempt: wait.retry.map(|retry| retry.attempt),
+            of: wait.retry.map(|retry| retry.of),
+        });
     if let Some(retry_at) = reading.retry_at {
         // Waiting to try again with fresh addresses: connecting again, as at
         // the start of a run, with the progress so far kept and the time of the
@@ -201,7 +215,9 @@ fn sample(entry: &mut Entry, now: Instant) -> bool {
     }
     // The engine names the file once the server has answered.
     if row.status == DownloadStatus::Connecting && !reading.answered {
-        return cleared;
+        let before = row.connections;
+        row.connections = saturating_cast(connections);
+        return show_reconnecting(row, host_wait) || cleared || before != row.connections;
     }
     let before = (
         row.status,
@@ -220,7 +236,7 @@ fn sample(entry: &mut Entry, now: Instant) -> bool {
     row.processing = reading.processing;
     row.done = reading.done;
     row.total = reading.total;
-    row.connections = saturating_cast(reading.connections);
+    row.connections = saturating_cast(connections);
     row.speed = run.meter.sample(row.done, now);
     row.eta_secs = speed::eta(row.total, row.done, row.speed);
     let reconnecting = reading
@@ -230,7 +246,7 @@ fn sample(entry: &mut Entry, now: Instant) -> bool {
             attempt: retry.attempt,
             of: retry.of,
         });
-    let rewaited = show_reconnecting(row, reconnecting);
+    let rewaited = show_reconnecting(row, host_wait.or(reconnecting));
     cleared
         || rewaited
         || before
@@ -254,7 +270,11 @@ fn show_reconnecting(row: &mut DownloadSummary, reconnecting: Option<WaitReason>
         row.eta_secs = None;
     }
     let rewaited = row.waiting != reconnecting
-        && (reconnecting.is_some() || matches!(row.waiting, Some(WaitReason::Reconnecting { .. })));
+        && (reconnecting.is_some()
+            || matches!(
+                row.waiting,
+                Some(WaitReason::Reconnecting { .. } | WaitReason::HostWait { .. })
+            ));
     if rewaited {
         row.waiting = reconnecting;
     }

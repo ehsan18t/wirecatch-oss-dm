@@ -135,6 +135,24 @@ jobs:
           echo "WIRECATCH_TEST_DENO=$deno" >> "$GITHUB_ENV"
           echo "WIRECATCH_REQUIRE_DENO=1" >> "$GITHUB_ENV"
 
+      - name: Install pinned yt-dlp
+        if: matrix.part == 'test'
+        shell: pwsh
+        run: |
+          $release = cargo run --quiet --locked -p wirecatch-core --example media_tool_release -- ytdlp
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $url, $sha256, $program = $release -split ' ', 3
+          $binary = Join-Path $env:RUNNER_TEMP $program
+          Invoke-WebRequest -Uri $url -OutFile $binary
+          if ((Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash -ne $sha256) {
+            throw 'The downloaded yt-dlp does not match the add-on manifest.'
+          }
+          if ($IsLinux) { chmod +x -- $binary }
+          & $binary --ignore-config --no-plugin-dirs --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "WIRECATCH_TEST_YTDLP=$binary" >> $env:GITHUB_ENV
+          "WIRECATCH_REQUIRE_YTDLP=1" >> $env:GITHUB_ENV
+
       # Every test binary runs even after one fails, so one failure cannot hide what the others would show. Only a test that hangs ends the run, by name, well inside the job's limit (D174).
       # Windows leaves out `clippy-linux`, a partial Linux lint for machines without Linux: the Ubuntu job lints Linux in full.
       - name: Gate (Rust ${{ matrix.part }})

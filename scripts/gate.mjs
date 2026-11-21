@@ -58,6 +58,10 @@ const CHECKS = {
   ...ICON_CHECKS,
   ...PATH_TEXT_CHECKS,
   ...DIALOG_HEADER_CHECKS,
+  'cargo-dependencies': async () => {
+    const { checkDependencies } = await import('./gate/dependencies.mjs');
+    checkDependencies();
+  },
   product: productCheck('product'),
   'product-placeholders': productCheck('product-placeholders'),
   'product-placeholders-warn': productCheck('product-placeholders-warn'),
@@ -88,6 +92,7 @@ const GROUPS = {
     'text',
     'exceptions',
     'product',
+    'cargo-dependencies',
     'product-name',
     'icon',
     'path-text',

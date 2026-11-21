@@ -12,6 +12,7 @@ pub(super) struct RunPolicy {
     pub limiters: Vec<Arc<RateLimiter>>,
     pub proxy: ProxyChoice,
     pub retry_backoff: Backoff,
+    pub host_pace: Arc<wirecatch_engine::HostPace>,
 }
 
 impl Manager {
@@ -38,6 +39,7 @@ impl Manager {
             limiters: vec![self.inner.global_limiter.clone(), slot.limiter.clone()],
             proxy: state.queue_proxy(Some(&slot.queue)),
             retry_backoff: self.inner.retry_backoff,
+            host_pace: self.inner.host_pace.clone(),
         }
     }
 
@@ -47,6 +49,7 @@ impl Manager {
             limiters: vec![self.inner.global_limiter.clone()],
             proxy: state.app_proxy(),
             retry_backoff: self.inner.retry_backoff,
+            host_pace: self.inner.host_pace.clone(),
         }
     }
 }

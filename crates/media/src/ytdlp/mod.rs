@@ -8,6 +8,7 @@
 mod browser;
 mod cookies;
 mod download;
+mod format_cookies;
 mod guard;
 mod info;
 mod relay;
@@ -173,6 +174,9 @@ pub enum YtDlpError {
     /// yt-dlp described the page in more than Wirecatch reads.
     #[error("yt-dlp described the page at a length past what {app} reads", app = PRODUCT_NAME)]
     OutputTooLarge,
+    /// The operating system refused the media output path because of its length.
+    #[error("the destination path is too long")]
+    OutputPathTooLong,
     /// yt-dlp finished without leaving the file it was asked for.
     #[error("yt-dlp finished without saving the video")]
     NothingSaved,
