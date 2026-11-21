@@ -384,7 +384,8 @@ pub(crate) async fn run(
     output: &Path,
     cancel: &CancellationToken,
 ) -> Result<bool> {
-    let dir = output.parent().unwrap_or(output);
+    // Every path ffmpeg gets is absolute, and a download's work folder can be too long for Windows to start a program in.
+    let dir = program.parent().unwrap_or(program);
     let options = RunOptions::lines()
         .with_idle_timeout(STALL_TIMEOUT)
         .watching(output.to_path_buf());
