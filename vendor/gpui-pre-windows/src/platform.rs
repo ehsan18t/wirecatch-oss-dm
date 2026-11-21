@@ -1,3 +1,5 @@
+// Wirecatch backport: stop background redraws before destroying their HWND.
+
 use std::{
     cell::{Cell, RefCell},
     ffi::{OsStr, OsString},
@@ -42,6 +44,7 @@ use gpui::*;
 struct TrackedWindow {
     handle: SafeHwnd,
     frame_signal: Arc<PlatformFrameSignal>,
+    redraw_enabled: Arc<RwLock<bool>>,
 }
 
 impl TrackedWindow {
@@ -464,6 +467,12 @@ impl WindowsPlatform {
                         break;
                     };
                     for hwnd in all_windows.read().iter() {
+                        // Hold the window's guard through invalidation so teardown can
+                        // wait for the last redraw before destroying the HWND.
+                        let redraw_enabled = hwnd.redraw_enabled.read();
+                        if !*redraw_enabled {
+                            continue;
+                        }
                         unsafe {
                             if let Some(signal_at) = signal_at {
                                 if IsWindowVisible(hwnd.as_raw()).as_bool()
@@ -752,6 +761,7 @@ impl Platform for WindowsPlatform {
         self.raw_window_handles.write().push(TrackedWindow {
             handle: handle.into(),
             frame_signal: window.state.frame_signal.clone(),
+            redraw_enabled: window.state.redraw_enabled.clone(),
         });
 
         Ok(Box::new(window))

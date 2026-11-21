@@ -15,6 +15,7 @@ use std::{
 use anyhow::{Context as _, Result};
 use futures::channel::oneshot::{self, Receiver};
 use gpui_util::ResultExt;
+use parking_lot::RwLock;
 use raw_window_handle as rwh;
 use smallvec::SmallVec;
 use windows::{
@@ -57,6 +58,7 @@ pub struct WindowsWindowState {
 
     pub callbacks: Callbacks,
     pub frame_signal: Arc<PlatformFrameSignal>,
+    pub(crate) redraw_enabled: Arc<RwLock<bool>>,
     pub input_handler: Cell<Option<PlatformInputHandler>>,
     pub ime_enabled: Cell<bool>,
     pub pending_surrogate: Cell<Option<u16>>,
@@ -173,6 +175,7 @@ impl WindowsWindowState {
             min_size,
             callbacks,
             frame_signal: Arc::new(PlatformFrameSignal::new()),
+            redraw_enabled: Arc::new(RwLock::new(true)),
             input_handler: Cell::new(input_handler),
             ime_enabled: Cell::new(true),
             pending_surrogate: Cell::new(pending_surrogate),
@@ -630,6 +633,7 @@ impl rwh::HasDisplayHandle for WindowsWindow {
 impl Drop for WindowsWindow {
     fn drop(&mut self) {
         self.0.dialog_owner.close();
+        *self.0.state.redraw_enabled.write() = false;
         // Hiding and destroying the HWND can emit activation and visibility
         // messages after GPUI has already removed the window.
         self.0.state.callbacks.active_status_change.take();

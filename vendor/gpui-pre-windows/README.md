@@ -7,8 +7,9 @@ crate archive has SHA-256
 The licence is in `LICENSE-APACHE`.
 
 The local changes prevent Win32 activation callbacks from reaching a window
-after GPUI removes it. When the pinned GPUI snapshot includes the lifecycle
-fix, remove the Cargo patch, the workspace exclusion, this directory and
-the backport test command in `scripts/gate/rust.mjs`.
+after GPUI removes it and stop the frame thread from redrawing a destroyed
+native window. When the pinned GPUI snapshot includes the lifecycle fixes,
+remove the Cargo patch, the workspace exclusion, this directory and the
+backport test command in `scripts/gate/rust.mjs`.
 
 [Crate release](https://crates.io/crates/gpui-pre-windows/0.3.12) · [Zed report](https://github.com/zed-industries/zed/issues/67282)
