@@ -1757,7 +1757,7 @@ async fn a_browser_capture_refreshes_the_watched_row_after_a_mirror_change() -> 
 }
 
 #[tokio::test]
-async fn a_file_of_the_same_size_refreshes_the_watched_row_from_any_site() -> TestResult {
+async fn a_file_capture_refreshes_the_watched_row_whatever_its_site_or_size() -> TestResult {
     let h = Harness::new().await?;
     h.manager
         .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)?;
@@ -1778,17 +1778,12 @@ async fn a_file_of_the_same_size_refreshes_the_watched_row_from_any_site() -> Te
     h.manager
         .watch_link(id, saved, wirecatch_engine::CancellationToken::new())?;
 
-    let mut another_size = old.clone();
-    another_size.handover_id = "another-size".into();
-    another_size.url = "https://files.example/download?id=2&token=new".into();
-    another_size.size_hint = Some(2048);
-    assert_ne!(h.manager.add_capture(another_size).await?.id, Some(id));
-    assert_eq!(h.row(id).url, old.url);
-
+    // A different size is left to the run, which starts the file over rather than mixing two files.
     let mut fresh = old;
     fresh.handover_id = "fresh".into();
     fresh.url = "https://mirror.example/files/copy.pdf".into();
     fresh.suggested_name = Some("copy.pdf".into());
+    fresh.size_hint = Some(2048);
     fresh.browser_route.as_mut().unwrap().observed_page =
         Some("https://mirror.example/files".into());
     assert_eq!(h.manager.add_capture(fresh.clone()).await?.id, Some(id));

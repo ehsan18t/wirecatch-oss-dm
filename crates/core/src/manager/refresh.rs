@@ -139,9 +139,6 @@ impl Manager {
         };
         if entry.row.status == DownloadStatus::Completed
             || entry.refuse_if_stranded().is_err()
-            || known_size
-                .zip(capture.size_hint)
-                .is_some_and(|(old, new)| old != new)
             || !matches_capture(entry, capture)
         {
             return Ok(None);
@@ -240,7 +237,7 @@ fn source_page(source: &BrowserSource) -> Option<Url> {
         .and_then(|page| web_url(page.expose()))
 }
 
-/// D284: while the watch is open, the next capture of the same kind refreshes the row, whatever its address.
+/// D284: while the watch is open, the next capture of the same kind refreshes the row, whatever its address or size.
 fn matches_capture(entry: &super::Entry, capture: &NewDownload) -> bool {
     let kind = entry.row.media.as_ref().map(|media| media.source);
     kind == capture.media.as_ref().map(|media| media.kind)
