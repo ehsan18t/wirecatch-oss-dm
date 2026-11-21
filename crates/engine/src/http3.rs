@@ -230,6 +230,7 @@ pub(crate) async fn open(
         *slot = None;
         return Ok(None);
     }
+    let turn = session.turn(&context.url).await?;
     let attempt = request(slot, origin, context, session, from, to);
     let outcome = tokio::select! {
         biased;
@@ -237,12 +238,17 @@ pub(crate) async fn open(
         outcome = attempt => outcome,
     };
     match outcome {
-        Ok(stream) => Ok(Some(Body {
+        Ok((stream, remaining)) => Ok(Some(Body {
             stream,
             chunk: Bytes::new(),
             origin: origin.clone(),
+            turn,
+            remaining,
         })),
-        Err(H3Failure::Answer(failure)) => Err(failure),
+        Err(H3Failure::Answer(mut failure)) => {
+            failure.pace(turn.as_ref(), false);
+            Err(failure)
+        }
         Err(H3Failure::Unusable(why)) => {
             origin.mark_broken(&why);
             *slot = None;
@@ -269,7 +275,7 @@ async fn request(
     session: &Session,
     from: u64,
     to: u64,
-) -> std::result::Result<Stream, H3Failure> {
+) -> std::result::Result<(Stream, Option<u64>), H3Failure> {
     let connection = match slot {
         Some(connection) => connection,
         empty => empty.insert(origin.connect().await.map_err(H3Failure::Unusable)?),
@@ -302,7 +308,10 @@ async fn request(
         .await
         .map_err(|_| H3Failure::Unusable(Error::Stalled { after: stall }))??;
     check_response(&response, context, from)?;
-    Ok(stream)
+    let remaining = http::content_range(response.headers())
+        .and_then(|range| range.end)
+        .map(|end| end.saturating_sub(from));
+    Ok((stream, remaining))
 }
 
 /// HTTP/3 is not usable because `error` happened while doing `what`.
@@ -371,6 +380,8 @@ pub(crate) struct Body {
     stream: Stream,
     chunk: Bytes,
     origin: Arc<Origin>,
+    turn: Option<crate::host_pace::Turn>,
+    remaining: Option<u64>,
 }
 
 impl Body {
@@ -379,9 +390,27 @@ impl Body {
             Ok(Some(mut data)) => {
                 // Zero-copy for the `Bytes` QUIC hands over.
                 self.chunk = data.copy_to_bytes(data.remaining());
+                if let Some(turn) = &mut self.turn
+                    && !self.chunk.is_empty()
+                {
+                    turn.data(true);
+                }
+                if let Some(remaining) = &mut self.remaining {
+                    *remaining = remaining.saturating_sub(self.chunk.len() as u64);
+                    if *remaining == 0
+                        && let Some(turn) = self.turn.take()
+                    {
+                        turn.served();
+                    }
+                }
                 Ok(Some(&self.chunk[..]))
             }
-            Ok(None) => Ok(None),
+            Ok(None) => {
+                if let Some(turn) = self.turn.take() {
+                    turn.served();
+                }
+                Ok(None)
+            }
             Err(e) => Err(Error::transport("the HTTP/3 stream failed", e, false)),
         }
     }

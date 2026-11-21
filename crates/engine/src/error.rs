@@ -57,6 +57,10 @@ pub enum Error {
         url: String,
     },
 
+    /// The server set cookies during a transfer using a static, caller-supplied cookie set.
+    #[error("the server changed the cookies needed for this download")]
+    CookiesChanged,
+
     /// The server accepted byte ranges at first but then answered a range
     /// request with the wrong part of the file, or with the whole file.
     #[error("server stopped honoring byte ranges (asked for offset {expected}, got {got:?})")]

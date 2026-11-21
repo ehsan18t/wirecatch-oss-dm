@@ -33,6 +33,8 @@ fn job() -> Job {
         refresh_delays: Arc::new([]),
         clock: Arc::new(crate::clock::SystemClock),
         readings: Arc::default(),
+        reading_owner: wirecatch_protocol::DownloadId(1),
+        suffixes: wirecatch_sites::public_suffix::SuffixList::built_in(),
         work_owner: String::new(),
         quality: String::new(),
         reserve: Arc::new(|_: &Path, _| true),
@@ -317,7 +319,10 @@ async fn a_job_that_cannot_be_read_never_runs() {
         &CancellationToken::new(),
     )
     .await;
-    assert_eq!(ended, Err(wirecatch_media::unreadable()));
+    assert_eq!(
+        ended.map_err(|failure| failure.error),
+        Err(wirecatch_media::unreadable())
+    );
 }
 
 /// A stream (here one HLS segment, joined without ffmpeg) is saved in the
@@ -824,8 +829,9 @@ async fn failure_of_parts(found: &[Format]) -> String {
     let progress = MediaProgress::default();
     let ended = fetch_parts(&job, &found, &work, &progress, &CancellationToken::new()).await;
     match ended {
-        Err(PageError::Failed(error)) => error.message,
-        Err(PageError::Refused { status }) => panic!("refused: {status:?}"),
+        Err(PageError::Failed(failure)) => failure.error.message,
+        Err(PageError::Refused(details)) => panic!("refused: {details:?}"),
+        Err(PageError::Delegate) => panic!("unexpected delegation"),
         Ok(files) => panic!("not a failure: {files:?}"),
     }
 }
@@ -862,14 +868,17 @@ fn a_failure_promises_the_part_that_finished_after_it() {
         after: Duration::from_secs(1),
     };
     let results = vec![
-        Err(PartError::Transfer(stalled)),
+        Err(PartError::Transfer(stalled, None)),
         Ok(Some(dir.path().join("video.mp4"))),
     ];
     let Err(PageError::Failed(told)) = parts_end(&job, results, &progress) else {
         panic!("not a failure");
     };
-    assert!(told.message.contains("stopped sending data"), "{told:?}");
-    assert!(told.message.contains("is kept"), "{told:?}");
+    assert!(
+        told.error.message.contains("stopped sending data"),
+        "{told:?}"
+    );
+    assert!(told.error.message.contains("is kept"), "{told:?}");
 }
 
 /// A work folder holding a finished `Clip.mp4` beside its planned path.
@@ -891,6 +900,7 @@ async fn next_run(job: Job) -> Result<MediaDone, UserError> {
         &CancellationToken::new(),
     )
     .await
+    .map_err(|failure| failure.error)
 }
 
 /// A file that could not be put in place, as when a player holds the old one, waits there: the next run places it and fetches nothing.

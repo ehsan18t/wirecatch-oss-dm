@@ -203,6 +203,7 @@ async fn timed_download(
     let dir = private_dir("bench")?;
     let mut request = DownloadRequest::new(server.url("bench.bin"), dir.path());
     request.options.connections = connections;
+    request.options.host_pace = Some(Arc::default());
     request.options.max_request_bytes = max_request;
 
     let start = Instant::now();

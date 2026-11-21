@@ -8,6 +8,7 @@
 mod browser;
 mod cookies;
 mod download;
+mod format_cookies;
 mod guard;
 mod info;
 mod relay;

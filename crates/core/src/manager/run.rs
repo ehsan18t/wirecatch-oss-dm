@@ -18,6 +18,7 @@ use wirecatch_protocol::UnixMillis;
 use wirecatch_protocol::app::{DownloadStatus, UserError};
 
 use super::added_pages::AnsweredPage;
+use super::failure_log::{Details, MediaFailure};
 use super::file_exists::give_up_the_name;
 use super::policy::RunPolicy;
 use super::settle::path_resolver;
@@ -34,7 +35,7 @@ pub(super) enum RunEnd {
     /// The engine returned.
     Engine(Result<Outcome, EngineError>),
     /// A media job returned.
-    Media(Result<MediaDone, UserError>),
+    Media(Result<MediaDone, MediaFailure>),
     /// The run's task ended without the engine returning: it panicked or was aborted.
     Vanished,
 }
@@ -81,7 +82,12 @@ impl Ended {
     /// How run `end` of download `id`, saving into `folder`, ended. A failure
     /// is described for the person, in words that depend on whether anything
     /// had arrived before it, on who chose the link and on the proxy it went through.
-    fn of(end: RunEnd, id: DownloadId, folder: &Path, worked: Worked, entry: &Entry) -> Self {
+    fn of(end: RunEnd, folder: &Path, worked: Worked, entry: &Entry, run: &Run) -> Self {
+        let record = |details: Details| {
+            if run.stop.is_none() {
+                details.write(entry);
+            }
+        };
         match end {
             RunEnd::Engine(Ok(Outcome::Completed { bytes, .. })) => Ended::Completed(Finished {
                 bytes,
@@ -91,7 +97,11 @@ impl Ended {
             RunEnd::Engine(Ok(_))
             | RunEnd::Media(Ok(MediaDone::Paused | MediaDone::FileExists(_))) => Ended::Stopped,
             RunEnd::Engine(Err(error)) => {
-                warn!(id = id.0, %error, "download failed");
+                let retry = match &run.gauge {
+                    Gauge::Engine(progress) => progress.retry(),
+                    Gauge::Media(_) => None,
+                };
+                record(Details::engine(&error, "file_transfer", retry));
                 Ended::Failed(wirecatch_messages::describe_run(
                     &error,
                     folder,
@@ -109,12 +119,12 @@ impl Ended {
                 path: Some(path),
                 sidecars,
             }),
-            RunEnd::Media(Err(error)) => {
-                warn!(id = id.0, error = %error.message, "media download failed");
-                Ended::Failed(error)
+            RunEnd::Media(Err(failure)) => {
+                record(*failure.details);
+                Ended::Failed(failure.error)
             }
             RunEnd::Media(Ok(MediaDone::NotConverted(error))) => {
-                warn!(id = id.0, error = %error.message, "media conversion failed");
+                record(Details::new("convert", "ffmpeg"));
                 Ended::NotConverted(error)
             }
             RunEnd::Vanished => Ended::Vanished,
@@ -131,6 +141,7 @@ impl Manager {
         if let Some(entry) = state.downloads.get_mut(&id)
             && super::sign_in::forget_if_old(entry, now)
         {
+            self.inner.page_readings.forget(id);
             self.save(state, id);
         }
         let run_id = state.ids.run();
@@ -169,7 +180,7 @@ impl Manager {
             Ok(request) if self.fake_engine().is_some() => {
                 let fake = self.fake_engine();
                 let rule = request.options.private_network;
-                self.launch(state, id, run_id, answered, move |cancel, _| {
+                self.launch(state, id, run_id, answered, move |cancel, _, _| {
                     let work = super::fake::run(fake, settle, cancel, rule);
                     (Gauge::Engine(Arc::default()), async move {
                         RunEnd::Engine(work.await)
@@ -177,14 +188,21 @@ impl Manager {
                 });
             }
             Ok(mut request) => {
-                self.launch(state, id, run_id, answered, move |cancel, file_work| {
-                    request.file_work = file_work;
-                    let progress = Arc::new(Progress::default());
-                    let work = download_marked(request, progress.clone(), cancel, mark);
-                    (Gauge::Engine(progress), async move {
-                        RunEnd::Engine(work.await)
-                    })
-                });
+                self.launch(
+                    state,
+                    id,
+                    run_id,
+                    answered,
+                    move |cancel, file_work, host_progress| {
+                        request.options.host_progress = Some(host_progress);
+                        request.file_work = file_work;
+                        let progress = Arc::new(Progress::default());
+                        let work = download_marked(request, progress.clone(), cancel, mark);
+                        (Gauge::Engine(progress), async move {
+                            RunEnd::Engine(work.await)
+                        })
+                    },
+                );
             }
             Err(error) => self.fail_to_start(state, id, error),
         }
@@ -193,6 +211,7 @@ impl Manager {
     /// Records that a download could not even start.
     pub(super) fn fail_to_start(&self, state: &mut State, id: DownloadId, error: UserError) {
         if let Some(entry) = state.downloads.get_mut(&id) {
+            Details::new("prepare", "download").write(entry);
             entry.row.status = DownloadStatus::Failed;
             entry.row.error = Some(super::sign_in::explain(&entry.origin, error));
         }
@@ -210,7 +229,7 @@ impl Manager {
         answered: CancellationToken,
         work: F,
     ) where
-        F: FnOnce(CancellationToken, FileWork) -> (Gauge, Fut),
+        F: FnOnce(CancellationToken, FileWork, Arc<wirecatch_engine::HostProgress>) -> (Gauge, Fut),
         Fut: Future<Output = RunEnd> + Send + 'static,
     {
         let Some(entry) = state.downloads.get_mut(&id) else {
@@ -227,7 +246,12 @@ impl Manager {
             file_work: file_work.clone(),
             reported: false,
         };
-        let (gauge, work) = work(cancel.clone(), file_work.clone());
+        let host_progress = Arc::default();
+        let (gauge, work) = work(
+            cancel.clone(),
+            file_work.clone(),
+            Arc::clone(&host_progress),
+        );
         let cleanup = entry.cleanup.take();
         let private = entry.row.private;
         let task = self.spawn(super::private_sessions::private_scope(
@@ -246,6 +270,7 @@ impl Manager {
             cancel,
             exited,
             gauge,
+            host_progress,
             marking_done: false,
             file_work,
             stop: None,
@@ -293,7 +318,7 @@ impl Manager {
         });
 
         let folder = entry.path().parent().unwrap_or(Path::new("")).to_path_buf();
-        let ended = Ended::of(end, id, &folder, worked, entry);
+        let ended = Ended::of(end, &folder, worked, entry, &run);
         if let Some(job) = &mut entry.media_job {
             job.set_conversion_failed(matches!((&ended, run.stop), (Ended::NotConverted(_), None)));
         }
@@ -329,7 +354,7 @@ impl Manager {
                 entry.row.error = Some(super::sign_in::explain(&entry.origin, error));
             }
             (Ended::Vanished, None) => {
-                warn!(id = id.0, "download task ended without a result");
+                Details::new("run", "task").write(entry);
                 entry.row.status = DownloadStatus::Failed;
                 entry.row.error = Some(wirecatch_messages::stopped_unexpectedly(worked));
             }
@@ -648,6 +673,7 @@ fn engine_request(
     options.connections = policy.connections;
     options.rate_limiters = policy.limiters;
     options.retry_backoff = policy.retry_backoff;
+    options.host_pace = Some(policy.host_pace);
     options.headers = headers::to_map(&entry.origin.headers);
     if let Some(agent) = &entry.origin.user_agent {
         options.user_agent.clone_from(agent);
@@ -673,6 +699,7 @@ mod tests {
             limiters: Vec::new(),
             proxy: ProxyChoice::System,
             retry_backoff: wirecatch_engine::Backoff::default(),
+            host_pace: Arc::default(),
         };
         let run = |url: &str, chosen_by| {
             engine_request(
@@ -762,7 +789,7 @@ mod tests {
             let mut state = manager.lock();
             let run_id = state.ids.run();
             let answered = CancellationToken::new();
-            manager.launch(&mut state, id, run_id, answered, |_, _| {
+            manager.launch(&mut state, id, run_id, answered, |_, _, _| {
                 (Gauge::Engine(Arc::default()), panicking_engine())
             });
             state.downloads[&id].run.as_ref().unwrap().exited.clone()
@@ -791,7 +818,7 @@ mod tests {
             let mut state = manager.lock();
             let run_id = state.ids.run();
             let answered = CancellationToken::new();
-            manager.launch(&mut state, id, run_id, answered, |_, file_work| {
+            manager.launch(&mut state, id, run_id, answered, |_, file_work, _| {
                 drop(file_work.spawn_blocking(move || {
                     started_tx.send(()).unwrap();
                     held.recv().unwrap();

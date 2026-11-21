@@ -187,6 +187,7 @@ fn build_request(args: Args) -> anyhow::Result<DownloadRequest> {
     }
 
     let mut request = DownloadRequest::new(url, args.output_dir);
+    request.options.host_pace = Some(std::sync::Arc::default());
     request.options.proxy = proxy_choice(args.proxy.as_deref(), args.no_proxy, |name| {
         std::env::var(name).ok()
     })?;

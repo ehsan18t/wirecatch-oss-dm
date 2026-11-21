@@ -5,7 +5,6 @@
 
 mod fetch;
 mod join;
-mod pace;
 
 use std::io;
 use std::path::Path;
@@ -53,6 +52,9 @@ pub async fn download(
     result
 }
 
+static DEFAULT_PACE: std::sync::LazyLock<Arc<wirecatch_engine::HostPace>> =
+    std::sync::LazyLock::new(Arc::default);
+
 async fn run(
     request: &StreamRequest,
     progress: &Arc<StreamProgress>,
@@ -62,9 +64,13 @@ async fn run(
     // Stopping the segment downloads after an error must not look like the
     // caller's cancellation, so the fetcher gets a child token.
     let stop = cancel.child_token();
+    let mut options = request.options.clone();
+    options
+        .host_pace
+        .get_or_insert_with(|| DEFAULT_PACE.clone());
     let fetcher = Fetcher::with_private_network(
         &request.url,
-        &request.options,
+        &options,
         stop.clone(),
         request.private_network,
     )

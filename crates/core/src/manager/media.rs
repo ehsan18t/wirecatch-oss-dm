@@ -77,6 +77,7 @@ pub(super) struct MediaPending {
     /// The site and id of the video, once its page was read (see
     /// [`video_key`]); another capture of the same video joins this one.
     pub video: Option<String>,
+    pub reading: Option<(UnixMillis, Arc<ytdlp::Info>)>,
     /// Read without a window, as the person chose not to be asked about videos
     /// (D50): no `MediaAnalysing`, and not in [`Manager::media_being_read`].
     pub quiet: bool,
@@ -173,6 +174,7 @@ pub(super) struct Found {
     pub title: Option<String>,
     pub offers: Vec<Offer>,
     pub video: Option<String>,
+    pub reading: Option<(UnixMillis, Arc<ytdlp::Info>)>,
     /// The subtitles a page offers, human-written ones first (D24).
     pub subtitles: Vec<MediaSubtitle>,
     /// The page has chapters.
@@ -188,6 +190,20 @@ pub(super) fn video_key(extractor: Option<&str>, id: Option<&str>) -> Option<Str
     let extractor = extractor.map(str::trim).filter(|e| !e.is_empty())?;
     let id = id.map(str::trim).filter(|i| !i.is_empty())?;
     Some(format!("{extractor}:{id}"))
+}
+
+pub(super) fn same_reading_context(a: &Origin, b: &Origin) -> bool {
+    use super::private_sessions::session_of;
+    fn profile(origin: &Origin) -> Option<&str> {
+        origin.browser_source.as_deref()?.profile.as_deref()
+    }
+    session_of(a) == session_of(b)
+        && profile(a) == profile(b)
+        && a.forgot_sign_in == b.forgot_sign_in
+        && a.headers
+            .iter()
+            .filter(|header| header.may_carry_sign_in())
+            .eq(b.headers.iter().filter(|header| header.may_carry_sign_in()))
 }
 
 impl MediaSource {
@@ -249,15 +265,14 @@ impl Manager {
             action: AddAction::AwaitingConfirmation,
         };
         // The same media captured again, in the same private session or none, joins the one already waiting.
-        let session = super::private_sessions::capture_session(capture);
+        let source = MediaSource::of(capture, url, kind, chosen_by);
         if let Some(&id) = state
             .media
             .iter()
             .find(|(_, m)| {
-                m.source.fetch.url == url
+                m.source.fetch.url == source.fetch.url
                     && m.source.kind == kind
-                    && super::private_sessions::session_of(&m.source.fetch.origin).as_deref()
-                        == session
+                    && same_reading_context(&m.source.fetch.origin, &source.fetch.origin)
             })
             .map(|(id, _)| id)
         {
@@ -272,7 +287,6 @@ impl Manager {
             return Ok(reply);
         }
         state.media.check_room()?;
-        let source = MediaSource::of(capture, url, kind, chosen_by);
         let title = capture
             .media
             .as_ref()
@@ -331,6 +345,7 @@ impl Manager {
                 handovers: held.handovers,
                 stage: first_stage,
                 video: None,
+                reading: None,
                 quiet,
                 folder: held.folder,
                 later: held.later,
@@ -836,6 +851,7 @@ impl Manager {
                 title,
                 offers,
                 video,
+                reading,
                 subtitles,
                 chapters,
                 duration_ms,
@@ -891,6 +907,7 @@ impl Manager {
                         plans,
                     };
                     pending.video = video;
+                    pending.reading = reading;
                     pending.placed = placed;
                 }
                 if without_asking {
@@ -946,6 +963,7 @@ impl Manager {
                 },
             )?,
             video: None,
+            reading: None,
             subtitles: Vec::new(),
             chapters: false,
             duration_ms: None,
@@ -984,19 +1002,11 @@ impl Manager {
             .await
             .map_err(|e| describe::ytdlp(&e, tools))?;
         let info = Arc::new(info);
-        // A private page's reading (signed addresses, its cookies) is never shared (D280).
-        if !super::private_sessions::is_private(&source.fetch.origin) {
-            self.inner.page_readings.put(
-                &source.fetch.url,
-                self.inner.clock.unix_millis(),
-                info.clone(),
-                token,
-            );
-        }
         Ok(Found {
             title: info.title.clone(),
             offers: choice::from_page(&info)?,
             video: video_key(info.extractor_key.as_deref(), info.id.as_deref()),
+            reading: Some((self.inner.clock.unix_millis(), info.clone())),
             subtitles: output::subtitles(&info)
                 .into_iter()
                 .map(|(subtitle, _)| subtitle)
@@ -1012,10 +1022,17 @@ impl Manager {
     /// browser captures join the other question and `id` closes. Returns
     /// whether it was folded.
     fn join_same_video(&self, state: &mut State, id: QuestionId, video: &str) -> bool {
+        let Some(own) = state.media.get(&id) else {
+            return false;
+        };
         let Some(&other) = state
             .media
             .iter()
-            .find(|(other, m)| **other != id && m.video.as_deref() == Some(video))
+            .find(|(other, m)| {
+                **other != id
+                    && m.video.as_deref() == Some(video)
+                    && same_reading_context(&m.source.fetch.origin, &own.source.fetch.origin)
+            })
             .map(|(other, _)| other)
         else {
             return false;
@@ -1098,15 +1115,18 @@ impl Manager {
                 },
                 placed: pending.placed.clone(),
                 start: false,
-                kind: Kind::Media(StoredMedia {
-                    summary: MediaSummary {
-                        quality: "Best available".into(),
-                        source: source.kind,
-                        video_key: pending.video.clone(),
-                        instead_of: None,
+                kind: Kind::Media {
+                    media: StoredMedia {
+                        summary: MediaSummary {
+                            quality: "Best available".into(),
+                            source: source.kind,
+                            video_key: pending.video.clone(),
+                            instead_of: None,
+                        },
+                        job: Some(job),
                     },
-                    job: Some(job),
-                }),
+                    reading: None,
+                },
             })
             .await;
         let row = match added {
@@ -1168,15 +1188,18 @@ impl Manager {
                 },
                 placed: Placed::answered(pending.placed.clone(), selection.queue),
                 start: !selection.later,
-                kind: Kind::Media(StoredMedia {
-                    summary: MediaSummary {
-                        quality: plan.quality.clone(),
-                        source: pending.source.kind,
-                        video_key: pending.video.clone(),
-                        instead_of,
+                kind: Kind::Media {
+                    media: StoredMedia {
+                        summary: MediaSummary {
+                            quality: plan.quality.clone(),
+                            source: pending.source.kind,
+                            video_key: pending.video.clone(),
+                            instead_of,
+                        },
+                        job: Some(resolved.job.clone()),
                     },
-                    job: Some(resolved.job.clone()),
-                }),
+                    reading: pending.reading.clone(),
+                },
             })
             .await?;
         added.map(|row| row.id).ok_or_else(|| {

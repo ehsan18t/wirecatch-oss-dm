@@ -17,6 +17,7 @@ use tracing::debug;
 use url::Url;
 
 use crate::error::{Error, Result};
+use crate::host_pace::{Refusal, Scope, Turn, WaitGuard};
 use crate::naming;
 use crate::net_guard::Guard;
 use crate::options::DownloadOptions;
@@ -129,6 +130,7 @@ fn opaque_tag(tag: &str) -> &str {
 pub(crate) struct Failure {
     pub error: Error,
     pub retry_after: Option<Duration>,
+    pub paced_refusal: Option<Refusal>,
 }
 
 impl From<Error> for Failure {
@@ -136,6 +138,7 @@ impl From<Error> for Failure {
         Self {
             error,
             retry_after: None,
+            paced_refusal: None,
         }
     }
 }
@@ -148,8 +151,29 @@ impl From<reqwest::Error> for Failure {
 
 impl Failure {
     /// A response whose status is not the one wanted.
-    pub(crate) fn status(response: &Response) -> Self {
-        Self::from_status(response.status(), response.headers(), response.url())
+    pub(crate) fn status(response: &HttpResponse, ambiguous: bool) -> Self {
+        let mut failure = Self::from_status(response.status(), response.headers(), response.url());
+        failure.pace(response.turn.as_ref(), ambiguous);
+        failure
+    }
+
+    pub(crate) fn retry_wait(
+        &self,
+        progress: Option<&std::sync::Arc<crate::HostProgress>>,
+        retry: crate::Retry,
+        delay: Duration,
+    ) -> Option<WaitGuard> {
+        let paced = self.paced_refusal?;
+        let until = paced.until.max(tokio::time::Instant::now() + delay);
+        Some(progress?.record(Some(until), Some(retry)))
+    }
+
+    pub(crate) fn pace(&mut self, turn: Option<&Turn>, ambiguous: bool) {
+        if let Error::HttpStatus { status, .. } = self.error
+            && let Some(turn) = turn
+        {
+            self.paced_refusal = turn.refused(status, self.retry_after, ambiguous);
+        }
     }
 
     /// An answer with `status` and `headers` from `url` that is not the one
@@ -169,7 +193,11 @@ impl Failure {
                 url: url.to_string(),
             }
         };
-        Self { error, retry_after }
+        Self {
+            error,
+            retry_after,
+            paced_refusal: None,
+        }
     }
 }
 
@@ -287,6 +315,8 @@ pub(crate) struct Session {
     link: Url,
     /// Where the link leads since its first target refused a request, if it did.
     renewed_target: Mutex<Option<Url>>,
+    pace: Option<std::sync::Arc<Scope>>,
+    cookies: Option<std::sync::Arc<dyn crate::HttpCookies>>,
 }
 
 impl Session {
@@ -302,6 +332,11 @@ impl Session {
             guard: None,
             link: url.clone(),
             renewed_target: Mutex::new(None),
+            cookies: opts.http_cookies.clone(),
+            pace: opts
+                .host_pace
+                .clone()
+                .map(|pace| Scope::new(pace, opts.host_progress.clone())),
         };
         (session, url)
     }
@@ -315,11 +350,59 @@ impl Session {
             .unwrap_or_else(|| first.clone())
     }
 
+    pub async fn turn(&self, url: &Url) -> Result<Option<Turn>, Failure> {
+        let Some(pace) = &self.pace else {
+            return Ok(None);
+        };
+        self.cancel
+            .run_until_cancelled(pace.turn(url))
+            .await
+            .ok_or_else(|| Error::Cancelled.into())
+    }
+
     fn renew_target(&self, target: &Url) {
         *self
             .renewed_target
             .lock()
             .unwrap_or_else(PoisonError::into_inner) = Some(target.clone());
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct HttpResponse {
+    response: Response,
+    turn: Option<Turn>,
+    media: bool,
+    remaining: Option<u64>,
+}
+
+impl std::ops::Deref for HttpResponse {
+    type Target = Response;
+
+    fn deref(&self) -> &Response {
+        &self.response
+    }
+}
+
+impl HttpResponse {
+    pub async fn chunk(&mut self) -> reqwest::Result<Option<bytes::Bytes>> {
+        let chunk = self.response.chunk().await?;
+        if let Some(turn) = self.turn.as_mut() {
+            if let Some(bytes) = &chunk {
+                if !bytes.is_empty() {
+                    turn.data(self.media);
+                }
+                if let Some(remaining) = &mut self.remaining {
+                    *remaining = remaining.saturating_sub(bytes.len() as u64);
+                }
+            }
+            if (chunk.is_none() || self.remaining == Some(0))
+                && let Some(turn) = self.turn.take()
+            {
+                turn.served();
+            }
+        }
+        Ok(chunk)
     }
 }
 
@@ -333,7 +416,8 @@ pub(crate) async fn send(
     url: &Url,
     session: &Session,
     range: Option<RequestRange>,
-) -> Result<Response, Failure> {
+    media: bool,
+) -> Result<HttpResponse, Failure> {
     let asked = url;
     let mut url = url.clone();
     let mut hops = 0;
@@ -344,23 +428,16 @@ pub(crate) async fn send(
             };
             checked?;
         }
-        let mut request = client
-            .get(url.clone())
-            .headers(session.headers.for_url(&url).clone());
-        if let Some(range) = range {
-            request = request.header(RANGE, range.to_string());
-        }
-        let response = tokio::select! {
-            biased;
-            () = session.cancel.cancelled() => return Err(Error::Cancelled.into()),
-            answer = tokio::time::timeout(session.answer_timeout, request.send()) => match answer {
-                Ok(response) => response?,
-                Err(_) => return Err(Error::Stalled {
-                    after: session.answer_timeout,
-                }.into()),
-            },
-        };
+        let turn = session.turn(&url).await?;
+        let response = send_once(client, &url, session, range).await?;
         let status = response.status();
+        if session.cookies.is_some()
+            && !is_busy(status)
+            && status != StatusCode::PROXY_AUTHENTICATION_REQUIRED
+            && response.headers().contains_key(reqwest::header::SET_COOKIE)
+        {
+            return Err(Error::CookiesChanged.into());
+        }
         if !matches!(
             status,
             StatusCode::MOVED_PERMANENTLY
@@ -369,7 +446,13 @@ pub(crate) async fn send(
                 | StatusCode::TEMPORARY_REDIRECT
                 | StatusCode::PERMANENT_REDIRECT
         ) {
-            return Ok(response);
+            let remaining = response.content_length();
+            return Ok(HttpResponse {
+                response,
+                turn,
+                media,
+                remaining,
+            });
         }
         let Some(location) = response.headers().get(LOCATION) else {
             return Err(Error::RedirectWithoutLocation {
@@ -407,9 +490,38 @@ pub(crate) async fn send(
     }
 }
 
+async fn send_once(
+    client: &Client,
+    url: &Url,
+    session: &Session,
+    range: Option<RequestRange>,
+) -> Result<Response, Failure> {
+    let mut request = client
+        .get(url.clone())
+        .headers(session.headers.for_url(url).clone());
+    if let Some(cookies) = &session.cookies
+        && let Some(header) = cookies.header(url)
+    {
+        request = request.header(reqwest::header::COOKIE, header);
+    }
+    if let Some(range) = range {
+        request = request.header(RANGE, range.to_string());
+    }
+    tokio::select! {
+        biased;
+        () = session.cancel.cancelled() => Err(Error::Cancelled.into()),
+        answer = tokio::time::timeout(session.answer_timeout, request.send()) => match answer {
+            Ok(response) => response.map_err(Failure::from),
+            Err(_) => Err(Error::Stalled {
+                after: session.answer_timeout,
+            }.into()),
+        },
+    }
+}
+
 /// What the first response says about the file.
 pub struct Probe {
-    pub response: Response,
+    pub response: HttpResponse,
     /// URL after redirects; later requests go straight here.
     pub final_url: Url,
     pub ranged: bool,
@@ -456,7 +568,7 @@ async fn probe_range(
     session: &Session,
     range: RequestRange,
 ) -> Result<Probe, Failure> {
-    let response = send(client, url, session, Some(range)).await?;
+    let response = send(client, url, session, Some(range), true).await?;
     let status = response.status();
     let final_url = response.url().clone();
     let response_headers = response.headers();
@@ -488,7 +600,7 @@ async fn probe_range(
         {
             (false, Some(0))
         }
-        _ => return Err(Failure::status(&response)),
+        _ => return Err(Failure::status(&response, false)),
     };
 
     Ok(Probe {
@@ -515,9 +627,18 @@ pub(crate) async fn fetch(
     session: &Session,
     from: u64,
     to: u64,
-) -> Result<(Response, u64), Failure> {
+) -> Result<(HttpResponse, u64), Failure> {
     let target = session.target(&request.url);
-    let answer = fetch_from(client, &target, request, session, from, to).await;
+    let answer = fetch_from(
+        client,
+        &target,
+        request,
+        session,
+        from,
+        to,
+        target == session.link,
+    )
+    .await;
     let refused = matches!(
         answer,
         Err(Failure {
@@ -529,7 +650,8 @@ pub(crate) async fn fetch(
         return answer;
     }
     debug!(target = %target, "the redirect target refused the request; following the link again");
-    let (response, skip) = fetch_from(client, &session.link, request, session, from, to).await?;
+    let (response, skip) =
+        fetch_from(client, &session.link, request, session, from, to, true).await?;
     session.renew_target(response.url());
     Ok((response, skip))
 }
@@ -542,10 +664,11 @@ async fn fetch_from(
     session: &Session,
     from: u64,
     to: u64,
-) -> Result<(Response, u64), Failure> {
+    ambiguous: bool,
+) -> Result<(HttpResponse, u64), Failure> {
     if !request.ranged {
-        let response = send(client, url, session, None).await?;
-        check_status(&response, StatusCode::OK)?;
+        let response = send(client, url, session, None, true).await?;
+        check_status(&response, StatusCode::OK, ambiguous)?;
         check_whole(
             response.headers(),
             response.content_length(),
@@ -556,7 +679,7 @@ async fn fetch_from(
     }
 
     let range = RequestRange::new(from, to).ok_or_else(|| empty_range(from, to))?;
-    let response = send(client, url, session, Some(range)).await?;
+    let response = send(client, url, session, Some(range), true).await?;
     if response.status() == StatusCode::OK {
         return Err(Error::RangeNotHonored {
             expected: from,
@@ -568,7 +691,7 @@ async fn fetch_from(
     if response.status() == StatusCode::RANGE_NOT_SATISFIABLE {
         return Err(Error::RemoteChanged.into());
     }
-    check_status(&response, StatusCode::PARTIAL_CONTENT)?;
+    check_status(&response, StatusCode::PARTIAL_CONTENT, ambiguous)?;
     check_partial(response.headers(), from, request.total, &request.validators)?;
     Ok((response, 0))
 }
@@ -578,11 +701,11 @@ pub(crate) fn empty_range(from: u64, to: u64) -> Error {
     Error::Internal(format!("a request for no bytes ({from} to {to})"))
 }
 
-fn check_status(response: &Response, want: StatusCode) -> Result<(), Failure> {
+fn check_status(response: &HttpResponse, want: StatusCode, ambiguous: bool) -> Result<(), Failure> {
     if response.status() == want {
         Ok(())
     } else {
-        Err(Failure::status(response))
+        Err(Failure::status(response, ambiguous))
     }
 }
 

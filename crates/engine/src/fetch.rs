@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
+use crate::http::HttpResponse;
 use bytes::{Bytes, BytesMut};
 use reqwest::header::CONTENT_TYPE;
 use reqwest::{Client, Response, StatusCode};
@@ -106,6 +107,7 @@ struct Inner {
     next: AtomicUsize,
     max_retries: u32,
     retry_backoff: Backoff,
+    host_progress: Option<Arc<crate::HostProgress>>,
     /// Which links' connections go to a proxy.
     proxies: Proxies,
     stall_timeout: Duration,
@@ -236,6 +238,7 @@ impl Fetcher {
                 next: AtomicUsize::new(0),
                 max_retries: options.max_retries,
                 retry_backoff: options.retry_backoff,
+                host_progress: options.host_progress.clone(),
                 proxies,
                 stall_timeout: options.stall_timeout,
                 rate_limiters: options.rate_limiters.clone(),
@@ -296,7 +299,7 @@ impl Fetcher {
             url: url.to_string(),
         };
         let answer = self
-            .transfer(&url, range, 0, &mut sink, &mut |_| {})
+            .transfer(&url, range, 0, &mut sink, &mut |_| {}, false)
             .await?;
         let body = match sink {
             Sink::Memory { buf, .. } => buf.freeze(),
@@ -348,7 +351,32 @@ impl Fetcher {
         range: Option<Range<u64>>,
         path: &Path,
         kept: u64,
+        on_bytes: impl FnMut(u64) + Send,
+    ) -> Result<u64> {
+        self.save_file(url, range, path, kept, on_bytes, false)
+            .await
+    }
+
+    /// Saves a stream segment. Its bytes supply evidence for subsequent segment requests to this host.
+    pub async fn save_segment_after(
+        &self,
+        url: &Url,
+        range: Option<Range<u64>>,
+        path: &Path,
+        kept: u64,
+        on_bytes: impl FnMut(u64) + Send,
+    ) -> Result<u64> {
+        self.save_file(url, range, path, kept, on_bytes, true).await
+    }
+
+    async fn save_file(
+        &self,
+        url: &Url,
+        range: Option<Range<u64>>,
+        path: &Path,
+        kept: u64,
         mut on_bytes: impl FnMut(u64) + Send,
+        segment: bool,
     ) -> Result<u64> {
         let url = clean_url(url)?;
         let mut file = tokio::fs::OpenOptions::new()
@@ -375,7 +403,7 @@ impl Fetcher {
             return Ok(kept);
         }
         let answer = self
-            .transfer(&url, range, kept, &mut sink, &mut on_bytes)
+            .transfer(&url, range, kept, &mut sink, &mut on_bytes, segment)
             .await;
         // Whatever arrived is kept, also after an error.
         let flushed = sink.finish().await;
@@ -399,6 +427,7 @@ impl Fetcher {
         kept: u64,
         sink: &mut Sink,
         on_bytes: &mut (dyn FnMut(u64) + Send),
+        segment: bool,
     ) -> Result<Answer> {
         let client = self.client();
         let mut position = Position {
@@ -414,10 +443,12 @@ impl Fetcher {
             through_proxy: self.inner.proxies.goes_through(url),
         };
         let mut attempts = Attempts::new(Refusals::AsFailures, retries);
+        let mut retry_wait = None;
         loop {
+            let _retrying = retry_wait.take();
             let before = position.counted;
             let attempt = self
-                .attempt(client, url, &mut position, sink, on_bytes)
+                .attempt(client, url, &mut position, sink, on_bytes, segment)
                 .await;
             let f = match attempt {
                 Ok(answer) => return Ok(answer),
@@ -425,10 +456,15 @@ impl Fetcher {
                 Err(f) => f,
             };
             let progressed = position.counted > before;
-            let delay = match attempts.after_failure(&f.error, f.retry_after, progressed) {
+            let delay = match attempts.after_request_failure(&f, progressed, segment) {
                 Next::GiveUp => return Err(f.error),
                 Next::Retry(delay) | Next::StepBackOrRetry(delay) => delay,
             };
+            retry_wait = f.retry_wait(
+                self.inner.host_progress.as_ref(),
+                attempts.report(&f, segment),
+                delay,
+            );
             warn!(error = %Chain(&f.error), %url, retry_in = ?delay, "request failed, retrying");
             tokio::select! {
                 () = self.inner.cancel.cancelled() => return Err(Error::Cancelled),
@@ -446,35 +482,21 @@ impl Fetcher {
         position: &mut Position,
         sink: &mut Sink,
         on_bytes: &mut (dyn FnMut(u64) + Send),
+        segment: bool,
     ) -> Result<Answer, Failure> {
         position.start_over_if_unprovable(sink).await?;
         let from = position.base + position.written;
         let (response, mut skip) = self
-            .open(client, url, from, position.end, position.first.as_ref())
+            .open(
+                client,
+                url,
+                from,
+                position.end,
+                position.first.as_ref(),
+                segment,
+            )
             .await?;
-        let total = known_end(&response, from, skip);
-        if let Some(total) = total
-            && total < from
-        {
-            return Err(Error::PrematureEof {
-                at: total,
-                end: from,
-            }
-            .into());
-        }
-        if position.end.is_none() {
-            // The size, once known, lets a later retry ask for exactly the rest
-            // and tells a complete body from one cut short.
-            position.end = total;
-        }
-        position.first.get_or_insert_with(|| FirstAnswer {
-            whole: response.status() == StatusCode::OK,
-            total,
-            validators: Validators::from_headers(response.headers()),
-        });
-        if let Some(end) = position.end {
-            sink.expect(end.saturating_sub(from))?;
-        }
+        position.begin(&response, from, skip, sink)?;
         let answer_url = response.url().clone();
         let content_type = response
             .headers()
@@ -543,11 +565,12 @@ impl Fetcher {
         from: u64,
         end: Option<u64>,
         first: Option<&FirstAnswer>,
-    ) -> Result<(Response, u64), Failure> {
+        segment: bool,
+    ) -> Result<(HttpResponse, u64), Failure> {
         let range = RequestRange::up_to(from, end)
             .ok_or_else(|| http::empty_range(from, end.unwrap_or(from)))?;
         let range = (!range.is_whole()).then_some(range);
-        let response = http::send(client, url, &self.inner.session, range).await?;
+        let response = http::send(client, url, &self.inner.session, range, segment).await?;
         let nothing_known = FirstAnswer::default();
         let first = first.unwrap_or(&nothing_known);
         let headers = response.headers();
@@ -563,7 +586,7 @@ impl Fetcher {
                 http::check_partial(headers, from, first.total, &first.validators)?;
                 Ok((response, 0))
             }
-            _ => Err(Failure::status(&response)),
+            _ => Err(Failure::status(&response, segment)),
         }
     }
 }
@@ -583,6 +606,39 @@ struct Position {
 }
 
 impl Position {
+    fn begin(
+        &mut self,
+        response: &HttpResponse,
+        from: u64,
+        skip: u64,
+        sink: &mut Sink,
+    ) -> Result<(), Failure> {
+        let total = known_end(response, from, skip);
+        if let Some(total) = total
+            && total < from
+        {
+            return Err(Error::PrematureEof {
+                at: total,
+                end: from,
+            }
+            .into());
+        }
+        if self.end.is_none() {
+            // The size, once known, lets a later retry ask for exactly the rest
+            // and tells a complete body from one cut short.
+            self.end = total;
+        }
+        self.first.get_or_insert_with(|| FirstAnswer {
+            whole: response.status() == StatusCode::OK,
+            total,
+            validators: Validators::from_headers(response.headers()),
+        });
+        if let Some(end) = self.end {
+            sink.expect(end.saturating_sub(from))?;
+        }
+        Ok(())
+    }
+
     /// Nothing ties a new answer to what was kept when the first said nothing to compare, so its tail must not be joined to it.
     async fn start_over_if_unprovable(&mut self, sink: &mut Sink) -> Result<()> {
         if self.written > 0 && self.first.as_ref().is_some_and(FirstAnswer::is_unprovable) {
