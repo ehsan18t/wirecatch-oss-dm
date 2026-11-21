@@ -126,9 +126,9 @@ impl Manager {
             return Ok(None);
         };
         let origin = origin_of(capture);
-        let Some(source) = origin.browser_source.as_ref() else {
+        if origin.browser_source.is_none() {
             return Ok(None);
-        };
+        }
         let known_size = if entry.media_job.is_none() {
             entry
                 .row
@@ -142,7 +142,7 @@ impl Manager {
             || known_size
                 .zip(capture.size_hint)
                 .is_some_and(|(old, new)| old != new)
-            || !matches_capture(entry, capture, source, url)
+            || !matches_capture(entry, capture)
         {
             return Ok(None);
         }
@@ -240,80 +240,13 @@ fn source_page(source: &BrowserSource) -> Option<Url> {
         .and_then(|page| web_url(page.expose()))
 }
 
-/// The address a navigation began at, when it led to `page` by adding a query:
-/// two landing pages reached from one such entry are the same page with a rotated query.
-fn stable_entry(source: &BrowserSource, page: &Url) -> Option<Url> {
-    let entry = source
-        .page_redirect_urls
-        .first()
-        .and_then(|url| web_url(url.expose()));
-    entry.filter(|entry| {
-        page.query().is_some()
-            && page.fragment().is_none()
-            && entry.origin() == page.origin()
-            && entry.query().is_none()
-    })
-}
-
-fn matches_capture(
-    entry: &super::Entry,
-    capture: &NewDownload,
-    source: &BrowserSource,
-    url: &Url,
-) -> bool {
+/// D284: while the watch is open, the next capture of the same kind refreshes the row, whatever its address.
+fn matches_capture(entry: &super::Entry, capture: &NewDownload) -> bool {
     let kind = entry.row.media.as_ref().map(|media| media.source);
-    if kind != capture.media.as_ref().map(|media| media.kind) {
-        return false;
-    }
-    let old = entry.origin.browser_source.as_deref();
-    if old.is_some_and(|source| source.private_window) {
-        return false;
-    }
-    if matches!(kind, None | Some(MediaKind::Direct)) {
-        // The person asked for this download's link and may take it from any site; only a different size, refused by the caller, says it is another file.
-        return true;
-    }
-    let Some(old) = old.filter(|_| kind != Some(MediaKind::Page)) else {
-        // A video page is its own address; a row saved without its browser source has nothing else to compare.
-        return web_url(&entry.row.url).as_ref() == Some(url);
-    };
-    let same_page = match (source_page(old), source_page(source)) {
-        (None, _) => false,
-        (Some(was), Some(now))
-            if was == now
-                || stable_entry(old, &was)
-                    .is_some_and(|began| stable_entry(source, &now) == Some(began)) =>
-        {
-            true
-        }
-        (Some(_), _) => return false,
-    };
-    let signed_stream = same_page && matches!(kind, Some(MediaKind::Hls | MediaKind::Dash));
-    let new = addresses(source, url.as_str());
-    addresses(old, &entry.row.url).iter().flatten().any(|old| {
-        new.iter()
-            .flatten()
-            .any(|new| old == new || (signed_stream && same_signed_resource(old, new)))
-    })
-}
-
-fn addresses(source: &BrowserSource, final_url: &str) -> [Option<Url>; 2] {
-    [
-        source
-            .redirect_urls
-            .first()
-            .and_then(|url| web_url(url.expose())),
-        web_url(final_url),
-    ]
-}
-
-fn same_signed_resource(old: &Url, new: &Url) -> bool {
-    old.origin() == new.origin()
-        && old.path() == new.path()
-        && old
-            .query_pairs()
-            .filter(|(name, _)| !wirecatch_streams::is_signing_parameter(name))
-            .eq(new
-                .query_pairs()
-                .filter(|(name, _)| !wirecatch_streams::is_signing_parameter(name)))
+    kind == capture.media.as_ref().map(|media| media.kind)
+        && !entry
+            .origin
+            .browser_source
+            .as_deref()
+            .is_some_and(|source| source.private_window)
 }
