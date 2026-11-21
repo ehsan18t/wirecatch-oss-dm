@@ -38,6 +38,8 @@ signal-hook = { version = "0.3.18", default-features = false, features = ["itera
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = [
+    "Win32_System_IO",
+    "Win32_System_Ioctl",
     "Win32_Foundation",
     "Win32_Security",
     "Win32_System_Diagnostics_Debug",

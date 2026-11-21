@@ -21,6 +21,7 @@ trash.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = [
+    "Win32_System_Ioctl",
     "Wdk_Foundation",
     "Wdk_Storage_FileSystem",
     "Win32_Foundation",

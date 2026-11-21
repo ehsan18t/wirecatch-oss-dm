@@ -54,7 +54,7 @@ export async function remainingPlaceholders(root) {
 const INHERITED = ['version', 'license', 'authors', 'repository', 'homepage'];
 
 /** The crates of the workspace: the `members` of the root Cargo.toml, each a folder or a `folder/*` glob. */
-function crateManifests(root) {
+export function crateManifests(root) {
   const members = /^members\s*=\s*\[([^\]]*)\]/m.exec(
     readFileSync(join(root, 'Cargo.toml'), 'utf8'),
   );
