@@ -181,7 +181,7 @@ const SIGNING_PREFIXES: &[&str] = &["x-amz-", "x-goog-"];
 
 /// Whether this name is used for a signature or related authentication value.
 #[must_use]
-pub fn is_signing_parameter(name: &str) -> bool {
+pub(crate) fn is_signing_parameter(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
     SIGNING_PARAMETERS.contains(&name.as_str())
         || SIGNING_PREFIXES
