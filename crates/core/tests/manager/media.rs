@@ -1663,6 +1663,16 @@ async fn left_to_yt_dlp(vcodec: &str, page: &str) -> TestResult<Vec<String>> {
     let download_call = ytdlp_calls(&h)?
         .pop()
         .ok_or("yt-dlp was not run to download")?;
+    let cwd = Path::new(
+        download_call["cwd"]
+            .as_str()
+            .ok_or("yt-dlp has no working directory")?,
+    );
+    assert!(
+        cwd.starts_with(h.root.path().join("data")),
+        "{}",
+        cwd.display()
+    );
     args(&download_call)
 }
 

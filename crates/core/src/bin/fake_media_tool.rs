@@ -250,14 +250,21 @@ async fn ytdlp(dir: &Path, args: &[String]) -> io::Result<ExitCode> {
     };
     let format = after(args, "-f").unwrap_or("best");
     let ext = std::fs::read_to_string(dir.join("download-ext")).unwrap_or_else(|_| "mp4".into());
-    let out = template.replace("%(ext)s", ext.trim());
+    let output_dir = match after(args, "--paths") {
+        Some(path) => {
+            let expanded = path.strip_prefix('$').and_then(std::env::var_os);
+            PathBuf::from(expanded.unwrap_or_else(|| path.into()))
+        }
+        None => PathBuf::new(),
+    };
+    let out = output_dir.join(template.replace("%(ext)s", ext.trim()));
     say("wcprogress 10 20 NA")?;
     say("wcprogress 20 20 NA")?;
     if std::fs::write(&out, format!("downloaded by fake yt-dlp: {format}")).is_err() {
-        eprintln!("ERROR: cannot write {out}");
+        eprintln!("ERROR: cannot write {}", out.display());
         return Ok(ExitCode::from(1));
     }
-    say(out)?;
+    say(out.display())?;
     Ok(ExitCode::SUCCESS)
 }
 

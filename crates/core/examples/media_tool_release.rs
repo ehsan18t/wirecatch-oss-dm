@@ -1,4 +1,4 @@
-//! Prints where the media add-on's `ffmpeg` or `deno` comes from on this system, on one line: the archive's pinned address, its pinned SHA-256 and the program's path inside it. CI installs both from it, so the tests run the builds the app installs.
+//! Prints where the media add-on's `ffmpeg`, `deno` or `ytdlp` comes from on this system, on one line: the archive's pinned address, its pinned SHA-256 and the program's path inside it. CI installs both from it, so the tests run the builds the app installs.
 //!
 //! ```text
 //! cargo run -p wirecatch-core --example media_tool_release -- ffmpeg
@@ -15,7 +15,12 @@ fn main() -> std::io::Result<()> {
     let tool = match name.as_ref() {
         "ffmpeg" => sources.ffmpeg,
         "deno" => sources.deno,
-        _ => return Err(std::io::Error::other("name the program: ffmpeg or deno")),
+        "ytdlp" => sources.ytdlp,
+        _ => {
+            return Err(std::io::Error::other(
+                "name the program: ffmpeg, deno or ytdlp",
+            ));
+        }
     };
     let release = tool.release();
     let program = tool
@@ -32,6 +37,10 @@ fn main() -> std::io::Result<()> {
         "{} {} {}",
         release.url(),
         release.sha256(),
-        program.from
+        if program.from.is_empty() {
+            &program.to
+        } else {
+            &program.from
+        }
     )
 }

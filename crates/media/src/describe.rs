@@ -34,6 +34,10 @@ fn cannot_start(tools: &MediaTools, program: &str, error: &std::io::Error) -> Us
 /// Why yt-dlp could not read a page or download from it.
 pub fn ytdlp(error: &YtDlpError, tools: &MediaTools) -> UserError {
     match error {
+        YtDlpError::OutputPathTooLong => retry(
+            "The destination path is too long. Choose a shorter download folder and try again."
+                .into(),
+        ),
         YtDlpError::Folder { source, .. } => retry(format!(
             "{PRODUCT_NAME} could not prepare a folder for the media add-on ({source}). Check that the disk has free space, then try again."
         )),
