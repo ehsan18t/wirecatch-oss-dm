@@ -239,8 +239,10 @@ fn source_page(source: &BrowserSource) -> Option<Url> {
 
 /// D284: while the watch is open, the next capture of the same kind refreshes the row, whatever its address or size.
 fn matches_capture(entry: &super::Entry, capture: &NewDownload) -> bool {
-    let kind = entry.row.media.as_ref().map(|media| media.source);
-    kind == capture.media.as_ref().map(|media| media.kind)
+    // A video file sent by the download button downloads as any other file.
+    let delivery = |kind: Option<MediaKind>| kind.filter(|kind| *kind != MediaKind::Direct);
+    delivery(entry.row.media.as_ref().map(|media| media.source))
+        == delivery(capture.media.as_ref().map(|media| media.kind))
         && !entry
             .origin
             .browser_source

@@ -16,8 +16,8 @@ use tokio::task::JoinHandle;
 use wirecatch_core::{LinkFrom, Manager};
 use wirecatch_protocol::app::{CaptureConfirmation, DownloadStatus, QueueSettings, UiEvent};
 use wirecatch_protocol::extension::{
-    AddAction, BrowserRoute, CaptureSource, CookieJar, CookieRequest, Header, JarCookie,
-    NewDownload, SameSite, WithdrawOutcome, WithdrawRequest,
+    AddAction, BrowserRoute, CaptureSource, CookieJar, CookieRequest, Header, JarCookie, MediaHint,
+    MediaKind, NewDownload, SameSite, WithdrawOutcome, WithdrawRequest,
 };
 use wirecatch_protocol::frame::{self, MAX_FRAME_LEN};
 use wirecatch_protocol::shell::{
@@ -1789,6 +1789,42 @@ async fn a_file_capture_refreshes_the_watched_row_whatever_its_site_or_size() ->
     assert_eq!(h.manager.add_capture(fresh.clone()).await?.id, Some(id));
     tokio::time::timeout(PATIENCE, result).await??;
     assert_eq!(h.row(id).url, fresh.url);
+    Ok(())
+}
+
+/// The browser handed over the file, and the download button on its video sends the same file again.
+#[tokio::test]
+async fn a_video_file_from_the_download_button_refreshes_a_watched_file() -> TestResult {
+    let h = Harness::new().await?;
+    h.manager
+        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)?;
+    let page = "https://videos.example/watch/1";
+    let mut old = capture_from(page, "https://cdn.example/video.mp4?token=old".into());
+    old.browser_route = Some(Box::new(BrowserRoute {
+        private_window: false,
+        private_session: None,
+        profile: None,
+        observed_page: Some(page.into()),
+        page_redirect_urls: None,
+        redirect_urls: Vec::new(),
+    }));
+    let id = h.manager.add_capture(old.clone()).await?.id.unwrap();
+    let (saved, result) = oneshot::channel();
+    h.manager
+        .watch_link(id, saved, wirecatch_engine::CancellationToken::new())?;
+
+    let mut fresh = old;
+    fresh.handover_id = "button".into();
+    fresh.url = "https://cdn.example/video.mp4?token=fresh".into();
+    fresh.source = CaptureSource::MediaButton;
+    fresh.media = Some(Box::new(MediaHint {
+        kind: MediaKind::Direct,
+        title: None,
+    }));
+    assert_eq!(h.manager.add_capture(fresh.clone()).await?.id, Some(id));
+    tokio::time::timeout(PATIENCE, result).await??;
+    assert_eq!(h.row(id).url, fresh.url);
+    assert_eq!(h.manager.list_downloads().len(), 1);
     Ok(())
 }
 
