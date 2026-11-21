@@ -5,6 +5,7 @@
 
 mod fetch;
 mod join;
+mod pace;
 
 use std::io;
 use std::path::Path;

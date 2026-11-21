@@ -1860,3 +1860,13 @@ Some sites refuse a client that is not a browser: they close the connection afte
 6. The extension calls `fetch()` with the browser's cookies, without its cache, and does not follow redirects: the browser would take a redirect into the local network or to another site unchecked, so a redirect fails the read. The app leaves out the request headers the browser sets itself (`Cookie`, `User-Agent`, `Accept-Encoding`, `Sec-*` and the like), so the browser's own go. yt-dlp gets the body decoded, without the browser's `Content-Encoding` or length.
 7. When the browser makes no answer to a request (gone, too slow, a redirect, unreachable site, too large, no address reported, an answer HTTP cannot carry), yt-dlp gets `502`, the run's later tunnels go directly, so yt-dlp's own retry of the request does, and a run that then fails reads the page once more directly.
 8. What the browser cannot do: send yt-dlp's `Referer`, `Origin` or its own cookies, show `Set-Cookie` to yt-dlp, or make the request look like a page load (it leaves as the extension's, `Sec-Fetch-Site: none`). The measured site needed none of these.
+
+### D283. A host that refuses segments slows every stream download from it
+
+Decided on 2026-11-21. It amends D31.
+
+A video CDN answered `410` partway through HLS downloads, more often with two downloads running, and the same download tried again ten seconds later went on: the host was limiting how much one address asked of it, not refusing the video.
+
+1. A segment refused with `403`, `410` or `429` after the stream's other segments came is asked for again, at most four times, instead of stopping the download. A refusal before any segment came is the link's own and fails at once, so an expired link still reads the page again for fresh ones without waiting.
+2. Each refusal rests the host, for every stream download of the app: 2 seconds after the first, doubled after each refusal in a row, at most 30. The host then takes half as many requests at once as it had in flight, and one more after every eight segments it serves. A host is known by its name and port.
+3. ffmpeg runs in its own folder, never in a download's: Windows cannot start a program in a folder whose path passes 260 characters, which a long title in a deep folder reaches, and every path ffmpeg gets is already absolute.

@@ -761,6 +761,30 @@ async fn a_failing_segment_is_retried_and_then_reported_clearly() {
     dir.remove().unwrap();
 }
 
+/// A host that refuses a segment after serving others is limiting how much it is asked: the segment is asked for again after a wait, and the download finishes. A refusal before any segment came is the link's own and fails at once.
+#[tokio::test]
+async fn a_segment_refused_after_others_came_is_asked_again() {
+    let server = FileServer::start().await;
+    let segments = media_playlist(&server, "r", 5, 8).unwrap();
+    server.fail("r/seg3.ts", 1, 410);
+    let dir = private_dir("hls-refused").unwrap();
+    let mut req = request(server.url("r/index.m3u8"), dir.join("a.ts"));
+    req.options.connections = 1;
+    let (path, _) = completed(run(req).await.unwrap());
+    assert_eq!(std::fs::read(path).unwrap(), segments.concat());
+    assert_eq!(server.requests("r/seg3.ts"), 2, "refused once, then served");
+
+    let server = FileServer::start().await;
+    media_playlist(&server, "r", 5, 8).unwrap();
+    server.fail("r/seg0.ts", 1, 410);
+    let mut req = request(server.url("r/index.m3u8"), dir.join("b.ts"));
+    req.options.connections = 1;
+    let error = run(req).await.unwrap_err();
+    assert!(matches!(error, Error::Segment { number: 1, .. }), "{error}");
+    assert_eq!(server.requests("r/seg0.ts"), 1);
+    dir.remove().unwrap();
+}
+
 #[tokio::test]
 async fn separate_audio_without_ffmpeg_is_refused_before_downloading() {
     let server = FileServer::start().await;
