@@ -611,6 +611,7 @@ impl Manager {
                 }
                 self.gave_way(&pending);
                 self.emit(UiEvent::ConfirmationClosed { id });
+                self.take_over(&pending.handovers, row).await;
                 if matches!(picker, Picker::Person) {
                     self.remember_media_choice(&choice, &selection);
                 }

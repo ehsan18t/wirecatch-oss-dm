@@ -481,6 +481,7 @@ impl Manager {
         }
         entry.refuse_if_stranded()?;
         self.close_questions_of(state, id);
+        state.handovers.forget_takeovers_of(id);
         let entry = state.entry_mut(id)?;
         match replacement {
             Replacement::Pasted(from) => {

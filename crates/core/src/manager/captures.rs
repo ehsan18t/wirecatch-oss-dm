@@ -92,9 +92,30 @@ impl Manager {
         if let Some(refreshed) = self.refresh_from_capture(&capture, &url, chosen_by)? {
             return Ok(refreshed);
         }
-        if let Some(joined) = self.join_unfinished(&capture, &url)? {
-            return Ok(joined);
+        let handover = capture.handover_id.clone();
+        let joined = match self.join_unfinished(&capture, &url) {
+            Ok(None) => None,
+            Ok(Some(joined)) => Some(Ok(joined)),
+            Err(e) => Some(Err(e)),
+        };
+        if let Some(joined) = joined {
+            // Joined to a download already in the list, it replaces nothing.
+            self.settle_kind_switch(&handover, false);
+            return joined;
         }
+        let added = self.add_new_capture(capture, url, chosen_by, arrived).await;
+        self.settle_kind_switch(&handover, added.is_ok());
+        added
+    }
+
+    /// Adds a capture that refreshed and joined nothing: as a question about its media or its file, or as a download.
+    async fn add_new_capture(
+        &self,
+        capture: NewDownload,
+        url: Url,
+        chosen_by: ChosenBy,
+        arrived: Instant,
+    ) -> Result<AddedDownload> {
         let (ask, placed) = {
             let state = self.lock_open()?;
             (
@@ -129,25 +150,39 @@ impl Manager {
         let Some(row) = added else {
             return self.known_handover(&capture.handover_id).await;
         };
+        self.answer_captured(row, &capture.handover_id, arrived)
+            .await
+    }
+
+    /// Answers the extension for the download `row` added for `handover`: at once when it is queued, else once its server answered.
+    async fn answer_captured(
+        &self,
+        row: DownloadSummary,
+        handover: &str,
+        arrived: Instant,
+    ) -> Result<AddedDownload> {
         let reply = AddedDownload {
             id: Some(row.id),
             action: capture_action(&row),
         };
+        let handovers = [handover.to_string()];
         if reply.action == AddAction::Queued {
             // The link has not been tried; the extension decides what that means.
+            let id = row.id;
             self.emit(UiEvent::Captured(row));
+            self.take_over(&handovers, id).await;
             return Ok(reply);
         }
-        match self
-            .await_answer(row.id, &capture.handover_id, arrived, &reply)
-            .await
-        {
-            Ok(()) => Ok(reply),
+        match self.await_answer(row.id, handover, arrived, &reply).await {
+            Ok(()) => {
+                self.take_over(&handovers, row.id).await;
+                Ok(reply)
+            }
             Err(reason) => {
                 // Answer at once: stopping the attempt can take up to the stop
                 // timeout, and the extension does not wait that long. The attempt
                 // is hidden now and removed in the background.
-                self.lock().handovers.remove(&capture.handover_id);
+                self.lock().handovers.remove(handover);
                 self.remove_in_background(vec![row.id]);
                 Err(CoreError::NotStarted(reason))
             }
@@ -354,13 +389,16 @@ impl Manager {
     ) -> Result<DownloadId> {
         match self.insert_confirmed(&pending, answer).await {
             Ok(row) => {
-                let mut state = self.lock();
-                for handover in &pending.handovers {
-                    state
-                        .handovers
-                        .retarget(handover, Target::Confirmed(row.id));
+                {
+                    let mut state = self.lock();
+                    for handover in &pending.handovers {
+                        state
+                            .handovers
+                            .retarget(handover, Target::Confirmed(row.id));
+                    }
                 }
                 self.emit(UiEvent::ConfirmationClosed { id });
+                self.take_over(&pending.handovers, row.id).await;
                 Ok(row.id)
             }
             Err(e) => {

@@ -55,6 +55,8 @@ impl Handover {
 pub(super) struct Handovers {
     order: VecDeque<String>,
     known: HashMap<String, Handover>,
+    /// The watched download that the download added for a handover replaces (D286.5).
+    takeovers: HashMap<String, DownloadId>,
 }
 
 impl Handovers {
@@ -80,7 +82,28 @@ impl Handovers {
                 break;
             };
             self.known.remove(&oldest);
+            self.takeovers.remove(&oldest);
         }
+    }
+
+    /// The download added for handover `id` is to replace `watched`.
+    pub fn replace_with(&mut self, id: &str, watched: DownloadId) {
+        self.takeovers.insert(id.to_string(), watched);
+    }
+
+    /// The download that the one added for handover `id` replaces, taken out.
+    pub fn take_replaced(&mut self, id: &str) -> Option<DownloadId> {
+        self.takeovers.remove(id)
+    }
+
+    /// The download that the one added for handover `id` is to replace.
+    pub fn replaced_by(&self, id: &str) -> Option<DownloadId> {
+        self.takeovers.get(id).copied()
+    }
+
+    /// `watched` got a link of its own, so no other download replaces it.
+    pub fn forget_takeovers_of(&mut self, watched: DownloadId) {
+        self.takeovers.retain(|_, replaced| *replaced != watched);
     }
 
     /// The downloads of handovers still waiting for the server.
@@ -112,6 +135,7 @@ impl Handovers {
     /// Forgets a handover, waking duplicate adds waiting for it (they then find it
     /// gone and report that it was not taken over).
     pub fn remove(&mut self, id: &str) {
+        self.takeovers.remove(id);
         if let Some(handover) = self.known.remove(id) {
             self.order.retain(|known| known != id);
             if let Some(deciding) = handover.deciding {
