@@ -1232,7 +1232,9 @@ async fn a_recaptured_video_page_refreshes_the_original_download() -> TestResult
     h.manager.set_queue_paused(DEFAULT_QUEUE_ID, true)?;
 
     let id = start_page_video(&h, &server, 20).await?;
-    let url = server.url("watch/20");
+    // The site adds its own parameters to the page it opens, as YouTube does in a playlist.
+    let mut url = server.url("watch/20");
+    url.set_query(Some("index=8"));
     let (saved, result) = tokio::sync::oneshot::channel();
     // This older capture did not record whether its page was private.
     assert_eq!(
@@ -1262,14 +1264,14 @@ async fn a_recaptured_video_page_refreshes_the_original_download() -> TestResult
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_recaptured_stream_can_change_its_signature_but_keeps_its_selection() -> TestResult {
+async fn a_recaptured_stream_refreshes_the_watched_row_whatever_its_address() -> TestResult {
     let server = FileServer::start().await;
     hls(&server, false, false);
     let h = Harness::new().await?;
     h.manager.set_queue_paused(DEFAULT_QUEUE_ID, true)?;
     let mut ui = h.manager.subscribe();
-    let page = "https://videos.test/watch";
-    let manifest = |query| {
+    let page = "https://videos.test/watch?v=1";
+    let manifest = |page: &str, query: &str| {
         let mut url = server.url("hls/master.m3u8");
         url.set_query(Some(query));
         let mut capture = media_capture(url, MediaKind::Hls, None);
@@ -1283,7 +1285,10 @@ async fn a_recaptured_stream_can_change_its_signature_but_keeps_its_selection() 
         }));
         capture
     };
-    h.manager.add_capture(manifest("video=1&token=old")).await?;
+    // Sites sign streams under names no list knows, and serve them from any of their hosts.
+    h.manager
+        .add_capture(manifest(page, "video=1&h=old&e=1"))
+        .await?;
     let choice = choice_requested(&mut ui).await;
     let option = &choice.options[0];
     h.manager
@@ -1300,10 +1305,10 @@ async fn a_recaptured_stream_can_change_its_signature_but_keeps_its_selection() 
         page
     );
 
-    let different = manifest("video=2&token=fresh");
-    assert_eq!(h.manager.add_capture(different).await?.id, None);
-    assert_eq!(h.row(row.id).url, row.url);
-    let fresh = manifest("video=1&token=fresh");
+    let fresh = manifest(
+        "https://videos.test/watch?v=1&index=8",
+        "video=1&validfrom=2&hash=fresh",
+    );
     assert_eq!(h.manager.add_capture(fresh.clone()).await?.id, Some(row.id));
     tokio::time::timeout(PATIENCE, result).await??;
     let refreshed = h.row(row.id);

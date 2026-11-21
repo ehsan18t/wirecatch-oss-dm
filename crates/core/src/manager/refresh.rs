@@ -2,11 +2,11 @@
 
 use tokio::sync::oneshot;
 use wirecatch_engine::{CancellationToken, Url};
+use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::DownloadStatus;
 use wirecatch_protocol::extension::{
-    AddAction, AddedDownload, CaptureSource, MAX_DOWNLOAD_REDIRECTS, MediaKind, NewDownload,
+    AddAction, AddedDownload, CaptureSource, MediaKind, NewDownload,
 };
-use wirecatch_protocol::{DownloadId, Secret};
 use wirecatch_records::origin::BrowserSource;
 use wirecatch_sites::local_network::ChosenBy;
 
@@ -126,32 +126,18 @@ impl Manager {
             return Ok(None);
         };
         let origin = origin_of(capture);
-        let Some(source) = origin.browser_source.as_ref() else {
+        if origin.browser_source.is_none() {
             return Ok(None);
-        };
-        let known_size = if entry.media_job.is_none() {
-            entry
-                .row
-                .total
-                .or_else(|| entry.expect.as_ref().and_then(|expected| expected.size))
-        } else {
-            None
-        };
+        }
         if entry.row.status == DownloadStatus::Completed
             || entry.refuse_if_stranded().is_err()
-            || known_size
-                .zip(capture.size_hint)
-                .is_some_and(|(old, new)| old != new)
-            || !matches_capture(entry, capture, source, url)
+            || !matches_capture(entry, capture)
         {
             return Ok(None);
         }
 
-        let expect = entry.media_job.is_none().then(|| {
-            let mut expect = expectation_of(capture);
-            expect.size = expect.size.or(known_size);
-            expect
-        });
+        // Without a size from the browser the server's decides: the engine starts another file over (D286.4).
+        let expect = entry.media_job.is_none().then(|| expectation_of(capture));
         self.replace_link(
             &mut state,
             id,
@@ -197,8 +183,6 @@ pub(super) fn browser_source(capture: &NewDownload) -> Option<BrowserSource> {
             .as_ref()
             .filter(|page| web_url(page.expose()).is_some())
             .cloned(),
-        page_redirect_urls: safe_redirects(route.page_redirect_urls.as_deref().unwrap_or_default()),
-        redirect_urls: safe_redirects(&route.redirect_urls),
         private_window: route.private_window,
         private_session: route.private_session.clone(),
         profile: route.profile.clone(),
@@ -217,14 +201,6 @@ fn has_browser_source(source: CaptureSource) -> bool {
     )
 }
 
-fn safe_redirects(urls: &[Secret]) -> Vec<Secret> {
-    urls.iter()
-        .take(MAX_DOWNLOAD_REDIRECTS)
-        .filter(|address| web_url(address.expose()).is_some())
-        .cloned()
-        .collect()
-}
-
 fn web_url(text: &str) -> Option<Url> {
     Url::parse(text).ok().filter(|url| {
         matches!(url.scheme(), "https" | "http")
@@ -240,80 +216,15 @@ fn source_page(source: &BrowserSource) -> Option<Url> {
         .and_then(|page| web_url(page.expose()))
 }
 
-/// The address a navigation began at, when it led to `page` by adding a query:
-/// two landing pages reached from one such entry are the same page with a rotated query.
-fn stable_entry(source: &BrowserSource, page: &Url) -> Option<Url> {
-    let entry = source
-        .page_redirect_urls
-        .first()
-        .and_then(|url| web_url(url.expose()));
-    entry.filter(|entry| {
-        page.query().is_some()
-            && page.fragment().is_none()
-            && entry.origin() == page.origin()
-            && entry.query().is_none()
-    })
-}
-
-fn matches_capture(
-    entry: &super::Entry,
-    capture: &NewDownload,
-    source: &BrowserSource,
-    url: &Url,
-) -> bool {
-    let kind = entry.row.media.as_ref().map(|media| media.source);
-    if kind != capture.media.as_ref().map(|media| media.kind) {
-        return false;
-    }
-    let old = entry.origin.browser_source.as_deref();
-    if old.is_some_and(|source| source.private_window) {
-        return false;
-    }
-    if matches!(kind, None | Some(MediaKind::Direct)) {
-        // The person asked for this download's link and may take it from any site; only a different size, refused by the caller, says it is another file.
-        return true;
-    }
-    let Some(old) = old.filter(|_| kind != Some(MediaKind::Page)) else {
-        // A video page is its own address; a row saved without its browser source has nothing else to compare.
-        return web_url(&entry.row.url).as_ref() == Some(url);
-    };
-    let same_page = match (source_page(old), source_page(source)) {
-        (None, _) => false,
-        (Some(was), Some(now))
-            if was == now
-                || stable_entry(old, &was)
-                    .is_some_and(|began| stable_entry(source, &now) == Some(began)) =>
-        {
-            true
-        }
-        (Some(_), _) => return false,
-    };
-    let signed_stream = same_page && matches!(kind, Some(MediaKind::Hls | MediaKind::Dash));
-    let new = addresses(source, url.as_str());
-    addresses(old, &entry.row.url).iter().flatten().any(|old| {
-        new.iter()
-            .flatten()
-            .any(|new| old == new || (signed_stream && same_signed_resource(old, new)))
-    })
-}
-
-fn addresses(source: &BrowserSource, final_url: &str) -> [Option<Url>; 2] {
-    [
-        source
-            .redirect_urls
-            .first()
-            .and_then(|url| web_url(url.expose())),
-        web_url(final_url),
-    ]
-}
-
-fn same_signed_resource(old: &Url, new: &Url) -> bool {
-    old.origin() == new.origin()
-        && old.path() == new.path()
-        && old
-            .query_pairs()
-            .filter(|(name, _)| !wirecatch_streams::is_signing_parameter(name))
-            .eq(new
-                .query_pairs()
-                .filter(|(name, _)| !wirecatch_streams::is_signing_parameter(name)))
+/// D286: while the watch is open, the next capture of the same kind refreshes the row, whatever its address or size.
+fn matches_capture(entry: &super::Entry, capture: &NewDownload) -> bool {
+    // A video file sent by the download button downloads as any other file.
+    let delivery = |kind: Option<MediaKind>| kind.filter(|kind| *kind != MediaKind::Direct);
+    delivery(entry.row.media.as_ref().map(|media| media.source))
+        == delivery(capture.media.as_ref().map(|media| media.kind))
+        && !entry
+            .origin
+            .browser_source
+            .as_deref()
+            .is_some_and(|source| source.private_window)
 }

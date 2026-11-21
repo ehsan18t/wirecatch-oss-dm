@@ -24,9 +24,6 @@ pub struct Origin {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BrowserSource {
     pub observed_page: Option<Secret>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub page_redirect_urls: Vec<Secret>,
-    pub redirect_urls: Vec<Secret>,
     pub private_window: bool,
     /// The private session it came from (D280). Never saved, since a private download is not.
     #[serde(skip)]

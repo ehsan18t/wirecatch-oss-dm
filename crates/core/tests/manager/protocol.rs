@@ -16,8 +16,8 @@ use tokio::task::JoinHandle;
 use wirecatch_core::{LinkFrom, Manager};
 use wirecatch_protocol::app::{CaptureConfirmation, DownloadStatus, QueueSettings, UiEvent};
 use wirecatch_protocol::extension::{
-    AddAction, BrowserRoute, CaptureSource, CookieJar, CookieRequest, Header, JarCookie,
-    NewDownload, SameSite, WithdrawOutcome, WithdrawRequest,
+    AddAction, BrowserRoute, CaptureSource, CookieJar, CookieRequest, Header, JarCookie, MediaHint,
+    MediaKind, NewDownload, SameSite, WithdrawOutcome, WithdrawRequest,
 };
 use wirecatch_protocol::frame::{self, MAX_FRAME_LEN};
 use wirecatch_protocol::shell::{
@@ -1757,7 +1757,7 @@ async fn a_browser_capture_refreshes_the_watched_row_after_a_mirror_change() -> 
 }
 
 #[tokio::test]
-async fn a_file_of_the_same_size_refreshes_the_watched_row_from_any_site() -> TestResult {
+async fn a_file_capture_refreshes_the_watched_row_whatever_its_site_or_size() -> TestResult {
     let h = Harness::new().await?;
     h.manager
         .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)?;
@@ -1778,22 +1778,53 @@ async fn a_file_of_the_same_size_refreshes_the_watched_row_from_any_site() -> Te
     h.manager
         .watch_link(id, saved, wirecatch_engine::CancellationToken::new())?;
 
-    let mut another_size = old.clone();
-    another_size.handover_id = "another-size".into();
-    another_size.url = "https://files.example/download?id=2&token=new".into();
-    another_size.size_hint = Some(2048);
-    assert_ne!(h.manager.add_capture(another_size).await?.id, Some(id));
-    assert_eq!(h.row(id).url, old.url);
-
+    // A different size is left to the run, which starts the file over rather than mixing two files.
     let mut fresh = old;
     fresh.handover_id = "fresh".into();
     fresh.url = "https://mirror.example/files/copy.pdf".into();
     fresh.suggested_name = Some("copy.pdf".into());
+    fresh.size_hint = Some(2048);
     fresh.browser_route.as_mut().unwrap().observed_page =
         Some("https://mirror.example/files".into());
     assert_eq!(h.manager.add_capture(fresh.clone()).await?.id, Some(id));
     tokio::time::timeout(PATIENCE, result).await??;
     assert_eq!(h.row(id).url, fresh.url);
+    Ok(())
+}
+
+/// The browser handed over the file, and the download button on its video sends the same file again.
+#[tokio::test]
+async fn a_video_file_from_the_download_button_refreshes_a_watched_file() -> TestResult {
+    let h = Harness::new().await?;
+    h.manager
+        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)?;
+    let page = "https://videos.example/watch/1";
+    let mut old = capture_from(page, "https://cdn.example/video.mp4?token=old".into());
+    old.browser_route = Some(Box::new(BrowserRoute {
+        private_window: false,
+        private_session: None,
+        profile: None,
+        observed_page: Some(page.into()),
+        page_redirect_urls: None,
+        redirect_urls: Vec::new(),
+    }));
+    let id = h.manager.add_capture(old.clone()).await?.id.unwrap();
+    let (saved, result) = oneshot::channel();
+    h.manager
+        .watch_link(id, saved, wirecatch_engine::CancellationToken::new())?;
+
+    let mut fresh = old;
+    fresh.handover_id = "button".into();
+    fresh.url = "https://cdn.example/video.mp4?token=fresh".into();
+    fresh.source = CaptureSource::MediaButton;
+    fresh.media = Some(Box::new(MediaHint {
+        kind: MediaKind::Direct,
+        title: None,
+    }));
+    assert_eq!(h.manager.add_capture(fresh.clone()).await?.id, Some(id));
+    tokio::time::timeout(PATIENCE, result).await??;
+    assert_eq!(h.row(id).url, fresh.url);
+    assert_eq!(h.manager.list_downloads().len(), 1);
     Ok(())
 }
 
