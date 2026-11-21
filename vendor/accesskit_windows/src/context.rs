@@ -9,7 +9,7 @@ use accesskit_consumer::{NodeId, Tree};
 use hashbrown::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, atomic::AtomicBool};
-use windows::core::ComObject;
+use windows_core::{ComObject, Result};
 
 use crate::{node::PlatformNode, util::*, window_handle::WindowHandle};
 
@@ -70,7 +70,7 @@ impl Context {
         self.tree.read().unwrap()
     }
 
-    pub(crate) fn client_top_left(&self) -> windows::core::Result<Point> {
+    pub(crate) fn client_top_left(&self) -> Result<Point> {
         client_top_left(self.hwnd)
     }
 
