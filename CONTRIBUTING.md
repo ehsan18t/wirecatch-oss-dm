@@ -14,6 +14,10 @@ Requirements: rustup (`rust-toolchain.toml` names the latest stable Rust; `rustu
 pnpm install
 ```
 
+Setup uses Git and tar to prepare Rust dependency patches under the ignored `.cache/rust-backports` folder. For a Rust-only checkout or after a patch changes, run `node scripts/prepare-rust-backports.mjs` before running Cargo.
+
+Keep temporary dependency fixes as [patches against pinned releases](patches/README.md). Remove each patch when Wirecatch can use a release that includes its fix.
+
 Run the desktop app (a development build with GPUI optimised, so it draws at the display's rate):
 
 ```bash

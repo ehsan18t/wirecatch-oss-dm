@@ -2,3 +2,5 @@
 *.png binary
 *.ico binary
 *.icns binary
+# Unified diffs use a space for blank context lines.
+patches/*.patch whitespace=-blank-at-eol

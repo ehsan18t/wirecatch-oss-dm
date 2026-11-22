@@ -37,6 +37,7 @@ docker run --rm -i \
       cd /work
       # The gate searches the source with git grep; .git stays outside the container.
       git init -q
+      node scripts/prepare-rust-backports.mjs
       node scripts/gate.mjs --no-desktop --no-fail-fast rust
     "
   '

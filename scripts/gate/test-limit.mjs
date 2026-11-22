@@ -71,6 +71,9 @@ function passOnInterrupt(child) {
   };
 }
 
+// An exited test command can be followed by another when fail-fast is disabled.
+export class TestCommandFailed extends GateError {}
+
 function hangError(names, limitMs) {
   const minutes = Math.round(limitMs / 60_000) + 1;
   return new GateError(
@@ -122,7 +125,9 @@ export function runWithTestLimit(
       else if (status === 0) {
         resolve();
       } else {
-        reject(new GateError(`${describe(command, args)} failed with status ${String(status)}.`));
+        reject(
+          new TestCommandFailed(`${describe(command, args)} failed with status ${String(status)}.`),
+        );
       }
     });
   });

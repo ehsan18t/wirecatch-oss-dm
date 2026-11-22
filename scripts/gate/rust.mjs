@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { capture, cargo, cargoMetadata, GateError, options, ROOT, run } from './process.mjs';
-import { runWithTestLimit } from './test-limit.mjs';
+import { runWithTestLimit, TestCommandFailed } from './test-limit.mjs';
 
 /** Features every workspace-wide cargo command needs. `test-overrides` exists for the bridge's end-to-end tests only and is never enabled in a build. */
 export const TEST_FEATURES = ['--features', 'wirecatch-bridge/test-overrides'];
@@ -117,10 +117,43 @@ function workspaceBridge() {
   return join(metadata.target_directory, 'debug', file);
 }
 
-function test() {
-  return runWithTestLimit('cargo', testArguments(options), {
-    env: { [bridgeVariable()]: workspaceBridge() },
-  });
+// AccessKit's standalone lock includes its test dependencies, which the app does not need.
+function accessKitBackportTest() {
+  const { packages, target_directory: target } = cargoMetadata({ deps: true });
+  const adapter = packages.find((pkg) => pkg.name === 'accesskit_windows' && !pkg.source);
+  if (!adapter) throw new GateError('Cargo did not resolve the patched AccessKit Windows crate.');
+  return [
+    'test',
+    '--locked',
+    '--manifest-path',
+    adapter.manifest_path,
+    '--target-dir',
+    target,
+    '--lib',
+    'backport_tests::',
+  ];
+}
+
+async function test() {
+  const commands = [testArguments(options)];
+  if (process.platform === 'win32' && options.desktop) {
+    // The patched crates are outside the workspace, so --workspace excludes their tests.
+    commands.push(
+      ['test', '--locked', '-p', 'gpui-pre-windows', '--lib', 'activation_tests::'],
+      accessKitBackportTest(),
+    );
+  }
+  const env = { [bridgeVariable()]: workspaceBridge() };
+  const failures = [];
+  for (const args of commands) {
+    try {
+      await runWithTestLimit('cargo', args, { env });
+    } catch (error) {
+      if (options.failFast || !(error instanceof TestCommandFailed)) throw error;
+      failures.push(error.message);
+    }
+  }
+  if (failures.length > 0) throw new GateError(failures.join('\n'));
 }
 
 /** The published engine still builds with the oldest Rust its manifest promises. */

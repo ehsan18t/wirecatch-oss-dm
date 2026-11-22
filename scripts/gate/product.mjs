@@ -1,7 +1,7 @@
 // Product identity (config/product.toml, D29): every file generated from it is current, and before a release no value is a placeholder.
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { ManifestError } from '../product/manifests.mjs';
+import { crateManifests, ManifestError } from '../product/manifests.mjs';
 import { CARGO_LOCK, expectedOutputs, outputs, staleLock } from '../product/outputs.mjs';
 import { PLACEHOLDER_MARK, placeholders, ProductError } from '../product/read.mjs';
 import { GateError, grepRepository, ROOT } from './process.mjs';
@@ -52,24 +52,6 @@ export async function remainingPlaceholders(root) {
 
 /** What every crate takes from `[workspace.package]`, which the generator writes from config/product.toml. */
 const INHERITED = ['version', 'license', 'authors', 'repository', 'homepage'];
-
-/** The crates of the workspace: the `members` of the root Cargo.toml, each a folder or a `folder/*` glob. */
-export function crateManifests(root) {
-  const members = /^members\s*=\s*\[([^\]]*)\]/m.exec(
-    readFileSync(join(root, 'Cargo.toml'), 'utf8'),
-  );
-  if (!members) throw new GateError('The root Cargo.toml has no `members` list.');
-  return [...members[1].matchAll(/"([^"]+)"/g)].flatMap(([, member]) => {
-    const folders = member.endsWith('/*')
-      ? readdirSync(join(root, member.slice(0, -2)), { withFileTypes: true })
-          .filter((entry) => entry.isDirectory())
-          .map((entry) => `${member.slice(0, -2)}/${entry.name}`)
-      : [member];
-    return folders
-      .map((folder) => `${folder}/Cargo.toml`)
-      .filter((path) => existsSync(join(root, path)));
-  });
-}
 
 /** Every crate that does not take its version, license, authors, repository or homepage from the workspace, as `path: key`. */
 export function crateMetadataProblems(root) {
