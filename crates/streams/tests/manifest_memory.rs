@@ -1,4 +1,4 @@
-//! What reading a hostile manifest holds in memory, measured by counting the bytes allocated rather than by estimating what the parsed manifest keeps. A manifest is at most 8 MiB, but a DASH representation inherits from its adaptation set and period, so whatever it keeps of theirs as its own copy is multiplied by the number of representations.
+//! What reading a hostile manifest holds in memory, measured by counting the bytes allocated rather than by estimating what the parsed manifest keeps. A DASH representation inherits from its adaptation set and period, so whatever it keeps of theirs as its own copy is multiplied by the number of representations.
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
