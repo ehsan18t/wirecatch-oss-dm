@@ -8,7 +8,7 @@ How the desktop app becomes installers (D106). What the installers do is D19 and
 node scripts/package.mjs
 ```
 
-It builds for this machine; on Windows `--target <triple>` picks another, such as `aarch64-pc-windows-msvc`. Linux packages are made only on a Linux machine of their own architecture, because the AppImage carries that machine's libraries, and any other Linux target is refused. It first runs `node scripts/gate.mjs release-build`, which fails when a file generated from `config/product.toml` is out of date and warns while the file still holds a placeholder: such an installer is for testing only, and publishing it is refused (D29, D49). It then builds the app and the bridge in release, with no cargo feature on the bridge (D22), and writes the installers to `target/packages`:
+It builds for this machine; on Windows `--target <triple>` picks another, such as `aarch64-pc-windows-msvc`. Linux packages are made only on a Linux machine of their own architecture, because the AppImage carries that machine's libraries, and any other Linux target is refused. It first runs `node scripts/gate.mjs release-build`, which fails when a file generated from `config/product.toml` is out of date and warns while the file still holds a placeholder: such an installer is for testing only, and publishing it is refused (D29, D49). It then prepares the pinned Rust dependency backports and builds the app and the bridge in release, with no cargo feature on the bridge (D22), and writes the installers to `target/packages`:
 
 | System  | Files                                                          | Made by                                   |
 | ------- | -------------------------------------------------------------- | ----------------------------------------- |
