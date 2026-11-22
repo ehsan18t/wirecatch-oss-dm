@@ -51,7 +51,7 @@ fn shortcuts() -> [Shortcut; 26] {
         anywhere(
             "ctrl-shift-p",
             || Box::new(OpenPalette),
-            Some("Find any action or setting"),
+            Some(super::palette::PALETTE_LABEL),
         ),
         on(
             "ctrl-v",
