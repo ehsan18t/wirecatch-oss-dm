@@ -3,7 +3,7 @@
 //
 // Usage: node scripts/release/updater-key.mjs
 //
-// The public half goes into config/product.toml as `[updates] public_key`; the private half into the repository secret UPDATER_PRIVATE_KEY, and nowhere else. A lost private key means every installed copy must be updated by hand once, to a build that carries a new public key.
+// In signed mode the public half goes into config/product.toml as `[updates] public_key`. Store the private half as UPDATER_PRIVATE_KEY in the updater-signing environment and keep a secure backup. If the key is lost, users of signed builds need a manual install of a build with a new public key.
 
 import { generateKeyPairSync } from 'node:crypto';
 

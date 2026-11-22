@@ -1,4 +1,4 @@
-# Builds what a release ships and drafts the GitHub release with it (XC-20, D111). A version tag (`v1.2.3`, or `v1.2.3-beta.1` for a pre-release) starts it, or a run by hand, which builds without drafting. Every installer is built on x64 and ARM64; the draft carries them with the update manifest, signed with the repository secret UPDATER_PRIVATE_KEY, and waits for the maintainer to read and publish it. The installers themselves are unsigned until a code-signing certificate exists (D19). Drafting runs `node scripts/gate.mjs publish` first, so nothing is drafted while `config/product.toml` holds a placeholder.
+# Builds the release assets (D111). A version tag push also prepares a draft for the maintainer to publish. Only signed update mode needs UPDATER_PRIVATE_KEY.
 name: Release
 
 on:
@@ -148,14 +148,16 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
 
-  draft:
-    name: Draft the release
-    if: startsWith(github.ref, 'refs/tags/v')
+  prepare:
+    name: Validate release inputs
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     needs: [desktop, linux-packages, extension]
     timeout-minutes: 10
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    outputs:
+      verification: ${{ steps.release.outputs.verification }}
+      public_key: ${{ steps.release.outputs.public_key }}
+      prerelease: ${{ steps.release.outputs.prerelease }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -173,38 +175,114 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # No identity value may still be a placeholder (D29).
       - name: Check what is published
         run: node scripts/gate.mjs publish
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
+          pattern: desktop-*
           path: release
           merge-multiple: true
 
-      # The tag must name the version the installers were built as.
-      - name: Check the tag
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
-          version=$(sed -n 's/^version = "\(.*\)"/\1/p' config/product.toml | head -n 1)
-          if [ "$TAG" != "v$version" ]; then
-            echo "::error::The tag $TAG does not match version $version in config/product.toml."
-            exit 1
-          fi
+      - name: Check the repository, tag and installer set
+        id: release
+        run: node scripts/release/manifest.mjs release release-manifest.json >> "$GITHUB_OUTPUT"
 
-      # The manifest the app's updates trust only with this signature (D111).
-      - name: Sign the update manifest
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-inventory
+          path: release-manifest.json
+          if-no-files-found: error
+
+  sign:
+    name: Sign the update manifest
+    if: needs.prepare.outputs.verification == 'signed'
+    needs: prepare
+    environment: updater-signing
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/release/sign.mjs
+            scripts/release/update-files.mjs
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-inventory
+
+      - name: Sign and verify the prepared manifest
         env:
+          UPDATER_PUBLIC_KEY: ${{ needs.prepare.outputs.public_key }}
           UPDATER_PRIVATE_KEY: ${{ secrets.UPDATER_PRIVATE_KEY }}
-        run: node scripts/release/manifest.mjs release
+        run: node scripts/release/sign.mjs release-manifest.json signed
 
-      # A tag with a pre-release part (`v1.2.3-beta.1`) drafts a pre-release, which the app offers only to those who ask for one.
-      - name: Draft the release
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: signed-update
+          path: signed/
+          if-no-files-found: error
+
+  draft:
+    name: Draft and verify the release
+    needs: [prepare, sign]
+    if: >-
+      !cancelled() && needs.prepare.result == 'success' &&
+      (needs.sign.result == 'success' ||
+      (needs.prepare.outputs.verification == 'github' && needs.sign.result == 'skipped'))
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-inventory
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: desktop-*
+          path: release
+          merge-multiple: true
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: extension
+          path: release
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: needs.prepare.outputs.verification == 'signed'
+        with:
+          name: signed-update
+          path: release
+
+      - name: Draft and verify the release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+          VERIFICATION: ${{ needs.prepare.outputs.verification }}
         run: |
           prerelease=()
-          case "$TAG" in *-*) prerelease=(--prerelease) ;; esac
-          gh release create "$TAG" --draft --verify-tag --title "$TAG" --generate-notes "${prerelease[@]}" release/*
+          if [ "$PRERELEASE" = 'true' ]; then prerelease=(--prerelease); fi
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --verify-tag --title "$TAG" --generate-notes "${prerelease[@]}" release/*
+          id=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json databaseId --jq .databaseId)
+          gh api "repos/$GITHUB_REPOSITORY/releases/$id" > release-draft.json
+          node scripts/release/verify-upload.mjs release-manifest.json release "$VERIFICATION" < release-draft.json

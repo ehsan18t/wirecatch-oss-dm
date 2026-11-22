@@ -8,8 +8,3 @@ mod release;
 pub use manifest::{Arch, FileKind, Manifest, ManifestError, System, UpdateFile};
 pub use release::{Asset, Release, newest};
 pub use semver::Version;
-
-/// The release asset holding a release's [`Manifest`].
-pub const MANIFEST_FILE: &str = "update.json";
-/// The release asset holding the manifest's Ed25519 signature, unpadded base64url.
-pub const SIGNATURE_FILE: &str = "update.json.sig";

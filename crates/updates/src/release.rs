@@ -3,6 +3,8 @@
 use semver::Version;
 use serde::Deserialize;
 
+use crate::manifest::is_sha256;
+
 /// A release as GitHub's API lists it, with what updates read.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Release {
@@ -23,6 +25,22 @@ pub struct Asset {
     pub name: String,
     pub browser_download_url: String,
     pub size: u64,
+    pub state: Option<String>,
+    pub digest: Option<String>,
+}
+
+impl Asset {
+    /// The digest of a complete GitHub upload, in the form the download verifier uses.
+    #[must_use]
+    pub fn uploaded_sha256(&self) -> Option<&str> {
+        if self.size == 0 || self.state.as_deref() != Some("uploaded") {
+            return None;
+        }
+        self.digest
+            .as_deref()?
+            .strip_prefix("sha256:")
+            .filter(|hash| is_sha256(hash))
+    }
 }
 
 impl Release {

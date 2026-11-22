@@ -1112,7 +1112,7 @@ Decided on 2026-10-31, when the release workflow first started each Linux packag
 
 ### D111. The app updates itself from its GitHub releases
 
-Decided on 2026-10-31 (ROADMAP item 7). It replaces the updater of D19, which went with Tauri (D107).
+Decided on 2026-10-31 (ROADMAP item 7). It replaces the updater of D19, which went with Tauri (D107). D288 makes signed manifests a build-time choice and describes GitHub verification for the first release.
 
 1. Each release carries `update.json`, listing every installer with its system, architecture, kind (setup, AppImage, deb, rpm), size and SHA-256, and `update.json.sig`, its Ed25519 signature. The release workflow writes both (`scripts/release/manifest.mjs`) with the private key in the repository secret `UPDATER_PRIVATE_KEY`; the app carries the public key from `config/product.toml`. One sample (`crates/updates/samples/update.json`) is what both the script's test and the app's test read.
 2. The app reads the repository's releases from GitHub's API a minute after it starts and once a day, through the app's proxy and never the local network, and offers the newest release newer than itself. Drafts never count; a pre-release, by GitHub's flag or by its version, only while "Get pre-release versions" is on (General > Updates, off by default). Changing that setting looks again at once.
@@ -1905,3 +1905,10 @@ Decided with the maintainer on 2026-11-22.
 2. The sidebar's foot shows the command palette as an icon, before Keyboard shortcuts and About, with "Find any action or setting" on hover and no shortcut hint. It is lit while the palette is open.
 3. The palette is one panel: its search field is the top edge, with no close button (Esc, a click outside or a command closes it), and a search that finds nothing says "No matching actions".
 4. It amends D263.1: Advanced is one row in its own card, drawn like the other settings: "Advanced" over a line naming what it holds ("Site list updates" on General, "FTP and the proxy" on Network), and a chevron. The whole row shows or hides the settings, which open in the same card under a rule. What D263 hides, and how search finds it, is unchanged.
+
+### D288. The desktop build chooses how it verifies updates
+
+1. `[updates] verification` in `config/product.toml` sets the policy for the desktop build and the release workflow. The first release uses `github` with the current public repository. Release builds using that product config use the same feed. Debug builds keep updates disabled.
+2. In `github` mode the configured GitHub Releases endpoint authorizes the update. The app constructs the release page and initial download URL from that repository and the chosen tag. It compares the installer with the uploaded asset's size and SHA-256 before handing it to the shell. Anyone with the ability to publish an asset in that repository can supply an update in this mode.
+3. In `signed` mode the build embeds an Ed25519 public key, and D111's signature and version checks apply. The protected `updater-signing` job checks its signature with that key before the draft job receives the manifest. Releases still need GitHub asset digests so earlier GitHub-mode builds can upgrade to them. The installed build's policy applies until the new build starts.
+4. Both modes require the full installer set and a tag matching the product version before drafting. The workflow compares uploaded assets with the build outputs and leaves publication to the maintainer. The [packaging guide](../crates/desktop/PACKAGING.md#releases-and-updates) describes the rehearsal and key recovery.

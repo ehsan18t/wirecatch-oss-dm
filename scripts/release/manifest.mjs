@@ -1,39 +1,19 @@
 #!/usr/bin/env node
-// Writes the update manifest of a release (D111): every installer in a folder, with its system, architecture, kind, size and SHA-256, as `update.json`, and its Ed25519 signature as `update.json.sig`, both in that folder.
-//
-// Usage: UPDATER_PRIVATE_KEY=<base64 PKCS#8> node scripts/release/manifest.mjs <folder>
-//
-// The installers are named as scripts/package.mjs names them, <product>-<version>-<system>-<architecture>, with the version in config/product.toml. Anything else in the folder is left out of the manifest.
+// Validates release artifacts and writes their manifest for the next workflow jobs (D111).
 
-import { createHash, createPrivateKey, sign } from 'node:crypto';
-import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ROOT } from '../gate/process.mjs';
-import { readProduct } from '../product/read.mjs';
-
-/** The end of each installer's name, after `<product>-<version>-<system>-<architecture>`, and what it is. */
-const KINDS = [
-  ['-setup.exe', 'setup'],
-  ['.AppImage', 'appimage'],
-  ['.deb', 'deb'],
-  ['.rpm', 'rpm'],
-];
-const SYSTEMS = ['windows', 'linux'];
-const ARCHES = ['x64', 'arm64'];
+import { githubRepository, readProduct } from '../product/read.mjs';
+import { installerNames, isInstaller } from './installers.mjs';
 
 /** What `name` is, when it is an installer of `product` at `version`; null otherwise. */
 export function describe(name, product, version) {
-  const prefix = `${product}-${version}-`;
-  if (!name.startsWith(prefix)) return null;
-  const rest = name.slice(prefix.length);
-  for (const [ending, kind] of KINDS) {
-    if (!rest.endsWith(ending)) continue;
-    const [system, arch, ...more] = rest.slice(0, -ending.length).split('-');
-    if (more.length > 0 || !SYSTEMS.includes(system) || !ARCHES.includes(arch)) return null;
-    return { system, arch, kind };
-  }
-  return null;
+  const installer = installerNames(product, version).find((candidate) => candidate.name === name);
+  if (!installer) return null;
+  const { system, arch, kind } = installer;
+  return { system, arch, kind };
 }
 
 /** The manifest of the installers in `folder`, as the bytes that are signed. */
@@ -48,7 +28,7 @@ export function manifest(folder, product, version) {
         {
           name,
           ...what,
-          size: statSync(join(folder, name)).size,
+          size: bytes.length,
           sha256: createHash('sha256').update(bytes).digest('hex'),
         },
       ];
@@ -56,33 +36,50 @@ export function manifest(folder, product, version) {
   return Buffer.from(`${JSON.stringify({ version, files }, null, 2)}\n`);
 }
 
-/** `bytes` signed with the base64 PKCS#8 Ed25519 key `privateKey`, as unpadded base64url. */
-export function signature(bytes, privateKey) {
-  const key = createPrivateKey({
-    key: Buffer.from(privateKey, 'base64'),
-    format: 'der',
-    type: 'pkcs8',
-  });
-  return sign(null, bytes, key).toString('base64url');
+export function prepareRelease(folder, { product, links }, repository, tag) {
+  if (githubRepository(links.repository)?.toLowerCase() !== repository?.toLowerCase()) {
+    throw new Error('The workflow repository must match links.repository in config/product.toml.');
+  }
+  if (tag !== `v${product.version}`) {
+    throw new Error(
+      `The tag ${tag} does not match version ${product.version} in config/product.toml.`,
+    );
+  }
+  const names = readdirSync(folder).filter(isInstaller).sort();
+  const expected = installerNames(product.name, product.version)
+    .map(({ name }) => name)
+    .sort();
+  if (names.length !== expected.length || names.some((name, index) => name !== expected[index])) {
+    const missing = expected.filter((name) => !names.includes(name));
+    const unexpected = names.filter((name) => !expected.includes(name));
+    throw new Error(
+      `Wrong installer set. Missing: ${missing.join(', ') || 'none'}. Unexpected: ${unexpected.join(', ') || 'none'}.`,
+    );
+  }
+  const bytes = manifest(folder, product.name, product.version);
+  const empty = JSON.parse(bytes.toString()).files.find((file) => file.size === 0);
+  if (empty) throw new Error(`The installer ${empty.name} is empty.`);
+  return bytes;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const [folder] = process.argv.slice(2);
-  const privateKey = process.env.UPDATER_PRIVATE_KEY;
-  if (!folder || !privateKey) {
-    console.error(
-      'Usage: UPDATER_PRIVATE_KEY=<base64 PKCS#8> node scripts/release/manifest.mjs <folder>',
+  try {
+    const [folder, output] = process.argv.slice(2);
+    if (!folder || !output)
+      throw new Error('Usage: node scripts/release/manifest.mjs <folder> <output>');
+    const product = readProduct(readFileSync('config/product.toml', 'utf8'));
+    const bytes = prepareRelease(
+      folder,
+      product,
+      process.env.GITHUB_REPOSITORY,
+      process.env.GITHUB_REF_NAME,
     );
-    process.exit(2);
+    writeFileSync(output, bytes);
+    console.log(`verification=${product.updates.verification}`);
+    console.log(`public_key=${product.updates.public_key ?? ''}`);
+    console.log(`prerelease=${String(product.product.version.includes('-'))}`);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
   }
-  const product = readProduct(readFileSync(join(ROOT, 'config', 'product.toml'), 'utf8'));
-  const bytes = manifest(folder, product.product.name, product.product.version);
-  const listed = JSON.parse(bytes.toString()).files;
-  if (listed.length === 0) {
-    console.error(`No installer of version ${product.product.version} is in ${folder}.`);
-    process.exit(1);
-  }
-  writeFileSync(join(folder, 'update.json'), bytes);
-  writeFileSync(join(folder, 'update.json.sig'), signature(bytes, privateKey));
-  console.log(`Signed the manifest of ${String(listed.length)} installers in ${folder}.`);
 }

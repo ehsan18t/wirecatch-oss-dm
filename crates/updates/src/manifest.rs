@@ -139,7 +139,7 @@ impl Manifest {
     }
 }
 
-fn is_sha256(text: &str) -> bool {
+pub(crate) fn is_sha256(text: &str) -> bool {
     text.len() == 64 && text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
@@ -219,14 +219,13 @@ mod tests {
         );
     }
 
-    /// The product's key, the placeholder until the maintainer makes one, never trusts what
-    /// another key signed.
     #[test]
-    fn the_product_key_trusts_nothing_signed_elsewhere() {
+    fn a_missing_key_never_verifies_a_signed_manifest() {
         let bytes = manifest_bytes(SHA);
         let signature = signed(&bytes, &key());
-        assert!(
-            Manifest::verified(&bytes, &signature, wirecatch_product::UPDATER_PUBLIC_KEY).is_err()
+        assert_eq!(
+            Manifest::verified(&bytes, &signature, ""),
+            Err(ManifestError::NoKey)
         );
     }
 

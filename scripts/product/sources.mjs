@@ -1,5 +1,7 @@
 // The Rust crate and the TypeScript module generated from config/product.toml, before formatting.
-import { CHANNELS } from './read.mjs';
+import { INSTALLER_SUFFIXES } from '../release/installers.mjs';
+import { MANIFEST_FILE, SIGNATURE_FILE } from '../release/update-files.mjs';
+import { CHANNELS, githubRepository } from './read.mjs';
 
 /** What every generated file says first, after any line its format requires there. */
 export const GENERATED_NOTE =
@@ -12,18 +14,6 @@ const BOTH = { rust: true, ts: true };
 
 /** The product slug as the start of an environment variable's name: `wirecatch` gives `WIRECATCH`. */
 const environmentName = (slug) => slug.toUpperCase().replaceAll('-', '_');
-
-/** GitHub's API address for the releases of `repository`, which must be a repository on GitHub. */
-function releasesApi(repository) {
-  const url = new URL(repository);
-  const path = url.pathname.replace(/\/$/, '').slice(1);
-  if (url.host !== 'github.com' || path.split('/').length !== 2) {
-    throw new Error(
-      `links.repository must be a GitHub repository (https://github.com/owner/name), not ${repository}`,
-    );
-  }
-  return `https://api.github.com/repos/${path}/releases`;
-}
 
 /** The constants generated: their name, what they mean, their value, and which languages use them. */
 const CONSTANTS = [
@@ -56,15 +46,11 @@ const CONSTANTS = [
   [
     'RELEASES_API_URL',
     "GitHub's list of the repository's releases, where the app looks for a newer version (D111).",
-    (p) => releasesApi(p.links.repository),
+    (p) => `https://api.github.com/repos/${githubRepository(p.links.repository)}/releases`,
     RUST,
   ],
-  [
-    'UPDATER_PUBLIC_KEY',
-    'The Ed25519 key update manifests are signed with, unpadded base64url (D111).',
-    (p) => p.updates.public_key,
-    RUST,
-  ],
+  ['MANIFEST_FILE', 'The GitHub asset with the signed update manifest.', () => MANIFEST_FILE, RUST],
+  ['SIGNATURE_FILE', 'The GitHub asset with its Ed25519 signature.', () => SIGNATURE_FILE, RUST],
   ['APP_EXECUTABLE', 'The desktop app executable, without `.exe`.', (p) => p.executables.app, RUST],
   [
     'BRIDGE_EXECUTABLE',
@@ -182,6 +168,38 @@ function rustConstants(product) {
   );
 }
 
+function rustUpdates({ updates }) {
+  const verification =
+    updates.verification === 'signed'
+      ? `UpdateVerification::Signed(${rustString(updates.public_key)})`
+      : 'UpdateVerification::Github';
+  const suffixes = INSTALLER_SUFFIXES.map(
+    ({ system, arch, kind, suffix }) =>
+      `(${[system, arch, kind].map(rustString).join(', ')}) => Some(${rustString(suffix)}),`,
+  );
+  return `/// The authority this build uses for app updates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UpdateVerification {
+    /// The configured GitHub repository's release metadata.
+    Github,
+    /// An Ed25519 manifest, checked with this base64url public key.
+    Signed(&'static str),
+}
+
+/// Verification for the desktop app's updates.
+pub const UPDATE_VERIFICATION: UpdateVerification = ${verification};
+
+/// The suffix of an installer published for this system, architecture and kind.
+#[must_use]
+pub fn installer_suffix(system: &str, arch: &str, kind: &str) -> Option<&'static str> {
+match (system, arch, kind) {
+${suffixes.join('\n')}
+_ => None,
+}
+}
+`;
+}
+
 function rustChannel(product) {
   const methods = CHANNEL_METHODS.map(([method, doc, key]) => {
     const arms = CHANNELS.map(
@@ -225,6 +243,7 @@ export function rustSource(product) {
 
 ${rustConstants(product).join('\n')}
 ${fileNames.join('\n')}
+${rustUpdates(product)}
 ${rustChannel(product)}`;
 }
 

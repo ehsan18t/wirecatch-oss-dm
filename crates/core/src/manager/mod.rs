@@ -236,17 +236,11 @@ impl ManagerConfig {
         self
     }
 
-    /// Looks for the app's updates on its GitHub releases, signed with the key in
-    /// `config/product.toml`, as the app does (D111).
+    /// Looks for updates on the GitHub repository and with the verification in
+    /// `config/product.toml` (D111).
     #[must_use]
     pub fn with_official_app_releases(mut self) -> Self {
-        // A constant a test reads, so it always parses.
-        self.app_releases = Url::parse(wirecatch_product::RELEASES_API_URL)
-            .ok()
-            .map(|list| AppReleases {
-                list,
-                public_key: wirecatch_product::UPDATER_PUBLIC_KEY.to_owned(),
-            });
+        self.app_releases = AppReleases::official();
         self
     }
 

@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
+import { generateKeyPairSync } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { UNDECIDED_VALUES } from './identity-samples.mjs';
+import { UNDECIDED_VALUES, withUpdateConfig } from './identity-samples.mjs';
 import { setTomlKey, tomlString } from './manifests.mjs';
 import { chromiumIdOf, placeholders, ProductError, readProduct } from './read.mjs';
 
@@ -26,6 +27,26 @@ function rejects(text, problem) {
 test("the repository's product identity is valid", () => {
   assert.equal(PRODUCT.channels.release.name, PRODUCT.product.name);
   assert.notEqual(PRODUCT.channels.dev.name, PRODUCT.channels.release.name);
+});
+
+test('update verification is explicit and only signed mode takes a key', () => {
+  const config = (values) => withUpdateConfig(PRODUCT_TOML, values);
+  const github = 'verification = "github"';
+  const signed = 'verification = "signed"';
+  const { publicKey } = generateKeyPairSync('ed25519');
+  const key = publicKey.export({ type: 'spki', format: 'der' }).subarray(-32).toString('base64url');
+  assert.deepEqual({ ...readProduct(config(github)).updates }, { verification: 'github' });
+  assert.deepEqual(
+    { ...readProduct(config(`${signed}\npublic_key = "${key}"`)).updates },
+    {
+      verification: 'signed',
+      public_key: key,
+    },
+  );
+  rejects(config(signed), /updates\.public_key/);
+  rejects(config(`${signed}\npublic_key = "${key.slice(0, -1)}B"`), /updates\.public_key/);
+  rejects(config(`${github}\npublic_key = "${key}"`), /updates\.public_key/);
+  rejects(config('verification = "auto"'), /updates\.verification/);
 });
 
 test('the one Chromium id every bridge trusts follows from the extension key (D22)', () => {

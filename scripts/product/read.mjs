@@ -59,11 +59,14 @@ const SCHEMA = {
     description: TEXT,
   },
   publisher: { legal_name: TEXT },
-  links: { repository: 'url', website: 'url', addon_files: 'url' },
+  links: {
+    repository: { test: (url) => githubRepository(url) !== null },
+    website: 'url',
+    addon_files: 'url',
+  },
   contacts: { support_email: EMAIL, security_email: EMAIL },
   executables: { app: SLUG, bridge: SLUG, cli: SLUG },
   files: { database: FILE_NAME, notices: FILE_NAME },
-  updates: { public_key: /^[\w-]{43}$/ },
   native_host: { name: HOST_NAME, description: TEXT },
   extension: {
     chromium_id: CHROMIUM_ID,
@@ -83,6 +86,12 @@ const CHANNEL = {
   socket: SOCKET,
 };
 export const CHANNELS = ['release', 'dev'];
+
+const UPDATE_VERIFICATION = /^(?:github|signed)$/;
+const UPDATE_PUBLIC_KEY = {
+  test: (value) =>
+    /^[\w-]{43}$/.test(value) && Buffer.from(value, 'base64url').toString('base64url') === value,
+};
 /** Values two channels may never share: they would then use one app's data, endpoint or identity. */
 const DISTINCT_PER_CHANNEL = ['name', ...Object.keys(CHANNEL)];
 
@@ -91,6 +100,25 @@ function isHttpsUrl(value) {
     return new URL(value).protocol === 'https:';
   } catch {
     return false;
+  }
+}
+
+/** The owner and repository from a canonical GitHub repository URL. */
+export function githubRepository(value) {
+  try {
+    const url = new URL(value);
+    if (
+      url.origin !== 'https://github.com' ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash
+    ) {
+      return null;
+    }
+    return /^\/([\w.-]+\/[\w.-]+)\/?$/.exec(url.pathname)?.[1] ?? null;
+  } catch {
+    return null;
   }
 }
 
@@ -179,12 +207,15 @@ export function readProduct(text) {
     throw new ProductError(`config/product.toml is not valid TOML: ${error.message}`);
   }
   const problems = Object.keys(raw)
-    .filter((key) => !(key in SCHEMA) && key !== 'channels')
+    .filter((key) => !(key in SCHEMA) && key !== 'channels' && key !== 'updates')
     .map((key) => `[${key}] is not a known section.`);
   for (const [section, shape] of Object.entries(SCHEMA)) {
     problems.push(...tableProblems(section, raw[section], shape));
   }
   problems.push(...channelProblems(raw));
+  const updates = { verification: UPDATE_VERIFICATION };
+  if (raw.updates?.verification === 'signed') updates.public_key = UPDATE_PUBLIC_KEY;
+  problems.push(...tableProblems('updates', raw.updates, updates));
   if (problems.length > 0) throw new ProductError(problems.join('\n'));
   const product = normalized(raw);
   const cross = crossProblems(product);
