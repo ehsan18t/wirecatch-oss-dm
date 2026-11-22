@@ -1,121 +1,185 @@
-# Wirecatch
+<p align="center">
+  <img src="crates/desktop/assets/icons/icon.svg" width="96" height="96" alt="Wirecatch logo" />
+</p>
 
-**The fast, free download manager you can trust.** Wirecatch speeds up your downloads, catches them straight from your browser, grabs video and streams, and keeps queues, schedules and speed limits in plain sight. Open source, private, and built for Windows and Linux.
+<h1 align="center">Wirecatch</h1>
 
-<!-- Hero screenshot: the main window with a few downloads and a queue, a download window in front. -->
+<p align="center">
+  <strong>A free, open-source download manager for Windows and Linux.</strong><br />
+  Multi-connection downloads, browser integration, HLS and DASH streams, and video sites through an optional add-on.
+</p>
 
-- **Fast:** splits every file across up to 64 connections and keeps them all busy until the last byte.
-- **Never loses a download:** pause, crash or power cut, it picks up exactly where it stopped. A download caught from the browser ends up in one place, never two, never none.
-- **Video included:** HLS and DASH streams built in, and sites like YouTube through an optional one-click add-on.
-- **Free for real:** no ads, no bundled offers, no paid tier, no tracking. GPL-3.0.
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="License: GPL-3.0" /></a>
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-informational" alt="Platforms: Windows and Linux" />
+  <img src="https://img.shields.io/badge/built%20with-Rust-orange" alt="Built with Rust" />
+  <a href="https://github.com/ehsan18t/wirecatch-oss-dm/actions/workflows/ci.yml"><img src="https://github.com/ehsan18t/wirecatch-oss-dm/actions/workflows/ci.yml/badge.svg" alt="CI status" /></a>
+</p>
 
-> Wirecatch is in early development (0.1.0). Installers and store listings are on the way.
+<p align="center">
+  <a href="#highlights">Highlights</a> ·
+  <a href="#features">Features</a> ·
+  <a href="#how-it-compares">How it compares</a> ·
+  <a href="#command-line">Command line</a> ·
+  <a href="#privacy-and-security">Privacy</a> ·
+  <a href="#get-wirecatch">Get Wirecatch</a>
+</p>
 
-## Why Wirecatch
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/main-window-dark.png" />
+  <img src="docs/images/main-window-light.png" alt="Wirecatch main window showing active, scheduled, paused, and completed downloads, with queues in the sidebar." />
+</picture>
 
-| | Wirecatch | IDM | Free Download Manager | AB Download Manager | JDownloader 2 | Motrix |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|
-| Free | ✓ | Paid | ✓ | ✓ | ✓ | ✓ |
-| Open source | ✓ | ✗ | ✗ | ✓ | Partly | ✓ |
-| Windows and Linux | ✓ | Windows only | ✓ | ✓ | ✓ | ✓ |
-| No ads, bundled offers or analytics | ✓ | ✓ | Analytics | ✓ | Installer offers | ? |
-| Browser link with no open network port | ✓ | ✓ | ✓ | ✗ | Vendor cloud | ✓ |
-| HLS and DASH streams built in | ✓ | ✓ | Partly | Partly | Plugins | Plugin |
-| Video sites like YouTube | ✓ | ✓ | Add-on | ✗ | Plugins | Plugin |
-| Queues and schedules | ✓ | ✓ | Scheduler | ✓ | ? | ? |
-| Proxy settings | ✓ | ✓ | ✓ | ✓ | ✓ | ? |
+## Highlights
 
-<sub>As of October 2026, from each project's own website, store listing or repository. "?" means we could not confirm it. Motrix refers to its version 2. Spotted a mistake? Please open an issue.</sub>
-
-What sets Wirecatch apart:
-
-- **Correct when things go wrong.** Resume survives a crash or a power cut, and if the file changed on the server, Wirecatch starts over cleanly instead of stitching together a broken file.
-- **Nothing else can reach it.** The browser talks to Wirecatch through a private channel only your user account can open. There is no network port for other programs or other computers to find.
-- **Your cookies stay where they belong.** Sign-ins and cookies go only to the site they came from, never to a site the link redirects to.
-- **Safer media.** The video add-on's programs are verified before they run, and their updates are checked against a signature.
-- **Honest about what it downloads.** Live streams and DRM-protected video are not downloaded.
-
-Need torrents? Wirecatch doesn't do them. Free Download Manager and Motrix do.
+- **Verified resume.** Interrupted downloads resume from saved progress after a restart or crash when the server supports range requests. If the file on the server has changed, the download starts over instead of combining two versions.
+- **Expired link refresh.** Replace an expired link by hand, or capture it again from the browser, and the download continues from its existing progress, including when the new link is a stream instead of a file.
+- **Rule-based queues.** New downloads are routed to queues by site, file name, file type, or protocol. Each queue can have its own schedule, speed limit, folder, and proxy.
+- **Streams and video sites.** HLS and DASH downloads are built in. The optional Media add-on merges separate audio and video tracks, adds YouTube, Vimeo, TikTok, and other sites, and provides format conversion, subtitles, and chapters.
+- **Errors with a fix.** A failed download states the cause and offers the matching action, such as refreshing the link or choosing another folder.
+- **No accounts or telemetry.** The browser connects to the app without a network port, and downloads from private windows leave no history, logs, or partial files behind.
 
 ## Features
 
-### Downloads
+<details>
+<summary><strong>Downloads</strong>: multiple connections, resume, link refresh, FTP and FTPS</summary>
 
-- Multi-connection downloads that rebalance as parts finish, so a slow tail never holds you up.
-- Pause and resume anything the server allows, even after a restart.
-- Refresh an expired link and keep everything already downloaded.
-- Automatic retries that respect what the server asks for.
-- HTTP, HTTPS, FTP and FTPS, with HTTP/3 as an option.
-- Proxy support: use your system's proxy, no proxy, or an HTTP, HTTPS or SOCKS5 proxy of your own, one for everything or one per protocol, with a login, hosts to reach directly, Copy from system and a connection test. Downloads, videos, add-ons and updates all follow it.
-- Never overwrites a file: a free name like `file (1).zip` is used instead.
-- Files sorted into folders by type: videos, music, archives and more.
+- 8 connections per file by default, up to 32 in the app and 64 on the command line, when the server supports range requests. Remaining parts are reassigned as connections finish, so a slow connection does not delay completion.
+- Downloads and streams from the same host share one backoff: they honour `Retry-After`, reduce connections when the server limits them, and show when they are waiting or reconnecting.
+- Partial files stay hidden until the download completes.
+- Downloads can move to another folder while running, without overwriting existing files.
+- Each download keeps an activity log in **Details**: errors, retries, pauses, refreshed links, and moves.
+- The download database is repaired automatically at startup if it is damaged.
+- Protocols: HTTP, HTTPS, FTP, and FTPS (`ftps://` and `ftpes://`).
 
-### Browser
+</details>
 
-- Works with Chrome, Edge, Brave, Vivaldi, Opera, Arc, Firefox and their relatives.
-- Takes over your browser's downloads automatically, with your cookies, so downloads behind a login work.
-- Right-click any link, image, video or audio and choose **Download with Wirecatch**.
-- A download button over videos on the page.
-- Catches every kind of file, installers included, or only the file types you list in Settings. Files the browser warns are dangerous stay with the browser, and Windows still checks a downloaded program before it runs.
-- One set of settings for every browser and the app, all kept in the app, so a settings export carries them to another computer. The browser's toolbar popup changes the ones you need while browsing: capture on or off, asking before files and videos, the queue, a speed limit and how videos download.
+<details>
+<summary><strong>Browser extension</strong>: Chrome, Edge, Brave, Vivaldi, Opera, Arc, and Firefox</summary>
 
-### A window for each download
+- Takes over browser downloads with the browser's cookies and referrer, so downloads that require a sign-in work. A handed-over download is never lost or downloaded twice.
+- **Download with Wirecatch** in the context menu, a download button on videos, and a keyboard shortcut for the page's media.
+- The toolbar popup lists the streams and video files detected on the current tab.
+- Capture filters: excluded sites, allowed file types, minimum file size, and default queue.
+- Files the browser marks as dangerous stay in the browser, and the Windows Mark of the Web is preserved.
+- A dialog for each download to set the file name, folder, queue, or video quality and follow progress. It can be turned off in favour of a notification, which opens the download in the app when clicked.
+- Settings are managed in the desktop app and apply to every connected browser.
 
-- A small window opens for every download from the browser: check the name, folder and queue, then **Download now** or **Download later**.
-- Pick the video quality right there.
-- Watch progress, speed and time left, then **Open** or **Show in folder** when it's done.
-- Prefer no windows? Downloads can start straight away with a quiet notice instead.
+</details>
 
-### Video and audio
+<details>
+<summary><strong>Video, audio, and streams</strong>: HLS and DASH, video sites, conversion, and subtitles</summary>
 
-- HLS (including encrypted) and DASH streams, downloaded in parallel and joined without re-encoding.
-- Sites like YouTube through the optional Media add-on, installed in one click the first time you need it.
-- Save as MP4, MKV or WebM, or audio as MP3, M4A, Opus, FLAC or WAV, with subtitles, chapters and cover art.
-- Hardware encoding when a conversion is needed, and a heads-up before it happens.
+- HLS (including encrypted streams) and DASH, with segments downloaded in parallel and joined without re-encoding. Streams with separate audio and video tracks are merged by the Media add-on.
+- The optional Media add-on (`yt-dlp`, `ffmpeg`, and `Deno`) installs in one click and supports YouTube, Vimeo, TikTok, and custom sites.
+- Paste a video page's link into the app to list its available formats.
+- Sites that require a real browser are read through the connected browser, with site scripts run in Deno. The media itself still downloads over parallel connections.
+- Keep the original format, or convert video to MP4, MKV, or WebM and audio to MP3, M4A, Opus, FLAC, or WAV.
+- Embedded or separate (`.srt`) subtitles, optional auto-generated captions, chapters, and audio cover art.
+- Hardware-accelerated encoding for conversions. The original file is kept if a conversion fails.
+- A preferred resolution and format, with fallback to the nearest lower or higher quality.
 
-### Queues and schedules
+</details>
 
-- Queues in the sidebar, each with its own schedule, speed limit and number of downloads at once.
-- Drag downloads between queues.
-- Every waiting download tells you why it is waiting.
+<details>
+<summary><strong>Queues, rules, and schedules</strong>: per-queue limits, folders, proxies, and routing rules</summary>
 
-### The app
+- Each queue can override the app defaults for simultaneous downloads, connections per download, speed limit, folder, and proxy, and sets its own completion notifications.
+- Routing rules match by site, file name (wildcards or regular expressions), file type, or protocol. **Test a link** shows which queue a link would join and why.
+- Schedules with a start time, an optional stop time, and days of the week, plus **Start now** and per-queue pause.
+- Drag downloads to reorder them or move them between queues. Waiting downloads show why they have not started.
 
-- Paste a link anywhere in the window to add it.
-- Command palette (Ctrl+Shift+P) and searchable settings.
-- Errors that explain themselves and offer the fix as a button.
-- Light, dark or system theme, and a choice of accent colours.
-- Keeps downloading from the tray, starts with your computer if you like, and tells you when a download finishes.
-- Fully usable with the keyboard, and smooth with thousands of downloads.
-- Export your settings and queues to a file and import them on another computer, even from Windows to Linux.
+<table>
+  <tr>
+    <td><img src="docs/images/queue-rules.png" alt="Queue routing rules sending videos to the Videos queue, with a link tested against them." /></td>
+    <td><img src="docs/images/queue-schedule.png" alt="Queue schedule set to run daily from 1:00 AM to 7:00 AM." /></td>
+  </tr>
+</table>
 
-### Command line
+</details>
 
-The `wirecatch` command downloads a link from a terminal with the same engine:
+<details>
+<summary><strong>Proxies and network</strong>: proxy profiles per queue, local network protection</summary>
+
+- System proxy, direct connection, or named HTTP, HTTPS, SOCKS4, SOCKS4a, SOCKS5, and SOCKS5h profiles, for the whole app or per queue.
+- Copy the system proxy settings, test a profile, and set bypass rules for the whole app or per queue.
+- Links on public web pages cannot reach addresses on the local network, such as a router or NAS, unless the site is allowed in Settings.
+
+</details>
+
+<details>
+<summary><strong>Desktop app</strong>: native Rust app, portable settings, signed updates</summary>
+
+- Native Rust application with a GPU-rendered interface (GPUI). No Electron and no embedded browser.
+- Export settings, queues, schedules, folder rules, and proxy profiles to one file, and import it on Windows or Linux with a preview before anything changes.
+- Updates install from within the app and are verified against a signed manifest.
+
+</details>
+
+## How it compares
+
+|                                                   | Wirecatch |       IDM       | Free Download Manager | AB Download Manager |  JDownloader 2   |   Motrix    |
+| ------------------------------------------------- | :-------: | :-------------: | :-------------------: | :-----------------: | :--------------: | :---------: |
+| Free                                              |     ✓     |      Paid       |           ✓           |          ✓          |        ✓         |      ✓      |
+| Open source                                       |     ✓     |        ✗        |           ✗           |          ✓          |      Partly      |      ✓      |
+| Windows and Linux                                 |     ✓     |  Windows only   |           ✓           |          ✓          |        ✓         |      ✓      |
+| Native app (no Electron or JVM)                   | ✓ (Rust)  |     ✓ (C++)     |        ✓ (Qt)         |         JVM         |       JVM        |  Electron   |
+| No ads, bundled offers, or analytics              |     ✓     |        ✓        |       Analytics       |          ✓          | Installer offers |      ✓      |
+| Browser connection without an open port           |     ✓     |        ✓        |           ✓           |          ✗          |   Vendor cloud   |      ✓      |
+| Private-window downloads leave no history or logs |     ✓     |        ✗        |           ✗           |          ✗          |        ✗         |      ✗      |
+| HLS and DASH built in                             |     ✓     |        ✓        |        Partly         |       Partly        |     Plugins      |   Plugin    |
+| Video sites (YouTube, Vimeo, TikTok)              |  Add-on   |        ✓        |        Add-on         |          ✗          |     Plugins      |   Plugin    |
+| Media conversion and subtitles                    |     ✓     |        ✗        |     Convert only      |          ✗          | Separate `.srt`  |      ✗      |
+| Queues and schedules                              |     ✓     |        ✓        |       Scheduler       |          ✓          |    Scheduler     |  Scheduler  |
+| Rule-based queue routing                          |     ✓     |        ✗        |           ✗           |          ✗          |    Packagizer    |      ✗      |
+| Proxy profiles and per-queue proxies              |     ✓     |   Global only   |      Global only      |    Global / host    |    Proxy list    | Global only |
+| Refresh an expired link, keeping progress         |     ✓     |        ✓        |        Manual         |       Manual        |      Manual      |   Manual    |
+| Export and import settings and queues             |     ✓     | Registry / list |           ✓           |          ✗          |        ✓         |      ✗      |
+| Standalone command-line downloader                |     ✓     |   Flags only    |           ✗           |      CLI / IPC      |        ✗         |     CLI     |
+
+<sub>As of November 2026, based on each project's official website, documentation, store listing, or repository (Motrix version 2). Spotted an inaccuracy? Please open an issue.</sub>
+
+Wirecatch does not support BitTorrent, live streams, or DRM-protected media. For BitTorrent, consider Free Download Manager or Motrix.
+
+## Command line
+
+The `wirecatch` command uses the same download engine as the desktop app. `Ctrl+C` pauses cleanly, and running the same command again resumes when the server supports it.
 
 ```bash
 wirecatch https://example.com/file.iso
 wirecatch -o ~/Downloads -c 16 https://example.com/file.iso
+wirecatch -H "Cookie: session=abc" -n release.iso https://example.com/download
 wirecatch --proxy socks5h://proxy.example:1080 https://example.com/file.iso
 ```
 
-## Privacy
+It supports HTTP, HTTPS, FTP, and FTPS, and sends custom headers only to the link's own site, never to a site it redirects to. Builds with the `http3` Cargo feature (off by default) add an experimental `--http3` option. The download engine is also available as a standalone Rust crate: see [crates/engine/README.md](crates/engine/README.md).
 
-- No telemetry, no analytics, no account.
-- Your downloads and settings stay on your computer, readable only by you.
-- Logs never contain passwords, cookies or tokens.
-- Saved sign-ins for unfinished downloads are forgotten after a week.
+## Privacy and security
 
-## Installation
+- No accounts, analytics, telemetry, ads, or bundled offers.
+- The browser extension connects through Native Messaging and a per-user named pipe (Windows) or Unix domain socket (Linux), with no network port. On Windows, the app does not start with **Run as administrator**.
+- Cookies and sign-in headers are sent only to the site they belong to, never across a redirect to another site. Saved sign-ins for unfinished downloads expire after 7 days.
+- Logs redact passwords, cookies, and tokens.
+- Downloads from private windows are kept in memory only, never written to the database or logs, and their partial files are deleted when the last private window closes.
+- Media add-on programs are verified against SHA-256 checksums. `yt-dlp` updates require a valid signature and wait 48 hours before installing, and `yt-dlp` reaches the internet only through a guard that blocks local network addresses.
 
-Installers for Windows (`.exe`) and Linux (`.deb`, `.rpm` and AppImage) will be on the [releases page](https://github.com/ehsan18t/wirecatch-oss-dm/releases). The browser extension will be in the Chrome Web Store and on Firefox Add-ons.
+See [PRIVACY.md](PRIVACY.md) for what is stored locally and which network requests are made. To report a vulnerability, follow [SECURITY.md](SECURITY.md) rather than opening a public issue.
 
-Want to try it today? [Build it from source](CONTRIBUTING.md).
+## Get Wirecatch
 
-## Security
+Download the latest release from the [Releases page](https://github.com/ehsan18t/wirecatch-oss-dm/releases):
 
-Found a security problem? Please report it privately, as described in [SECURITY.md](SECURITY.md), never in a public issue.
+- **Windows** (x64, ARM64): `.exe`
+- **Linux** (x64, ARM64): `.deb`, `.rpm`, or `.AppImage`
+
+Install the browser extension from the Chrome Web Store or Firefox Add-ons.
+
+To build from source, see [CONTRIBUTING.md](CONTRIBUTING.md). To build the installers, see [crates/desktop/PACKAGING.md](crates/desktop/PACKAGING.md).
+
+## Contributing
+
+Bug reports, feature requests, and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, checks, and how to submit a change.
 
 ## License
 
-Wirecatch is free software under the [GNU General Public License v3.0 only](LICENSE). The Media add-on's programs (yt-dlp, ffmpeg and Deno) come from their own projects under their own licenses.
+Wirecatch is licensed under the [GNU General Public License v3.0 only](LICENSE). The optional Media add-on components (`yt-dlp`, `ffmpeg`, and `Deno`) are separate projects distributed under their own licenses.
