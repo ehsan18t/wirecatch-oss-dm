@@ -1902,3 +1902,5 @@ Sites change a download's addresses between visits: YouTube adds its playlist po
 Decided with the maintainer on 2026-11-22.
 
 1. It amends D262.1: the start and finish page is called Notifications, since its full name was cut off in the settings navigation. Its groups and settings stay as D262 gives them. A settings page's name has at most 20 characters; a test holds every page to it.
+2. The sidebar's foot shows the command palette as an icon, before Keyboard shortcuts and About, with "Find any action or setting" on hover and no shortcut hint. It is lit while the palette is open.
+3. The palette is one panel: its search field is the top edge, with no close button (Esc, a click outside or a command closes it), and a search that finds nothing says "No matching actions".

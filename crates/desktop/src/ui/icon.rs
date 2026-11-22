@@ -39,6 +39,7 @@ gpui_kit::assets::icon_assets!(
         Pencil,
         Settings,
         SlidersHorizontal,
+        TextSearch,
         Trash,
         TriangleAlert,
         Zap,

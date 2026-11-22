@@ -355,6 +355,8 @@ pub struct MainWindow {
     settings_on: settings::OpenOn,
     /// The settings pages whose Advanced settings are shown.
     advanced_shown: HashSet<settings::Page>,
+    /// The open palette's search, which lights its icon at the sidebar's foot.
+    palette: WeakEntity<gpui_kit::component::command::CommandState>,
     /// The queue page's form, while that page is open.
     queue_page: Option<Entity<queue_editor::QueueForm>>,
     focus: FocusHandle,
@@ -517,6 +519,7 @@ impl MainWindow {
             scroll: list::Scroll::default(),
             settings_on: settings::OpenOn::default(),
             advanced_shown: HashSet::new(),
+            palette: WeakEntity::new_invalid(),
             queue_page: None,
             all_queues: false,
             queue_speeds: HashMap::new(),

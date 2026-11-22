@@ -7,9 +7,9 @@ use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
 use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, Context, ElementId, Entity, FontWeight, Hsla, InteractiveElement as _,
-    IntoElement, ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _,
-    WeakEntity, div, px, relative,
+    AnyElement, App, Context, Div, ElementId, Entity, FontWeight, Hsla, InteractiveElement as _,
+    IntoElement, ParentElement as _, SharedString, Stateful, StatefulInteractiveElement as _,
+    Styled as _, WeakEntity, div, px, relative,
 };
 use wirecatch_core::can_move_to_queue;
 use wirecatch_protocol::QueueId;
@@ -19,6 +19,7 @@ use wirecatch_queues::schedule;
 use wirecatch_shell::api;
 
 use super::drag::{self, DraggedQueue, DraggedRows};
+use super::palette::PALETTE_LABEL;
 use super::{Group, MainWindow, Screen, View, queue_header};
 use crate::backend::act;
 use crate::library::Library;
@@ -129,6 +130,7 @@ impl MainWindow {
     /// The foot of the navigation: Settings by name, then the two pages that fit in an icon.
     pub(super) fn foot(&self, cx: &mut Context<'_, Self>) -> impl IntoElement + use<> {
         let on_settings = self.page.screen == Screen::Settings;
+        let palette = self.palette_icon(cx);
         let shortcuts = self.foot_icon(Screen::Shortcuts, cx);
         let about = self.foot_icon(Screen::About, cx);
         let open_settings =
@@ -166,16 +168,42 @@ impl MainWindow {
             .border_t_1()
             .border_color(theme.sidebar_border)
             .child(settings)
+            .child(palette)
             .child(shortcuts)
             .child(about)
     }
 
+    /// The palette at the foot, lit while it is open (D287).
+    fn palette_icon(&self, cx: &mut Context<'_, Self>) -> impl IntoElement + use<> {
+        Self::foot_button(
+            "open-palette",
+            PALETTE_LABEL,
+            Lucide::TextSearch,
+            self.palette.upgrade().is_some(),
+            false,
+            cx,
+        )
+        .on_click(cx.listener(|this, _, window, cx| this.open_palette(window, cx)))
+    }
+
     /// Keyboard shortcuts or About at the foot: an icon, with its name on hover.
     fn foot_icon(&self, screen: Screen, cx: &mut Context<'_, Self>) -> impl IntoElement + use<> {
-        let theme = cx.theme();
-        let current = self.page.screen == screen;
         let (id, label, icon) = foot_page(screen);
         let dot = screen == Screen::About && update_waiting(cx);
+        Self::foot_button(id, label, icon, self.page.screen == screen, dot, cx)
+            .on_click(cx.listener(move |this, _, window, cx| this.open_screen(screen, window, cx)))
+    }
+
+    /// An icon at the foot, lit while `current`, with its name on hover and an optional dot.
+    fn foot_button(
+        id: &'static str,
+        label: &'static str,
+        icon: Lucide,
+        current: bool,
+        dot: bool,
+        cx: &mut Context<'_, Self>,
+    ) -> Stateful<Div> {
+        let theme = cx.theme();
         div()
             .id(id)
             .relative()
@@ -208,7 +236,6 @@ impl MainWindow {
                         .bg(theme.primary),
                 )
             })
-            .on_click(cx.listener(move |this, _, window, cx| this.open_screen(screen, window, cx)))
     }
 
     /// The queues, in one panel: the first few, the one on screen, and the rest behind "more
