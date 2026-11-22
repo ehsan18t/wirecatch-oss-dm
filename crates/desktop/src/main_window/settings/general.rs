@@ -199,6 +199,7 @@ fn updates(library: &Entity<Library>) -> SettingGroup {
 fn advanced(library: &Entity<Library>, fold: &super::Fold) -> SettingGroup {
     let shown = library.clone();
     fold.group(
+        "Site list updates",
         vec![
             SettingItem::new(
                 "Update the site list automatically",

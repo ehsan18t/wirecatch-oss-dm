@@ -5,6 +5,7 @@ pub mod callout;
 pub mod chip;
 pub mod choice;
 pub mod dialog;
+pub mod disclosure;
 pub mod field;
 pub mod file_tile;
 pub mod folder_row;
@@ -25,6 +26,7 @@ pub mod tooltip;
 
 pub use callout::Callout;
 pub use chip::Chip;
+pub use disclosure::Disclosure;
 pub use field::Field;
 pub use file_tile::FileTile;
 pub use folder_row::FolderRow;
