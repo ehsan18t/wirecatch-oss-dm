@@ -32,25 +32,25 @@
 
 ## Highlights
 
-- **Resume that checks the file.** Downloads continue after a restart, crash or power cut. If the file changed on the server, Wirecatch starts over instead of joining two different files.
-- **Expired links keep their progress.** Give a download a new link, or catch it again from the browser, and it continues from where it stopped, even when the new link is a stream instead of a file.
+- **Resume that checks the file.** After a restart, crash or power cut, a download continues from its saved progress when the server supports resuming. If the file changed on the server, Wirecatch starts over instead of joining two different files.
+- **Expired links keep their progress.** Give a download a new link, or catch it again from the browser, and it continues from its saved progress when the server supports resuming, even when the new link is a stream instead of a file.
 - **Queues that sort themselves.** Rules send each new download to a queue by site, file name, type or protocol. Each queue can have its own schedule, speed limit, folder and proxy.
-- **Video without a second app.** HLS and DASH streams are built in. An optional add-on, installed in one click, adds YouTube, Vimeo, TikTok and other sites, with conversion, subtitles and chapters.
+- **Video without a second app.** HLS and DASH downloads are built in. An optional add-on, installed in one click, merges streams that keep audio and video apart, adds YouTube, Vimeo, TikTok and other sites, and brings conversion, subtitles and chapters.
 - **Errors that come with their fix.** A failed download says what went wrong in plain words and offers the matching action as a button.
 - **Private by design.** No account and no telemetry. The browser reaches the app without a network port, and downloads from private windows leave no history, logs or files behind.
 
 ## Features
 
 <details>
-<summary><strong>Downloads</strong>: parallel connections, resume, refresh expired links, FTP and HTTP/3</summary>
+<summary><strong>Downloads</strong>: parallel connections, resume, refresh expired links, FTP</summary>
 
-- 8 connections per file by default, up to 32 in the app and 64 on the command line. Remaining parts move to whichever connection is free, so one slow connection does not hold up the end.
+- 8 connections per file by default, up to 32 in the app and 64 on the command line, when the server accepts range requests; otherwise one. Remaining parts move to whichever connection is free, so one slow connection does not hold up the end.
 - Downloads and streams from the same site share one pace: they honour `Retry-After`, step back when a server limits connections, and show when they are waiting or reconnecting.
 - Partial files stay hidden until the download is complete.
 - Move a download to another folder while it runs, without replacing a file already there.
 - Each download keeps a history in Details: failures with their message, retries, pauses, new links and moves.
 - The download list is repaired at start if its database was damaged.
-- HTTP, HTTPS, FTP and FTPS (`ftps://` and `ftpes://`), and experimental HTTP/3.
+- HTTP, HTTPS, FTP and FTPS (`ftps://` and `ftpes://`).
 
 </details>
 
@@ -71,7 +71,7 @@
 <details>
 <summary><strong>Video, audio and streams</strong>: HLS and DASH, video sites, conversion and subtitles</summary>
 
-- HLS (encrypted streams included) and DASH, downloaded in parallel and joined without re-encoding.
+- HLS (encrypted streams included) and DASH, downloaded in parallel and joined without re-encoding. A stream that keeps audio and video in separate tracks needs the Media add-on to merge them.
 - The optional Media add-on (`yt-dlp`, `ffmpeg` and `Deno`) installs in one click and covers YouTube, Vimeo, TikTok and extra sites you add.
 - Paste a video page's link into the app and Wirecatch finds the video on it.
 - Sites that check for a real browser are read through your connected browser, and site scripts run in Deno. The video itself still downloads over parallel connections.
@@ -119,25 +119,24 @@
 
 ## How it compares
 
-|                                               |    Wirecatch     |       IDM       | Free Download Manager | AB Download Manager |  JDownloader 2   |   Motrix    |
-| --------------------------------------------- | :--------------: | :-------------: | :-------------------: | :-----------------: | :--------------: | :---------: |
-| Free                                          |        ✓         |      Paid       |           ✓           |          ✓          |        ✓         |      ✓      |
-| Open source                                   |        ✓         |        ✗        |           ✗           |          ✓          |      Partly      |      ✓      |
-| Windows and Linux                             |        ✓         |  Windows only   |           ✓           |          ✓          |        ✓         |      ✓      |
-| Native app (no Electron or JVM)               |     ✓ (Rust)     |     ✓ (C++)     |        ✓ (Qt)         |         JVM         |       JVM        |  Electron   |
-| No ads, bundled offers or analytics           |        ✓         |        ✓        |       Analytics       |          ✓          | Installer offers |      ✓      |
-| Browser link with no open network port        |        ✓         |        ✓        |           ✓           |          ✗          |   Vendor cloud   |      ✓      |
-| Private windows leave no history or logs      |        ✓         |        ✗        |           ✗           |          ✗          |        ✗         |      ✗      |
-| HLS and DASH streams built in                 |        ✓         |        ✓        |        Partly         |       Partly        |     Plugins      |   Plugin    |
-| Video sites (YouTube, Vimeo, TikTok)          | One-click add-on |        ✓        |        Add-on         |          ✗          |     Plugins      |   Plugin    |
-| Video/audio conversion and subtitles          |        ✓         |        ✗        |     Convert only      |          ✗          | Separate `.srt`  |      ✗      |
-| Queues and schedules                          |        ✓         |        ✓        |       Scheduler       |          ✓          |    Scheduler     |  Scheduler  |
-| Auto-routing queue rules                      |        ✓         |        ✗        |           ✗           |          ✗          |    Packagizer    |      ✗      |
-| Multiple proxy profiles and per-queue proxies |        ✓         |   Global only   |      Global only      |    Global / host    |    Proxy list    | Global only |
-| Refresh expired link keeping progress         |        ✓         |        ✓        |        Manual         |       Manual        |      Manual      |   Manual    |
-| HTTP/3 (QUIC)                                 |   Experimental   |        ✗        |           ✗           |          ✗          |        ✗         |      ✗      |
-| Export and import settings and queues         |        ✓         | Registry / list |           ✓           |          ✗          |        ✓         |      ✗      |
-| Standalone command-line downloader            |        ✓         |   Flags only    |           ✗           |      CLI / IPC      |        ✗         |     CLI     |
+|                                               | Wirecatch |       IDM       | Free Download Manager | AB Download Manager |  JDownloader 2   |   Motrix    |
+| --------------------------------------------- | :-------: | :-------------: | :-------------------: | :-----------------: | :--------------: | :---------: |
+| Free                                          |     ✓     |      Paid       |           ✓           |          ✓          |        ✓         |      ✓      |
+| Open source                                   |     ✓     |        ✗        |           ✗           |          ✓          |      Partly      |      ✓      |
+| Windows and Linux                             |     ✓     |  Windows only   |           ✓           |          ✓          |        ✓         |      ✓      |
+| Native app (no Electron or JVM)               | ✓ (Rust)  |     ✓ (C++)     |        ✓ (Qt)         |         JVM         |       JVM        |  Electron   |
+| No ads, bundled offers or analytics           |     ✓     |        ✓        |       Analytics       |          ✓          | Installer offers |      ✓      |
+| Browser link with no open network port        |     ✓     |        ✓        |           ✓           |          ✗          |   Vendor cloud   |      ✓      |
+| Private windows leave no history or logs      |     ✓     |        ✗        |           ✗           |          ✗          |        ✗         |      ✗      |
+| HLS and DASH streams built in                 |     ✓     |        ✓        |        Partly         |       Partly        |     Plugins      |   Plugin    |
+| Video sites (YouTube, Vimeo, TikTok)          |  Add-on   |        ✓        |        Add-on         |          ✗          |     Plugins      |   Plugin    |
+| Video/audio conversion and subtitles          |     ✓     |        ✗        |     Convert only      |          ✗          | Separate `.srt`  |      ✗      |
+| Queues and schedules                          |     ✓     |        ✓        |       Scheduler       |          ✓          |    Scheduler     |  Scheduler  |
+| Auto-routing queue rules                      |     ✓     |        ✗        |           ✗           |          ✗          |    Packagizer    |      ✗      |
+| Multiple proxy profiles and per-queue proxies |     ✓     |   Global only   |      Global only      |    Global / host    |    Proxy list    | Global only |
+| Refresh expired link keeping progress         |     ✓     |        ✓        |        Manual         |       Manual        |      Manual      |   Manual    |
+| Export and import settings and queues         |     ✓     | Registry / list |           ✓           |          ✗          |        ✓         |      ✗      |
+| Standalone command-line downloader            |     ✓     |   Flags only    |           ✗           |      CLI / IPC      |        ✗         |     CLI     |
 
 <sub>As of November 2026, from each project's own website, documentation, store listing or repository. Motrix refers to its version 2. Spotted a mistake? Please open an issue.</sub>
 
@@ -154,12 +153,12 @@ wirecatch -H "Cookie: session=abc" -n release.iso https://example.com/download
 wirecatch --proxy socks5h://proxy.example:1080 https://example.com/file.iso
 ```
 
-It handles HTTP, HTTPS, FTP and FTPS, sends custom headers only to the link's own site, and takes `--http3` to try HTTP/3. The engine is also a standalone Rust library: see [crates/engine/README.md](crates/engine/README.md).
+It handles HTTP, HTTPS, FTP and FTPS, sends custom headers only to the link's own site, and, when built with the `http3` feature (off by default), takes an experimental `--http3` option. The engine is also a standalone Rust library: see [crates/engine/README.md](crates/engine/README.md).
 
 ## Privacy and security
 
 - No accounts, analytics, telemetry, ads or bundled offers.
-- The extension reaches the app through native messaging and a pipe or socket only your user account can open. No network port is opened, and the app refuses to run as administrator.
+- The extension reaches the app through native messaging and a pipe or socket only your user account can open, without a network port. The app refuses to run as administrator.
 - Sign-in cookies and headers go only to the site they came from, never across a redirect. Saved sign-ins for unfinished downloads expire after a week.
 - Logs leave out passwords, cookies and tokens.
 - Downloads from private windows stay in memory only, never reach the database or the logs, and their partial files are removed when the last private window closes.
