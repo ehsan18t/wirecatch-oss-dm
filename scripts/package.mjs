@@ -137,6 +137,7 @@ function build(triple) {
   } catch {
     fail('The product identity is out of date; see the message above.');
   }
+  run(process.execPath, [join(ROOT, 'scripts', 'prepare-rust-backports.mjs')]);
   const env = { ...process.env };
   // The Visual C++ runtime is linked in, so the app runs on a Windows without it installed (D33).
   if (triple.endsWith('-windows-msvc')) {
@@ -428,8 +429,8 @@ if (triple.includes('-linux-') && !canPackageLinux(arch))
   fail(
     `Linux packages are made on a Linux machine of their own architecture, so ${triple} cannot be made here.`,
   );
-mkdirSync(OUT, { recursive: true });
 const built = build(triple);
+mkdirSync(OUT, { recursive: true });
 if (triple.includes('-windows-')) windows(product, built, arch, triple);
 else if (triple.includes('-linux-')) await linux(product, built, arch, triple);
 else fail(`No installer is made for ${triple}.`);
