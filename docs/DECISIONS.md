@@ -1896,3 +1896,9 @@ Sites change a download's addresses between visits: YouTube adds its playlist po
 3. Nothing on disk is trusted on the address alone: a page's work folder belongs to one link and is cleared for another (`Manager::refresh_link`), and a stream keeps its segments only when its plan's fingerprint, which leaves out hosts and signing values, is the same.
 4. A file is not refused for its size: the run checks the server's answer against the browser's size before touching the partial data, and the engine starts a file over when its size, `ETag` or `Last-Modified` changed, so two files never mix.
 5. A capture of another kind (a file for a stream, a stream or video page for a file) takes its own path: a file follows Ask before downloading, a stream or video page its question. The watch ends once the capture is a question or a download, and the watched download stays as it is until the new one is added. The new one then takes its place in the list, and the watched one is removed with its partial data. For a file this waits until the app accepts the server's answer, even if the file was queued or confirmed earlier. A dismissed question, or a file whose server refused it, leaves the watched download as it was, and so does a video that could not be read, which is added as a failed download of its own. A new link given to the watched download meanwhile, pasted or captured, keeps it, and the new download stays a download of its own.
+
+### D287. Settings navigation and the command palette
+
+Decided with the maintainer on 2026-11-22.
+
+1. It amends D262.1: the start and finish page is called Notifications, since its full name was cut off in the settings navigation. Its groups and settings stay as D262 gives them. A settings page's name has at most 20 characters; a test holds every page to it.

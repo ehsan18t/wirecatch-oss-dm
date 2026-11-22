@@ -8,8 +8,8 @@ mod files;
 mod general;
 mod media;
 mod network;
+mod notifications;
 mod speed;
-mod start_finish;
 
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -134,7 +134,7 @@ const FIELD_WIDTH: f32 = 320.;
 pub(super) enum Page {
     General,
     Files,
-    StartAndFinish,
+    Notifications,
     Browser,
     Media,
     Speed,
@@ -147,7 +147,7 @@ impl Page {
         match self {
             Self::General => "General",
             Self::Files => "Saving files",
-            Self::StartAndFinish => "When downloads start and finish",
+            Self::Notifications => "Notifications",
             Self::Browser => "Browser",
             Self::Media => "Media",
             Self::Speed => "Speed",
@@ -159,7 +159,7 @@ impl Page {
         match self {
             Self::General => Lucide::SlidersHorizontal,
             Self::Files => Lucide::Folder,
-            Self::StartAndFinish => Lucide::Bell,
+            Self::Notifications => Lucide::Bell,
             Self::Browser => Lucide::Globe,
             Self::Media => Lucide::Film,
             Self::Speed => Lucide::Gauge,
@@ -172,7 +172,7 @@ impl Page {
 pub(super) const PAGES: [Page; 7] = [
     Page::General,
     Page::Files,
-    Page::StartAndFinish,
+    Page::Notifications,
     Page::Browser,
     Page::Media,
     Page::Speed,
@@ -202,7 +202,7 @@ fn page(
     match page {
         Page::General => general::page(library, &fold),
         Page::Files => files::page(library),
-        Page::StartAndFinish => start_finish::page(library, cx),
+        Page::Notifications => notifications::page(library, cx),
         Page::Browser => browser::page(library, cx),
         Page::Media => media::page(library, cx),
         Page::Speed => speed::page(library, main, cx),
@@ -533,6 +533,14 @@ mod tests {
             window.focus_next(cx);
             window.focused(cx).is_some()
         }));
+    }
+
+    /// The settings navigation cuts a longer name off (D287).
+    #[test]
+    fn every_page_name_fits_the_navigation() {
+        for page in PAGES {
+            assert!(page.title().chars().count() <= 20, "{page:?} is too long");
+        }
     }
 
     #[test]

@@ -1,6 +1,6 @@
 //! Media: the media add-on, whether a pick in the quality window is kept (D200), the resolution
 //! and what to do when a video lacks it, and what videos and audio alone are saved as. Whether
-//! a video asks first sits with the other start and finish settings (D262).
+//! a video asks first sits on Notifications (D262).
 
 use gpui_kit::component::combobox::{Combobox, ComboboxEvent, ComboboxState};
 use gpui_kit::component::searchable_list::{SearchableListItem, SearchableVec};
