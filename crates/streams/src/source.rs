@@ -19,12 +19,12 @@ use crate::hls::{self, Master, Media, Playlist, RenditionKind};
 use crate::model::{
     AudioTrack, AutoPicks, Choice, Role, StreamInfo, StreamKind, SubtitleTrack, VideoTrack,
 };
-use crate::plan::{Piece, Plan, Track};
+use crate::plan::{MAX_TRACK_URL_BYTES, Piece, Plan, Track};
 use crate::select::{self, Ids, Pick, Selected};
 use crate::track_id;
 
-/// Largest playlist or manifest read. A ten-hour HLS playlist of 2-second segments with long signed addresses is about 4 MiB.
-const MANIFEST_LIMIT: u64 = 8 * MIB;
+/// Largest playlist or manifest read: as much as one track's addresses may hold, so a playlist the download can use is never refused for its size. A day of 1-second segments with 700-byte signed addresses fits.
+pub const MANIFEST_LIMIT: u64 = MAX_TRACK_URL_BYTES;
 
 /// Largest `sidx` index read for a DASH `SegmentBase`.
 const INDEX_LIMIT: u64 = 16 * MIB;

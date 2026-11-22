@@ -20,7 +20,7 @@ pub(crate) const MAX_TRACK_URL_BYTES: u64 = 64 * MIB;
 /// The most tracks one DASH manifest (representations) or HLS master playlist (qualities and renditions together) may offer. Real ones offer tens; each costs memory and work, however short its text. It also bounds the addresses: a master playlist's are at most 32 MiB whatever base it resolves against, and a DASH manifest's base addresses at most 64 MiB (a representation's own and its set's, which it shares unless it has its own), each address being at most [`MAX_URL_LEN`].
 pub(crate) const MAX_TRACKS: usize = 4096;
 
-/// The most name text (ids, codecs, types, languages and labels) one DASH manifest's representations may hold together. A representation keeps the names of its adaptation set, and what reading the manifest reports copies them once more, so one long label on a set of many representations would otherwise be repeated thousands of times. As much as the manifest itself may be long.
+/// The most name text (ids, codecs, types, languages and labels) one DASH manifest's representations may hold together. A representation keeps the names of its adaptation set, and what reading the manifest reports copies them once more, so one long label on a set of many representations would otherwise be repeated thousands of times.
 pub(crate) const MAX_MANIFEST_NAME_BYTES: u64 = 8 * MIB;
 
 /// `reference` resolved against `base`, refused unless it is a web address (`http` or `https`, never `file:` or another scheme a playlist could aim at the computer) no longer than [`MAX_URL_LEN`].

@@ -110,6 +110,7 @@ pub use model::{
     AudioTrack, Choice, Outcome, Role, Stage, StreamInfo, StreamKind, StreamProgress,
     StreamRequest, SubtitleTrack, VideoTrack,
 };
+pub use source::MANIFEST_LIMIT;
 pub use wirecatch_engine::PrivateNetwork;
 pub use workdir::DIR_SUFFIX;
 

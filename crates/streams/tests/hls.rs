@@ -9,11 +9,10 @@ use cbc::cipher::block_padding::Pkcs7;
 use cbc::cipher::{BlockEncryptMut, KeyIvInit};
 use wirecatch_engine::header::{COOKIE, HeaderValue};
 use wirecatch_engine::numeric::approx_f64;
-use wirecatch_engine::units::MIB_USIZE;
 use wirecatch_engine::{CancellationToken, RateLimiter};
 use wirecatch_streams::{
-    Choice, Error, KeyProblem, Outcome, PrivateNetwork, Role, Stage, StreamKind, StreamProgress,
-    StreamRequest, download, inspect,
+    Choice, Error, KeyProblem, MANIFEST_LIMIT, Outcome, PrivateNetwork, Role, Stage, StreamKind,
+    StreamProgress, StreamRequest, download, inspect,
 };
 use wirecatch_test_support::files::FileServer;
 use wirecatch_test_support::{PATIENCE, PrivateDir, TestResult, private_dir, ts_segment};
@@ -939,8 +938,35 @@ async fn links_that_are_not_streams_are_explained() {
     assert!(error.to_string().contains("404"), "{error}");
 }
 
+/// A day-long recording in 2-second segments with signed addresses, about 11 MiB of playlist.
 #[tokio::test]
-async fn huge_playlists_are_refused_by_their_limits() {
+async fn a_day_long_playlist_is_read() -> TestResult {
+    const SEGMENTS: u32 = 24 * 60 * 60 / 2;
+    let server = FileServer::start().await;
+    let signature = "0123456789abcdef".repeat(12);
+    let mut text = String::from("#EXTM3U\n#EXT-X-TARGETDURATION:2\n");
+    for n in 0..SEGMENTS {
+        writeln!(
+            text,
+            "#EXTINF:2.000,\nseg/{n}.ts?expires=1767225600&sparams=id,itag,source&signature={signature}"
+        )?;
+    }
+    text.push_str("#EXT-X-ENDLIST\n");
+    server.put_typed("day.m3u8", text, MPEGURL);
+
+    let info = inspect(
+        &server.url("day.m3u8"),
+        &options(),
+        PrivateNetwork::Auto,
+        CancellationToken::new(),
+    )
+    .await?;
+    assert_eq!(info.duration, Some(Duration::from_hours(24)));
+    Ok(())
+}
+
+#[tokio::test]
+async fn huge_playlists_are_refused_by_their_limits() -> TestResult {
     let server = FileServer::start().await;
     // 200 001 short segment lines: under the size limit, over the segment limit.
     let mut text = String::from("#EXTM3U\n");
@@ -948,9 +974,9 @@ async fn huge_playlists_are_refused_by_their_limits() {
         text.push_str("#EXTINF:1,\ns.ts\n");
     }
     server.put_typed("many.m3u8", text, MPEGURL);
-    // Over 8 MiB: refused by size before parsing.
+    // Over the size limit: refused before parsing.
     let mut big = String::from("#EXTM3U\n");
-    while big.len() <= 8 * MIB_USIZE {
+    while big.len() <= usize::try_from(MANIFEST_LIMIT)? {
         big.push_str("#EXTINF:1,\nsome-rather-long-segment-name-to-fill-the-playlist.ts\n");
     }
     server.put_typed("big.m3u8", big, MPEGURL);
@@ -983,6 +1009,7 @@ async fn huge_playlists_are_refused_by_their_limits() {
         ),
         "{error}"
     );
+    Ok(())
 }
 
 #[tokio::test]
