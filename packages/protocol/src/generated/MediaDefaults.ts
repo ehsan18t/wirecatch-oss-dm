@@ -7,7 +7,7 @@ import type { VideoQuality } from './VideoQuality';
  * What the quality window starts from (D24), whether it opens at all (D50) and whether a pick
  * there is kept (D200): the saved choices, kept separately for videos and for audio only, the
  * resolution, and what to do when a video does not offer it. Set in Settings, Media, whether it
- * opens in Settings, When downloads start and finish (D262), and kept in the settings profile.
+ * opens in Settings, Notifications (D262), and kept in the settings profile.
  */
 export type MediaDefaults = {
   /**

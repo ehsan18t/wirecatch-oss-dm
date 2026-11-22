@@ -1,5 +1,5 @@
 //! Browser: what the extension catches and where it goes. The extension's popup changes these
-//! same settings. Asking about a caught download sits with the start and finish settings.
+//! same settings. Asking about a caught download sits on Notifications.
 
 use gpui_kit::component::setting::{
     NumberFieldOptions, SettingField, SettingGroup, SettingItem, SettingPage,
@@ -121,7 +121,7 @@ fn what_is_caught(library: &Entity<Library>, cx: &App) -> SettingGroup {
         )
 }
 
-/// "Ask before each download" for browser downloads, for the start and finish page (D262).
+/// "Ask before each download" for browser downloads, for Notifications (D262).
 pub(super) fn ask_each_download(library: &Entity<Library>) -> SettingItem {
     SettingItem::new(
         "Ask before each download",
@@ -136,7 +136,7 @@ pub(super) fn ask_each_download(library: &Entity<Library>) -> SettingItem {
     .keywords(["ask", "confirm", "prompt", "dialog", "browser"])
 }
 
-/// "Show progress while downloading", for the start and finish page (D262).
+/// "Show progress while downloading", for Notifications (D262).
 pub(super) fn show_progress(library: &Entity<Library>) -> SettingItem {
     SettingItem::new(
         "Show progress while downloading",
