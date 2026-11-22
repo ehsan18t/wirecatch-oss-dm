@@ -74,6 +74,7 @@ fn proxy(library: &Entity<Library>, cx: &App) -> SettingGroup {
 /// FTP and the proxy, folded under Advanced (D263).
 fn advanced(library: &Entity<Library>, fold: &super::Fold) -> SettingGroup {
     fold.group(
+        "FTP and the proxy",
         vec![
             SettingItem::new("FTP links skip the proxy", ftp_bypass(library))
                 .description("On, FTP links connect directly when the proxy cannot carry them; off, they fail. Only SOCKS5 proxies carry FTP.")

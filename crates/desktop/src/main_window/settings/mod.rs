@@ -8,15 +8,14 @@ mod files;
 mod general;
 mod media;
 mod network;
+mod notifications;
 mod speed;
-mod start_finish;
 
 use std::collections::HashSet;
 use std::rc::Rc;
 use std::time::Duration;
 
 use gpui_kit::assets::IconName as Lucide;
-use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::group_box::GroupBoxVariant;
 use gpui_kit::component::input::{InputEvent, Textarea, TextareaState};
 use gpui_kit::component::setting::{
@@ -36,7 +35,7 @@ use crate::backend::act;
 use crate::closing::may_have_closed;
 use crate::library::Library;
 use crate::text;
-use crate::ui::{Role, Typed as _, tokens};
+use crate::ui::{Disclosure, Role, Typed as _, tokens};
 
 impl MainWindow {
     /// The settings pages with their own navigation, under the way back to the downloads and over
@@ -134,7 +133,7 @@ const FIELD_WIDTH: f32 = 320.;
 pub(super) enum Page {
     General,
     Files,
-    StartAndFinish,
+    Notifications,
     Browser,
     Media,
     Speed,
@@ -147,7 +146,7 @@ impl Page {
         match self {
             Self::General => "General",
             Self::Files => "Saving files",
-            Self::StartAndFinish => "When downloads start and finish",
+            Self::Notifications => "Notifications",
             Self::Browser => "Browser",
             Self::Media => "Media",
             Self::Speed => "Speed",
@@ -159,7 +158,7 @@ impl Page {
         match self {
             Self::General => Lucide::SlidersHorizontal,
             Self::Files => Lucide::Folder,
-            Self::StartAndFinish => Lucide::Bell,
+            Self::Notifications => Lucide::Bell,
             Self::Browser => Lucide::Globe,
             Self::Media => Lucide::Film,
             Self::Speed => Lucide::Gauge,
@@ -172,7 +171,7 @@ impl Page {
 pub(super) const PAGES: [Page; 7] = [
     Page::General,
     Page::Files,
-    Page::StartAndFinish,
+    Page::Notifications,
     Page::Browser,
     Page::Media,
     Page::Speed,
@@ -202,7 +201,7 @@ fn page(
     match page {
         Page::General => general::page(library, &fold),
         Page::Files => files::page(library),
-        Page::StartAndFinish => start_finish::page(library, cx),
+        Page::Notifications => notifications::page(library, cx),
         Page::Browser => browser::page(library, cx),
         Page::Media => media::page(library, cx),
         Page::Speed => speed::page(library, main, cx),
@@ -219,9 +218,10 @@ struct Fold {
 }
 
 impl Fold {
-    /// The page's Advanced group, found by its hidden items' titles and search keywords (D263).
-    fn group(&self, items: Vec<SettingItem>) -> SettingGroup {
-        let group = SettingGroup::new().item(self.toggle(&items));
+    /// The page's Advanced group, found by its hidden items' titles and search keywords (D263);
+    /// `holds` names them on its closed row (D287).
+    fn group(&self, holds: &'static str, items: Vec<SettingItem>) -> SettingGroup {
+        let group = SettingGroup::new().item(self.toggle(holds, &items));
         if self.shown {
             group.items(items)
         } else {
@@ -229,7 +229,7 @@ impl Fold {
         }
     }
 
-    fn toggle(&self, items: &[SettingItem]) -> SettingItem {
+    fn toggle(&self, holds: &'static str, items: &[SettingItem]) -> SettingItem {
         let (page, shown, main) = (self.page, self.shown, self.main.clone());
         let label = SharedString::from("Advanced");
         let mut keywords = vec![label.clone()];
@@ -249,25 +249,14 @@ impl Fold {
         }
         SettingItem::render(move |_, _, _| {
             let main = main.clone();
-            Button::new("advanced")
-                .small()
-                .ghost()
-                .w_full()
-                .justify_start()
-                .icon(if shown {
-                    Lucide::ChevronDown
-                } else {
-                    Lucide::ChevronRight
-                })
-                .label(label.clone())
-                .on_click(move |_, _, cx| {
-                    may_have_closed(main.update(cx, |main, cx| {
-                        if !main.advanced_shown.remove(&page) {
-                            main.advanced_shown.insert(page);
-                        }
-                        cx.notify();
-                    }));
-                })
+            Disclosure::new("advanced", label.clone(), holds, shown).on_toggle(move |_, _, cx| {
+                may_have_closed(main.update(cx, |main, cx| {
+                    if !main.advanced_shown.remove(&page) {
+                        main.advanced_shown.insert(page);
+                    }
+                    cx.notify();
+                }));
+            })
         })
         .keywords(keywords)
     }
@@ -489,7 +478,7 @@ mod tests {
             .keywords(["protocol"]),
             SettingItem::render(|_, _, _| div()).keywords(["manual check"]),
         ];
-        let SettingItem::Element { keywords, .. } = fold.toggle(&items) else {
+        let SettingItem::Element { keywords, .. } = fold.toggle("", &items) else {
             panic!("the disclosure must be a custom setting item");
         };
         for query in ["advanced", "hidden network", "protocol", "manual check"] {
@@ -516,7 +505,7 @@ mod tests {
                     shown: false,
                     main: WeakEntity::new_invalid(),
                 };
-                let SettingItem::Element { render, .. } = fold.toggle(&[]) else {
+                let SettingItem::Element { render, .. } = fold.toggle("", &[]) else {
                     panic!("the disclosure must be a custom setting item");
                 };
                 div().tab_group().child(render(
@@ -533,6 +522,14 @@ mod tests {
             window.focus_next(cx);
             window.focused(cx).is_some()
         }));
+    }
+
+    /// The settings navigation cuts a longer name off (D287).
+    #[test]
+    fn every_page_name_fits_the_navigation() {
+        for page in PAGES {
+            assert!(page.title().chars().count() <= 20, "{page:?} is too long");
+        }
     }
 
     #[test]

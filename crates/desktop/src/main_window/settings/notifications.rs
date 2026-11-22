@@ -1,4 +1,4 @@
-//! When downloads start and finish (D262): whether a download or a video asks first, whether its
+//! Notifications (D262, D287): whether a download or a video asks first, whether its
 //! progress shows, and how started, finished and failed downloads are told (D52, D64, D65).
 
 use gpui_kit::component::setting::{SettingGroup, SettingItem, SettingPage};
@@ -40,7 +40,7 @@ const START_TIMES: &[(StartNoticeTime, &str)] = &[
 const ONLY_IN_BROWSER: &str = "Used only with Show a notice in the browser.";
 
 pub(super) fn page(library: &Entity<Library>, cx: &App) -> SettingPage {
-    SettingPage::new(super::Page::StartAndFinish.title())
+    SettingPage::new(super::Page::Notifications.title())
         .resettable(false)
         .groups([started(library, cx), finished(library, cx)])
 }

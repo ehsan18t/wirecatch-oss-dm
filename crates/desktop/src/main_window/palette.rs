@@ -3,9 +3,12 @@
 
 use std::rc::Rc;
 
+use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::component::WindowExt;
 use gpui_kit::component::command::{Command, CommandGroup, CommandItem, CommandState};
-use gpui_kit::{App, AppContext as _, Context, ParentElement as _, WeakEntity, Window, px};
+use gpui_kit::{
+    App, AppContext as _, Context, ParentElement as _, Styled as _, WeakEntity, Window, div, px,
+};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, FixAction};
 use wirecatch_shell::api;
@@ -13,9 +16,13 @@ use wirecatch_shell::api;
 use super::applies::{self, Applicable};
 use super::{Group, MainWindow, Screen, View, confirm, details, settings};
 use crate::backend::act;
+use crate::ui::{Role, Typed as _};
 use crate::{files, text};
 
 const WIDTH: f32 = 560.;
+
+/// The palette's name, on its icon and among the shortcuts.
+pub(super) const PALETTE_LABEL: &str = "Find any action or setting";
 
 /// What a command does, run on the main window it was found in.
 type Run = Rc<dyn Fn(&mut MainWindow, &mut Window, &mut Context<'_, MainWindow>)>;
@@ -44,9 +51,12 @@ impl MainWindow {
         let groups = self.palette_groups(cx);
         let main = cx.entity().downgrade();
         let state = cx.new(|cx| CommandState::new(window, cx));
+        self.palette = state.downgrade();
+        cx.observe_release(&state, |_, _, cx| cx.notify()).detach();
+        cx.notify();
         let groups = Rc::new(groups);
         let focused = state.clone();
-        crate::ui::dialog::open_headless(window, cx, move |dialog, _, _| {
+        crate::ui::dialog::open_headless(window, cx, move |dialog, _, cx| {
             let (main, chosen) = (main.clone(), groups.clone());
             let command =
                 groups.iter().fold(
@@ -61,8 +71,20 @@ impl MainWindow {
                         ))
                     },
                 );
-            dialog.w(px(WIDTH)).child(
+            // One panel (D287): the field is its top edge; Esc or a click outside closes it.
+            dialog.w(px(WIDTH)).p_0().close_button(false).child(
                 command
+                    .bordered(false)
+                    .rounded(cx.theme().radius_lg)
+                    .empty(|_, _, cx| {
+                        div()
+                            .py_6()
+                            .w_full()
+                            .text_center()
+                            .text_role(Role::Secondary, cx)
+                            .text_color(cx.theme().muted_foreground)
+                            .child("No matching actions")
+                    })
                     .max_h(px(420.))
                     .on_confirm(move |at, window, cx| {
                         let Some((_, entries)) = chosen.get(at.section) else {
