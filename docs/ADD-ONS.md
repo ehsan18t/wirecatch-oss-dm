@@ -1,161 +1,57 @@
 # Add-ons
 
-Status: proposed, not agreed. The phases and costs below are estimates for one person working with AI. At P0 it becomes a decision in `docs/DECISIONS.md`, and this file is then kept as the settled plan, the way `docs/EXTENSION-SHELL.md` is.
+Proposed implementation plan for desktop add-ons on Windows and Linux. “Extension” refers to the browser extension in this repository.
 
-## The name
+## What people should be able to do
 
-These are **add-ons**, not extensions. "Extension" already means the browser extension throughout this repository, and two meanings for one word would cost a paragraph of explanation in every future decision.
+A developer can write an add-on, install it from a local package, and share that package with someone else. Both people can use it with a compatible release of Wirecatch. Publishing through Wirecatch is optional.
 
-## What we want
+For example, a video site might give out download links that last ten minutes. An add-on can find the available qualities and get a fresh link when one expires. Wirecatch can do the downloading. Another developer might write a client for a file transfer protocol Wirecatch has never heard of. Their add-on can open the connection, read the bytes, recover from an interruption and produce the file itself. Both downloads belong in the user's queue, with progress and working controls.
 
-1. **A site changes, and the fix does not wait for a Wirecatch release.** Today every new site, every new transport and every new post-step is ours to ship.
-2. **The app stays the only thing that touches payload bytes.** Every guarantee the download manager has (resume, checksums, the queue, the scheduler, the progress UI, the work folder) survives any add-on, because no add-on moves data.
-3. **A person can write one.** A stranger with a text editor and a documented contract can add a site we have never seen.
-4. **An add-on cannot break the app.** A crash, a hang or a bad answer is one failed download with a message, never a corrupted install or a frozen window.
-5. **No add-on can reach the local network.** The rule that a link from the internet cannot reach the person's own network (D34, D39) applies to add-ons as strictly as it applies to yt-dlp (D136).
+The first release of desktop add-ons should support both examples. An add-on can offer several operations. The public interface can grow to cover work such as converting a finished file, supplying metadata or sending the result to a media server. The first two examples test whether other people can extend the app independently. They do not define a fixed list of permitted add-on types.
 
-## The problem today
+## How a download works
 
-`crates/addons` installs exactly one add-on: the media add-on, whose components are a closed set (`ComponentId`), in one folder, from one signing key, with one update check (D20, D21). That machinery is good and most of it is reusable. What it cannot do is hold a second add-on, or one we did not build.
+1. **Choose a handler.** The package declares the hosts or URL schemes it understands. Wirecatch reads these declarations locally. A user can choose an enabled handler for a link and remember that choice. Overlapping claims use that choice or prompt when a choice is needed. Unclaimed links follow normal download handling. The desktop Add Download entry point must accept a registered scheme before built-in transport validation would reject it. A custom scheme claim must use a valid, normalized scheme name. Reject claims on Wirecatch's built-in web and FTP schemes, and reserve local file, inline data, script and browser-internal schemes, including `file`, `data`, `javascript`, `about` and `chrome`. Host-specific handlers for web links remain available. Apply the scheme policy when installing a package and when routing an address. Existing browser capture and privacy checks still apply before a browser link reaches a handler.
+2. **Describe the download when needed.** An add-on can return a suggested name and a list of representations with stable IDs, such as video qualities. Wirecatch translates these into the existing media offers in `crates/media/src/choice.rs`. A handler for a protocol with one file per link can start directly. Page analysis and download-time refresh both use one resolver that takes the handler ID. Key its in-memory readings by handler and page. A cache miss or expired URL calls the job's chosen handler.
+3. **Choose who transfers the bytes.** A representation can name a source Wirecatch already understands or identify a transfer the add-on will perform. For a built-in source, the engine or streams pipeline handles the transfer. For an add-on transfer, the queue starts the worker with the chosen source, the selection and a job-specific work directory. The worker controls its protocol, connections and file contents. It reports bytes completed and, when known, the total.
+4. **Pause, resume and retry.** Wirecatch owns the job state and sends control requests to the active worker. A resumable worker declares the checkpoint format it writes and the formats it can read. It commits a complete checkpoint before acknowledging pause. On resume, including after an app restart, a new process receives the same job and work directory. A worker that can only restart declares that behavior so the app can tell the user what pausing will cost. Before launching a resumed attempt, Wirecatch matches the saved checkpoint format against the installed handler's readable formats. If the handler is missing or incompatible, keep the partial and offer to restore a compatible version or explicitly start over.
+5. **Finish the download.** The worker closes its output and reports its path relative to the job directory. Wirecatch accepts a regular file whose resolved path is inside the job directory for final placement (D88, D96). When an independently trusted source supplies an expected digest, Wirecatch computes the digest of the file and compares them. A digest supplied by the worker itself can detect subsequent changes to its output. The placement check governs which file Wirecatch publishes. Only successful placement marks the row complete. A placement retry reuses the completed work. Cancel stops the worker before Wirecatch cleans up the job's partial files.
 
-The extension point that exists today is the transport enum. `Format::transport` in `crates/media/src/ytdlp/info.rs` answers `File`, `Hls` or `YtDlp`, and `crates/core/src/manager/media_run/page.rs` fetches with the engine when every chosen format is one of the first two and has an address, otherwise it hands the same selection to yt-dlp. A new transport, a site yt-dlp reads badly, or a step after the download is a new Wirecatch release.
+Wirecatch owns queue slots, scheduling and final placement. For a worker using its own sockets, the protocol offers byte allowances. Before reading a bounded chunk of payload, a cooperating worker requests an allowance from the manager. The manager charges the same global and queue limiters used by built-in downloads (`run_policy` in `crates/core/src/manager/policy.rs`). Bound outstanding allowances per attempt so workers cannot accumulate credit ahead of a limit change. A worker waiting for credit can still receive pause or cancel. If a worker cannot participate while a cap applies, keep the job queued and explain why. If a user enables a cap during such a run, stop the attempt and show whether it can resume. A worker also declares whether it can honor the configured proxy. These controls depend on the native worker following the contract.
 
-## The rule: describe, don't fetch
+## What the author implements
 
-An add-on answers two questions: **what is at this address**, and **what should happen after this download finishes**. It never moves payload bytes.
+The public interface is a versioned JSON Lines protocol over standard input and output. A package manifest supplies a stable ID, package version, compatible protocol range, platform entry point, routing claims and supported operations. Keep the wire types and limits in `crates/protocol` under D15, with an add-on protocol version independent of the browser protocol. Define worker messages in a separate module with its own request, reply and event types. Keep them out of the browser's wire enums and TypeScript generation. Publish the message definitions, examples and test fixtures so authors can use any language that can run on the target system.
 
-That single restriction is what makes the rest of the design work:
+Use one supervised process per description or transfer attempt. A description has a deadline. A transfer keeps its input open for pause and cancel while Wirecatch reads progress, checkpoint acknowledgements and one final outcome. A worker waiting for a remote peer sends a heartbeat at an interval bounded by the host. Heartbeats indicate that the worker is alive, even when zero bytes have moved. Give pause and cancel their own acknowledgement deadlines. Bind messages to the active attempt so a late success cannot revive a cancelled job. If a worker crashes, sends malformed output or ignores a stop request, the manager ends the attempt, releases its queue slot and gives the user a reason and a recovery action.
 
-- The engine stays the only HTTP client for payload, so resume, chunking, checksums, retries and the disk work folder keep working unchanged.
-- An add-on cannot break a transfer it does not perform.
-- A bad or hostile add-on can lie about a video. It cannot corrupt a file, and it cannot bypass the engine's address rules.
-- Any add-on that cannot work this way is not supported, and that is deliberate rather than a gap to close later.
+Reuse the process supervision in `crates/streams/src/process`, including Windows job objects and Unix process groups. Add a duplex request channel and a protocol reader. The current line reader truncates at 16 KiB and the collected-output reader caps at 64 MiB. Set and test explicit frame and description-size limits, reject an oversized frame before parsing, and bound buffered progress for long-running transfers. Keep diagnostic output separate from protocol messages and redact sensitive values before logging.
 
-## The five kinds
+## Installation and trust
 
-| Kind | Gets | Returns | Network | Files |
-| --- | --- | --- | --- | --- |
-| Extractor | A page address | Representations, shaped like yt-dlp's `Info` | Yes, through the guard | No |
-| Transform | One fetched segment or file's bytes | New bytes | No | No |
-| Postprocessor | A finished file's path | Nothing, or a new path | No, unless declared | Yes |
-| Metadata | A page address | Title, cover, episode, description | Yes, through the guard | No |
-| Sink | A finished file's path | Nothing | Yes, through the guard | Read only |
+**Install from file is part of the first desktop add-on release.** Settings shows the package identity, publisher information when verified, and the access involved. A native add-on runs with the user's operating-system permissions and can read files or open network connections on its own. A list of declared operations helps Wirecatch route commands. The user decides whether to trust the program.
 
-One rule cuts across the table: **no kind gets both a writable file and the network**, except a sink, whose whole purpose is to send one named file somewhere and which the person turns on for that add-on. That closes the shortest path from "an add-on I installed" to "everything in my Documents folder, uploaded".
+Wirecatch imports the package into its own add-on directory. For a locally supplied unsigned package, approval applies to the exact package contents, including its manifest and support files. Replacement contents require approval before execution. For official releases, Wirecatch verifies a signed manifest binding the package ID, version, protocol range and platform artifact digest to its publisher. The media add-on's existing upstream yt-dlp signature check (D21) serves a separate purpose.
 
-Extractors come first. The other four are designed for, not built, until the extractor contract has survived contact with real pages.
+Reuse safe unpacking and checksum verification from `crates/addons`. Stage each verified version in its own directory, then atomically replace the record selecting the active version. The current installer in `crates/core/src/manager/addons/install.rs` moves the old folder aside before moving the new one into place. A kill between those moves can leave the live path missing. Keep old versions while a running job needs them. Disabling an add-on stops new launches, and removal coordinates with running jobs before deleting their files. Users can install, enable, disable, update and remove individual packages.
 
-## The contract
+Give each installed add-on a stable writable `data_dir` tied to its installed identity, separate from executable versions and per-job work. Use it for settings and reusable cache data across jobs and updates. Use OS credential storage for saved secrets. On removal, let the user keep or erase the data. A different publisher claiming the same package ID must not silently inherit it.
 
-**One process per request.** The runner starts the program, writes one request to its standard input, reads replies until it ends, and kills the process tree. No long-lived worker in v1: the supervisor in `crates/streams/src/process` is built for exactly this shape, and a crash cannot poison later calls. A kept-alive worker is a performance decision to make later, against a measurement.
+For the first desktop add-on release, Wirecatch passes third-party workers public links the user has chosen. Browser cookies, private-session captures and credentials for signed-in media stay on their existing paths (D112, D280). When Wirecatch fetches a URL supplied by an add-on, it applies the originating page's network policy through redirects and connection setup (D39). A cooperative worker can use the existing network guard (D136). A native worker controls its own network requests. An add-on can implement its own sign-in. Giving a native worker access to a browser login would require a separate decision about which add-on, site and session the user authorizes.
 
-**JSON Lines.** One object per line, in both directions. Not the bridge's length-prefixed frames (D14): an add-on in any language must be able to speak this with its standard library, and a line of JSON is the smallest thing that makes that true.
+## Saved downloads
 
-**Version first.** The request names the protocol version it speaks, and the app refuses an add-on whose declared range does not include its own, the way D32 refuses a client that shares no version. The add-on ABI versions independently of the app protocol, and does not reuse the bridge's `hello`.
+P2 owns the add-on job record in `crates/records` and its round trip through `crates/store`. Persist the handler ID and package version, selected representation where applicable, and enough information to locate the job directory and identify the last committed checkpoint format. Opaque checkpoint bytes belong in the job directory. Use a stable job ID to derive the directory where possible. Commit pause state only once the checkpoint is durable. On recovery validate the checkpoint before reuse. Add a SQL migration if the chosen representation changes the SQLite schema. Cover both older download records and interrupted add-on jobs with restart fixtures.
 
-**`describe` is the only operation in v1.** A `probe` step, which answers "is this address mine" in milliseconds before the expensive call, waits until there is a second extractor that needs disambiguating. Routing by declared hosts is enough for one.
+## Build order and acceptance tests
 
-**The result is a subset of yt-dlp's `Info`**, not a new vocabulary. This is the decision that keeps the integration small: `crates/media/src/choice.rs` already builds the offer list from `Info` (`from_page`), and the offer list is what carries the remembered resolution, the quality fallback and the ask-each-time rule (D24, D200). A result shape that fed `crates/streams/src/select.rs` instead would lose all of that, because `select.rs` picks tracks from a parsed manifest and knows nothing about the quality window.
+| Phase                             | Deliverable                                                                                                                                                                                                                       | Evidence to move on                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P0. Public contract               | Document the manifest, routing, messages, trust decision, job states, byte allowances, heartbeat deadlines and checkpoint compatibility. Include transcripts for an extractor and a worker that downloads a file.                 | An author can tell how to start, pause, resume, cancel and finish a job, and what happens after an error.                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| P1. Local installation and runner | Install a user-built package through Settings and invoke it through the public protocol. Implement version checks, output limits and supervision.                                                                                 | A valid description larger than 16 KiB arrives intact. Oversized or malformed replies, early exit and an unresponsive worker produce bounded failures. A waiting worker can stay alive without progress and respond to cancel. Changed unsigned package contents require approval. Reject reserved scheme claims and exercise desktop input and browser capture separately. Worker-only changes preserve the browser wire snapshots and generated browser types.                                                                                                       |
+| P2. Independent transfer          | Using only the published interface, build an add-on outside the Wirecatch source tree for a protocol the app cannot download by itself. Install it on Windows and Linux and start a download from the ordinary Add Download flow. | Load a pre-add-on download record and restore an interrupted worker job. Exercise compatible and incompatible checkpoint formats across an update. Run a native and worker download together and check shared byte allowances under global and queue limits, including a live limit change. The queue shows progress. Pause, restart the app, resume, and compare the finished file with the fixture digest. Separately cancel an active job, crash a worker and retry, and finish into a folder with a name collision. No per-protocol change to Wirecatch is needed. |
+| P3. Engine-managed extraction     | Install a second add-on that describes a page and hands a supported source to Wirecatch. Exercise analysis, caching, quality selection and download-time refresh through the same handler.                                        | Count one handler call for analysis, zero additional calls on a fresh cache hit, one more after forced URL expiry during transfer, and zero yt-dlp calls. Complete the file with the compatible selection. A separate fixture changes the representation and proves incompatible partials are discarded.                                                                                                                                                                                                                                                               |
+| P4. Distribution and author tools | Finish update and removal recovery, official package verification, a scaffold, and a conformance command using the same fixtures as CI.                                                                                           | Install two packages together. Check data directory separation, reuse across an update, and both keep and erase choices on removal. Interrupt activation and removal, then restart and verify the selected version or completed removal. Have another developer package and share a working add-on using the published guide.                                                                                                                                                                                                                                          |
 
-The consequence is that the first conforming add-on can be yt-dlp itself, re-emitting what it already prints. That is the cheapest possible proof that the contract matches reality.
-
-**Errors are typed.** A closed set of codes (`unsupported`, `not_found`, `needs_login`, `refused`, `too_large`, `stopped`) and one sentence of reason. A stack trace goes to the add-on's standard error, which the runner keeps as a tail for diagnostics, and never to the person. Every failure becomes a message with a fix, through `crates/messages`, like any other download failure.
-
-**Every address an add-on returns is re-checked by the app**, with the same rules as an address the person typed: the local-network classifier (D34), the redirect rules, and the scheme. The add-on's opinion about where a file lives is never trusted, only proposed.
-
-## The manifest
-
-The existing manifest gains four fields: an id, the kinds it offers, the hosts it claims, and the protocol range it speaks. Everything else stays: version, per-file SHA-256, safe unpacking, atomic swap, the record written last.
-
-Hosts are globs on the host only, never a path claim, so routing needs no add-on process. Declared hosts build the routing table at startup. A host nobody claims keeps today's path: a plain download that becomes a page read when the server answers with a page (D51.3).
-
-## The runner
-
-`crates/streams/src/process` already provides the hard part: an argument vector with no shell, a job object on Windows and a process group on Unix, killed as a whole on cancel, timeout, stall or drop, no console window, Python's environment stripped, and standard output capped at 64 MiB. The add-on runner reuses it rather than growing a second supervisor.
-
-What it adds is the request channel (one line in, replies out) and the mapping from a failed run to a message. A run that stalls for `STALL_TIMEOUT` is already stopped; a describe gets a deadline of its own, the media path's read timeout, not a new number.
-
-## Trust, privacy and the network
-
-**Official add-ons** are signed by us and update themselves, exactly as the media add-on does today. **A user's own add-on** is unsigned, and the first install pins the file's hash. If the hash changes, the app asks again. Nothing unsigned updates itself.
-
-**The network guard is part of the contract, not a later hardening pass.** A describe call reads pages, so it makes requests, and D136 already decided how a Wirecatch subprocess is allowed to do that: a loopback proxy per run, resolving each host itself, refusing any host with a local address, one request per connection, no redirect hops followed blindly. An add-on that bypassed that would undo a property the app spends real code on. The add-on's HTTP client reaches the internet through the same guard, or the add-on gets no network at all.
-
-**v1 takes public addresses only, from an explicit act by the person.** No cookies, no session tokens, no private-session downloads (D82, D279.6). Signed-in media stays on the existing yt-dlp path, which already handles cookies, private spans and the guard together. That boundary is the one that makes the first external add-on cheap to reason about; moving it is a later decision with its own entry.
-
-## Installation
-
-The runner comes before generalizing install. That order is deliberate. Once one add-on has run through the contract, the manifest knows what an add-on actually needs to declare, and generalizing `crates/addons` is a mechanical change with a known target. Done the other way round, the installer is designed against guesses and rebuilt.
-
-## Phases
-
-Costs are AI-speed work with review, not calendar time. Human gates are listed where they block.
-
-### P0. The boundary (0.5 day, no code)
-
-Settle this document, record the decision, and amend D15 explicitly: a third-party ABI may live in `wirecatch-protocol` under its own version constant, because D15 currently says the crate is the single source of truth for every type crossing a process boundary, and that sentence is now either widened or contradicted.
-
-Decisions fixed here: one process per request, JSON Lines, public addresses only, no cookies, the five kinds, and the no-file-plus-network rule.
-
-Exit: the decision exists, and a reviewer can read this file and say what is in and what is out.
-
-### P1. The runner and the contract (2 to 3 days)
-
-The wire types, the runner on the existing supervisor, and a test add-on that returns a fixed `Info`. No real site, no install changes.
-
-Exit: a test add-on describes an address; its whole process tree dies on cancel and on timeout; a crash becomes one typed error with a reason; the 64 MiB cap holds; a describe through the D136 guard reaches a public host and is refused a local one.
-
-That last clause is the one real unknown in the phase. If the guard cannot carry a general HTTP client (it refuses `Expect` and allows one request per connection), the answer is either a guard mode for add-ons or no network in v1. Either is fine, but it is settled here and not after P3.
-
-### P2. One real extractor, measured (2 to 3 days)
-
-The media path reads a page through a conforming add-on, the result becomes `Info`, and `from_page` builds the offers with nothing changed in the quality window. The yt-dlp fallback is not touched and stays available.
-
-Exit is a number, not a feeling: a fixture list of public pages, and the share of them the contract covers without cookies, with and without the fallback. That number goes into this document.
-
-### P3. Installation (1 to 2 days)
-
-Multiple add-ons in `crates/addons`: an id per add-on, a folder and record each, an index, list, enable, disable, remove. The media add-on becomes an ordinary entry rather than a special case.
-
-Exit: two add-ons installed side by side, one updated, one removed, with a kill in the middle of each leaving a coherent state.
-
-### P4. The author kit (1 to 2 days)
-
-A scaffold command, a Python SDK and a Rust SDK, and a conformance binary that runs an add-on against a fixture corpus. The conformance suite is the gate for listing anything official, not polish.
-
-Exit: someone who has never seen the code writes an add-on from the documents alone and gets it passing without asking a question.
-
-### P5. Trust and lifecycle (1 day)
-
-Trust on first use, hash pinning, re-consent on change, no auto-update for anything unsigned, and a permission line in the UI that says what the add-on gets in plain words.
-
-Exit: an unsigned add-on's file changing on disk produces a prompt, not a silent run.
-
-### P6. The second kind (not scheduled)
-
-A postprocessor, because it is the smallest proof that the contract generalizes beyond extraction. Transforms, metadata and sinks follow only if someone needs them.
-
-## What would prove this wrong
-
-These are the measurements that should stop the plan, kept here so a later phase cannot quietly continue past them.
-
-1. **Coverage without cookies is close to zero on the fixture list.** Then the describe contract is a power-user tool, not a product feature. The official media add-on stays the answer, and we stop at P3 rather than hand over session credentials.
-2. **The D136 guard cannot carry a general client.** Then add-ons get no network in v1, which makes an extractor impossible, which reduces the system to postprocessors. Still useful, much smaller.
-3. **Process startup dominates.** If a describe takes longer before the add-on starts than the add-on takes to answer, routing needs a kept-alive worker and P1's shape changes. Measure it in P1 on Windows, where process creation is slowest.
-4. **Nobody writes one.** If the SDK and the scaffold produce no third-party add-on within a release cycle, the contract was for us all along, and it should be judged as an internal refactor that made the media add-on ordinary, not as an ecosystem.
-
-## Open questions
-
-- Whether formats may carry their own `http_headers`, which yt-dlp formats sometimes do. It is not payload, but it lets an add-on influence the engine's requests.
-- Whether add-ons must be self-contained programs or may need a language runtime, which changes the install story completely.
-- Whether there is an official index at all in v1, or only the signed media add-on plus sideloading.
-- Fixture pages must be synthetic or public-domain, so the conformance corpus can live in the repository.
-
-## Deliberately out of scope
-
-- Loading an add-on into the app's process.
-- Any add-on that returns payload bytes.
-- Add-ons that depend on other add-ons: that is a dependency resolver, and there is no appetite for one.
-- Arbitrary UI contributed by an add-on. At most, typed settings fields and one row in a details view, and not before P6.
-- A marketplace with payment.
-- Add-ons that use the person's cookies or a private session, in v1.
+Use local fixture servers for automated tests. The P2 protocol and P3 page are examples an independent author can replace. An official directory, language-specific SDKs and additional lifecycle hooks can follow actual author demand. Estimate release work after measuring the worker and checkpoint implementations on both platforms.
