@@ -1,7 +1,6 @@
 // Materialize the two temporary Cargo overrides from verified crates.io archives.
 import { createHash } from 'node:crypto';
 import {
-  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -30,24 +29,19 @@ const BACKPORTS = [
   },
 ];
 
-function prepared(destination, fingerprint) {
-  const stamp = join(destination, '.backport');
-  return (
-    existsSync(stamp) &&
-    existsSync(join(destination, 'Cargo.toml')) &&
-    readFileSync(stamp, 'utf8') === fingerprint
-  );
-}
-
 async function prepare({ name, version, sha256, licences }) {
   const release = `${name}-${version}`;
-  const patch = join(PATCHES, `${release}.patch`);
-  const licencePath = (licence) => join(PATCHES, `${name}-${licence}`);
-  const hash = createHash('sha256').update(sha256).update(readFileSync(patch));
-  for (const licence of licences) hash.update(readFileSync(licencePath(licence)));
-  const fingerprint = hash.digest('hex');
-  const destination = join(CACHE, name);
-  if (prepared(destination, fingerprint)) return;
+  const patch = readFileSync(join(PATCHES, `${release}.patch`));
+  const licenceFiles = licences.map((file) => ({
+    file,
+    bytes: readFileSync(join(PATCHES, `${name}-${file}`)),
+  }));
+  const hash = createHash('sha256').update(sha256).update(patch);
+  for (const { bytes } of licenceFiles) hash.update(bytes);
+  const fingerprint = hash.digest('hex').slice(0, 16);
+  const destination = join(CACHE, `${release}-${fingerprint}`);
+  const manifest = join(destination, 'Cargo.toml');
+  if (existsSync(manifest)) return;
 
   const response = await fetch(`https://static.crates.io/crates/${name}/${release}.crate`, {
     signal: AbortSignal.timeout(30_000),
@@ -67,15 +61,18 @@ async function prepare({ name, version, sha256, licences }) {
     capture('tar', ['-xf', archive, '-C', scratch]);
     const source = join(scratch, release);
     const fromRoot = relative(ROOT, source).split(sep).join('/');
-    capture('git', ['apply', '--whitespace=nowarn', `--directory=${fromRoot}`, patch]);
-    for (const licence of licences) copyFileSync(licencePath(licence), join(source, licence));
-    writeFileSync(join(source, '.backport'), fingerprint);
+    const stagedPatch = join(scratch, 'backport.patch');
+    writeFileSync(stagedPatch, patch);
+    capture('git', ['apply', '--whitespace=nowarn', `--directory=${fromRoot}`, stagedPatch]);
+    for (const { file, bytes } of licenceFiles) writeFileSync(join(source, file), bytes);
 
-    // Finish all work before replacing an older generated copy.
-    if (prepared(destination, fingerprint)) return;
-    rmSync(destination, { recursive: true, force: true });
-    renameSync(source, destination);
-    console.log(`Applied the Rust backport for ${release}.`);
+    // Publish a complete copy. Another setup may have published the same files first.
+    try {
+      renameSync(source, destination);
+      console.log(`Prepared ${relative(ROOT, destination).split(sep).join('/')}.`);
+    } catch (error) {
+      if (!existsSync(manifest)) throw error;
+    }
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
