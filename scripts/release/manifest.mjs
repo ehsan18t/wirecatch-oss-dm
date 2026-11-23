@@ -1,88 +1,86 @@
 #!/usr/bin/env node
-// Writes the update manifest of a release (D111): every installer in a folder, with its system, architecture, kind, size and SHA-256, as `update.json`, and its Ed25519 signature as `update.json.sig`, both in that folder.
+// Checks a release's installers and, in signed mode, writes their manifest `update.json` into the folder for the signing job (D111, D288). Prints the update mode and public key as `name=value` lines for `$GITHUB_OUTPUT`.
 //
-// Usage: UPDATER_PRIVATE_KEY=<base64 PKCS#8> node scripts/release/manifest.mjs <folder>
-//
-// The installers are named as scripts/package.mjs names them, <product>-<version>-<system>-<architecture>, with the version in config/product.toml. Anything else in the folder is left out of the manifest.
+// Usage: GITHUB_REPOSITORY=<owner/name> GITHUB_REF_NAME=v<version> node scripts/release/manifest.mjs <folder>
 
-import { createHash, createPrivateKey, sign } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ROOT } from '../gate/process.mjs';
-import { readProduct } from '../product/read.mjs';
-
-/** The end of each installer's name, after `<product>-<version>-<system>-<architecture>`, and what it is. */
-const KINDS = [
-  ['-setup.exe', 'setup'],
-  ['.AppImage', 'appimage'],
-  ['.deb', 'deb'],
-  ['.rpm', 'rpm'],
-];
-const SYSTEMS = ['windows', 'linux'];
-const ARCHES = ['x64', 'arm64'];
+import { githubRepository, readProduct } from '../product/read.mjs';
+import { installerNames, isInstaller } from './installers.mjs';
+import { MANIFEST_FILE } from './update-files.mjs';
 
 /** What `name` is, when it is an installer of `product` at `version`; null otherwise. */
-export function describe(name, product, version) {
-  const prefix = `${product}-${version}-`;
-  if (!name.startsWith(prefix)) return null;
-  const rest = name.slice(prefix.length);
-  for (const [ending, kind] of KINDS) {
-    if (!rest.endsWith(ending)) continue;
-    const [system, arch, ...more] = rest.slice(0, -ending.length).split('-');
-    if (more.length > 0 || !SYSTEMS.includes(system) || !ARCHES.includes(arch)) return null;
-    return { system, arch, kind };
-  }
-  return null;
+export function describe(name, product) {
+  const installer = installerNames(product).find((candidate) => candidate.name === name);
+  if (!installer) return null;
+  const { system, arch, kind } = installer;
+  return { system, arch, kind };
 }
 
 /** The manifest of the installers in `folder`, as the bytes that are signed. */
-export function manifest(folder, product, version) {
+export function manifest(folder, product) {
   const files = readdirSync(folder)
     .sort()
     .flatMap((name) => {
-      const what = describe(name, product, version);
+      const what = describe(name, product);
       if (!what) return [];
       const bytes = readFileSync(join(folder, name));
       return [
         {
           name,
           ...what,
-          size: statSync(join(folder, name)).size,
+          size: bytes.length,
           sha256: createHash('sha256').update(bytes).digest('hex'),
         },
       ];
     });
-  return Buffer.from(`${JSON.stringify({ version, files }, null, 2)}\n`);
+  return Buffer.from(`${JSON.stringify({ version: product.version, files }, null, 2)}\n`);
 }
 
-/** `bytes` signed with the base64 PKCS#8 Ed25519 key `privateKey`, as unpadded base64url. */
-export function signature(bytes, privateKey) {
-  const key = createPrivateKey({
-    key: Buffer.from(privateKey, 'base64'),
-    format: 'der',
-    type: 'pkcs8',
-  });
-  return sign(null, bytes, key).toString('base64url');
+/** Checks that `folder` holds exactly the installers of this tag's version, built in this repository, and writes their manifest in signed mode. */
+export function prepareRelease(folder, { product, links, updates }, { repository, tag }) {
+  if (githubRepository(links.repository)?.toLowerCase() !== repository?.toLowerCase()) {
+    throw new Error('The workflow repository must match links.repository in config/product.toml.');
+  }
+  if (tag !== `v${product.version}`) {
+    throw new Error(
+      `The tag ${tag} does not match version ${product.version} in config/product.toml.`,
+    );
+  }
+  const names = readdirSync(folder).filter(isInstaller).sort();
+  const expected = installerNames(product)
+    .map(({ name }) => name)
+    .sort();
+  if (names.length !== expected.length || names.some((name, index) => name !== expected[index])) {
+    const missing = expected.filter((name) => !names.includes(name));
+    const unexpected = names.filter((name) => !expected.includes(name));
+    throw new Error(
+      `Wrong installer set. Missing: ${missing.join(', ') || 'none'}. Unexpected: ${unexpected.join(', ') || 'none'}.`,
+    );
+  }
+  const empty = names.find((name) => statSync(join(folder, name)).size === 0);
+  if (empty) throw new Error(`The installer ${empty} is empty.`);
+  if (updates.verification === 'signed') {
+    writeFileSync(join(folder, MANIFEST_FILE), manifest(folder, product));
+  }
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const [folder] = process.argv.slice(2);
-  const privateKey = process.env.UPDATER_PRIVATE_KEY;
-  if (!folder || !privateKey) {
-    console.error(
-      'Usage: UPDATER_PRIVATE_KEY=<base64 PKCS#8> node scripts/release/manifest.mjs <folder>',
-    );
-    process.exit(2);
+  try {
+    const [folder] = process.argv.slice(2);
+    if (!folder) throw new Error('Usage: node scripts/release/manifest.mjs <folder>');
+    const product = readProduct(readFileSync(join(ROOT, 'config', 'product.toml'), 'utf8'));
+    prepareRelease(folder, product, {
+      repository: process.env.GITHUB_REPOSITORY,
+      tag: process.env.GITHUB_REF_NAME,
+    });
+    console.log(`verification=${product.updates.verification}`);
+    console.log(`public_key=${product.updates.public_key ?? ''}`);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
   }
-  const product = readProduct(readFileSync(join(ROOT, 'config', 'product.toml'), 'utf8'));
-  const bytes = manifest(folder, product.product.name, product.product.version);
-  const listed = JSON.parse(bytes.toString()).files;
-  if (listed.length === 0) {
-    console.error(`No installer of version ${product.product.version} is in ${folder}.`);
-    process.exit(1);
-  }
-  writeFileSync(join(folder, 'update.json'), bytes);
-  writeFileSync(join(folder, 'update.json.sig'), signature(bytes, privateKey));
-  console.log(`Signed the manifest of ${String(listed.length)} installers in ${folder}.`);
 }

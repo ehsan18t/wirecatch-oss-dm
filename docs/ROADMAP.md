@@ -8,7 +8,7 @@
 4. **Streams.** HLS and DASH detection in the extension and parallel segment download with joining (`wirecatch-streams`). Done.
 5. **Media add-on.** One-click yt-dlp, ffmpeg and Deno, pinned by SHA-256, yt-dlp updates verified by signature and a two-day delay (D20, D21). Done; smoke-tested end to end against a real Wikimedia Commons video.
 6. **Remaining v1 protocols.** FTP and FTPS done; HTTP/3 available as an experimental option (A7).
-7. **Release readiness.** Done: final security review and fixes, Linux suite green in Docker, quiet-machine benchmark, Windows installer built (5.2 MiB), commit history cleaned. Left for the maintainer: GitHub organization, code signing, the updater signing key, store listings for the extension (which also gives Chromium browsers a trusted extension id), and the user actions in D21.
+7. **Release readiness.** Done: final security review and fixes, Linux suite green in Docker, quiet-machine benchmark, Windows installer built (5.2 MiB), commit history cleaned. Left for the maintainer: product identity, the updater rehearsal, store listings for the extension (which also gives Chromium browsers a trusted extension id), and the user actions in D21. Manifest signing (D288) and installer code signing can come later.
 8. **Interface revamp.** One design system for the desktop app and the extension, in two phases. Phase 1 done: the foundation, the main window, the add-download flow, the download window and the extension's pages. Phase 2 done: the settings, the dialogs, the rail, the media button, the installer's pictures and Copy diagnostics.
 
 ## Where things stand and what comes next
@@ -30,7 +30,7 @@ Set with the maintainer on 2026-10-30, and extended on 2026-10-31 with items 8 t
 4. **Save to says who chose the folder** (change to D94.4; done, D94.6). The window's part is carried into the GPUI interface. A download window shows the folder the app chose, from the queue's own folder or else the folder for the file type, marked as the app's choice ("Chosen by the Overnight queue", "By file type"). Picking another folder makes it the person's choice, marked as such, with a way back to the app's; picking the folder the app already chose leaves it the app's choice. The person's choice wins over the queue's, as D94.2 says.
 5. **The desktop interface in GPUI** (rebuild; done, D95, D106, D107: every screen, the installers, and the Tauri app removed). The desktop app's interface is rebuilt in Rust on GPUI with gpui-component, calling the core directly, and Tauri and the webview go. The look follows Zed's rather than copying today's screen for screen, keeping every screen, state and behaviour the decisions describe. It comes after the items whose work is mostly in the core, and before the About page and the updates, which are built for it rather than twice; the browser extension keeps its web interface and `packages/ui`.
 6. **An About page** (feature; done, D109). Settings gets an About page with the app's name and version, its licence, the maintainer, the repository, the website and where to report a problem, all read from `config/product.toml`, plus the versions of the media add-on's programs when installed.
-7. **Updates from GitHub Releases** (feature; done, D111; the maintainer makes the key). The app checks GitHub Releases for a newer version and offers to install it. A setting, "Get pre-release versions", off by default, also offers pre-releases; off, only full releases are offered. The release workflow builds every installer for Windows and Linux, on x64 and ARM64, names each file by one scheme (product, version, system, architecture), writes the update manifests for both channels, and drafts the GitHub release with all of it for the maintainer to publish. Needs the updater signing key, which is free to make and the maintainer's to keep (D19); code signing stays out of the first release.
+7. **Updates from GitHub Releases** (D111, D288). The app checks the configured public GitHub repository and verifies the installer against its release asset digest. Pre-releases are offered when "Get pre-release versions" is on. The release workflow builds and checks the installer set for Windows and Linux on x64 and ARM64, then prepares a verified draft for the maintainer to publish. Signed update manifests are available as a build-time mode.
 8. **Fixes in the GPUI app** (done; AUDIT, "After the move to GPUI"). The help of the hosts that skip the proxy says in plain words what `<local>` covers, and the bridge takes `CREATE_NO_WINDOW` from `windows-sys` (CMD-12). The program warning never opened on Enter in the GPUI app (D43.1).
 9. **W11, the desktop shell** (done). The seven findings that still apply to `crates/shell` and `crates/desktop`: DRS-10, DRS-12, DRS-16, DRS-17, DRS-20, DRS-22 and DRS-23.
 10. **W10, IPC, bridge and CLI** (done). IPB-6, IPB-7, IPB-17, IPB-18, IPB-19 and CORE-21.
@@ -43,7 +43,7 @@ Not tested yet:
 
 - **A real package upgrade.** The post-install hook (D221) has run only against stand-in programs in a test.
 - **Packaging on an RPM system in CI.** The Linux jobs run on Ubuntu, so only tests with stand-in package tools cover the `rpm` licence lookup.
-- **A real update.** A successful download, install and restart has never run; the banner was only seen up to a failed checksum, with its stage seeded by a temporary change. It needs a signed release to test against. The setup's side (its approval prompt, the wait and the restart after a failure, D111) has only been compiled.
+- **A real update.** Rehearse a download, install and restart with two GitHub prereleases on Windows and AppImage. The [packaging guide](../crates/desktop/PACKAGING.md#rehearsing-an-upgrade) lists the checks.
 - **Real installers.** None has been built with the third-party notices (D117), so the first run of the release workflow is the first test of its Linux steps.
 - **Certificates on Linux (D116).** The change has run only in CI, not on a Linux computer.
 - **A video that fails before its window first reads the question.** The logic has a test; the timing was not reproduced.
@@ -368,7 +368,7 @@ Release setup, beside the list, for later: the four `TODO-PRODUCT-` values in `c
 
 For the maintainer:
 
-- Left for release, as before: the GitHub organization, code signing, the updater signing key and the extension store listings.
+- Left for release: product identity, the updater rehearsal, and the extension store listings.
 
 ## Phase 1 acceptance checklist
 

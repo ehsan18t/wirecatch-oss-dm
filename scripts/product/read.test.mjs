@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
+import { generateKeyPairSync } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { UNDECIDED_VALUES } from './identity-samples.mjs';
+import { UNDECIDED_VALUES, withUpdateConfig } from './identity-samples.mjs';
 import { setTomlKey, tomlString } from './manifests.mjs';
 import { chromiumIdOf, placeholders, ProductError, readProduct } from './read.mjs';
+import { rawPublicKey } from '../release/updater-key.mjs';
 
 const PRODUCT_TOML = readFileSync(
   join(import.meta.dirname, '..', '..', 'config', 'product.toml'),
@@ -28,6 +30,25 @@ test("the repository's product identity is valid", () => {
   assert.notEqual(PRODUCT.channels.dev.name, PRODUCT.channels.release.name);
 });
 
+test('update verification is explicit and only signed mode takes a key', () => {
+  const config = (values) => withUpdateConfig(PRODUCT_TOML, values);
+  const github = 'verification = "github"';
+  const signed = 'verification = "signed"';
+  const key = rawPublicKey(generateKeyPairSync('ed25519').publicKey);
+  assert.deepEqual({ ...readProduct(config(github)).updates }, { verification: 'github' });
+  assert.deepEqual(
+    { ...readProduct(config(`${signed}\npublic_key = "${key}"`)).updates },
+    {
+      verification: 'signed',
+      public_key: key,
+    },
+  );
+  rejects(config(signed), /updates\.public_key/);
+  rejects(config(`${signed}\npublic_key = "${key.slice(0, -1)}B"`), /updates\.public_key/);
+  rejects(config(`${github}\npublic_key = "${key}"`), /updates\.public_key/);
+  rejects(config('verification = "auto"'), /updates\.verification/);
+});
+
 test('the one Chromium id every bridge trusts follows from the extension key (D22)', () => {
   const { extension } = PRODUCT;
   assert.match(extension.chromium_id, /^[a-p]{32}$/);
@@ -46,6 +67,15 @@ test('a value of the wrong shape is refused, naming it', () => {
   rejects(withValue('product', 'version', 'one'), /product\.version/);
   rejects(withValue('channels.dev', 'socket', '../app.sock'), /channels\.dev\.socket/);
   rejects(withValue('links', 'repository', 'http://example.com/a'), /links\.repository/);
+});
+
+test('the updater repository must be a GitHub web URL', () => {
+  for (const suffix of ['.git', '.git/']) {
+    rejects(
+      withValue('links', 'repository', `https://github.com/owner/app${suffix}`),
+      /links\.repository.*https:\/\/github\.com\/owner\/repo/,
+    );
+  }
 });
 
 test('an unknown or missing value is refused, so none is ever ignored', () => {

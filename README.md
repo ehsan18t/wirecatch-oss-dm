@@ -108,11 +108,11 @@
 </details>
 
 <details>
-<summary><strong>Desktop app</strong>: native Rust app, portable settings, signed updates</summary>
+<summary><strong>Desktop app</strong>: native Rust app, portable settings, verified updates</summary>
 
 - Native Rust application with a GPU-rendered interface (GPUI). No Electron and no embedded browser.
 - Export settings, queues, schedules, folder rules, and proxy profiles to one file, and import it on Windows or Linux with a preview before anything changes.
-- Updates install from within the app and are verified against a signed manifest.
+- Windows and AppImage updates install from within the app after a SHA-256 integrity check.
 
 </details>
 

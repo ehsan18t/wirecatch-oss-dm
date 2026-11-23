@@ -27,7 +27,7 @@ pub(super) fn page(library: &Entity<Library>) -> SettingPage {
     let page = SettingPage::new("About")
         .resettable(false)
         .group(product(library));
-    let page = if crate::app_update::no_updates().is_none() {
+    let page = if crate::app_update::set_up() {
         page.group(update())
     } else {
         page

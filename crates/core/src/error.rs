@@ -62,9 +62,9 @@ pub enum CoreError {
     )]
     UnknownAddon,
 
-    /// Looking for a newer add-on or Public Suffix List failed: its releases or the list
-    /// could not be reached, a newer release's checksum list is not signed by its
-    /// developers, or a newer list was refused or could not be saved. The text says which.
+    /// Looking for or fetching a newer add-on, app or Public Suffix List failed: the releases
+    /// or the list could not be reached, a newer release fails its verification, or a newer
+    /// list was refused or could not be saved. The text says which.
     #[error("{0}")]
     UpdateCheckFailed(String),
 

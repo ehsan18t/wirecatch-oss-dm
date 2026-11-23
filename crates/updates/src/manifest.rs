@@ -139,7 +139,7 @@ impl Manifest {
     }
 }
 
-fn is_sha256(text: &str) -> bool {
+pub(crate) fn is_sha256(text: &str) -> bool {
     text.len() == 64 && text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
@@ -191,7 +191,15 @@ mod tests {
     fn the_release_workflow_manifest_is_read() {
         let bytes = include_bytes!("../samples/update.json");
         let manifest = Manifest::verified(bytes, &signed(bytes, &key()), &public(&key())).unwrap();
-        assert_eq!(manifest.files.len(), 4);
+        assert_eq!(manifest.files.len(), 8);
+        let version = crate::Version::parse(&manifest.version).unwrap();
+        for file in &manifest.files {
+            assert_eq!(
+                crate::installer_name("App", &version, file.system, file.arch, file.kind)
+                    .as_deref(),
+                Some(file.name.as_str())
+            );
+        }
         let appimage = manifest
             .file(System::Linux, Arch::Arm64, FileKind::AppImage)
             .unwrap();
@@ -219,14 +227,13 @@ mod tests {
         );
     }
 
-    /// The product's key, the placeholder until the maintainer makes one, never trusts what
-    /// another key signed.
     #[test]
-    fn the_product_key_trusts_nothing_signed_elsewhere() {
+    fn a_missing_key_never_verifies_a_signed_manifest() {
         let bytes = manifest_bytes(SHA);
         let signature = signed(&bytes, &key());
-        assert!(
-            Manifest::verified(&bytes, &signature, wirecatch_product::UPDATER_PUBLIC_KEY).is_err()
+        assert_eq!(
+            Manifest::verified(&bytes, &signature, ""),
+            Err(ManifestError::NoKey)
         );
     }
 

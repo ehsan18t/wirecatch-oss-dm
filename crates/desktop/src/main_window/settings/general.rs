@@ -17,7 +17,7 @@ use wirecatch_shell::{api, host};
 
 use super::super::backup_dialog::{self, Direction};
 use super::{change, choice, current, field_row, switch};
-use crate::app_update::{NoUpdates, Stage};
+use crate::app_update::Stage;
 use crate::backend::{Backend, said};
 use crate::library::Library;
 use crate::ui::{Callout, Role, Typed as _, tokens};
@@ -139,20 +139,17 @@ fn startup(library: &Entity<Library>) -> SettingGroup {
 }
 
 fn updates(library: &Entity<Library>) -> SettingGroup {
-    let no_updates = crate::app_update::no_updates();
-    let (description, field) = match no_updates {
-        None => (
+    let enabled = crate::app_update::set_up();
+    let (description, field) = if enabled {
+        (
             "Looks for a newer version once a day and asks before installing it.",
             SettingField::render(|_, _, cx| app_update_field(cx)),
-        ),
-        Some(NoUpdates::DevBuild) => (
+        )
+    } else {
+        (
             "Development builds don't update themselves.",
             SettingField::render(|_, _, _| div()),
-        ),
-        Some(NoUpdates::Unofficial) => (
-            "This is an unofficial build, so it can't update itself. Get the official version from the website.",
-            SettingField::render(|_, _, _| website_button()),
-        ),
+        )
     };
     SettingGroup::new()
         .title("Updates")
@@ -161,7 +158,7 @@ fn updates(library: &Entity<Library>) -> SettingGroup {
                 .description(description)
                 .keywords(["update", "upgrade", "version", "new version"]),
         )
-        .items(no_updates.is_none().then(|| {
+        .items(enabled.then(|| {
             SettingItem::new(
                 "Get pre-release versions",
                 switch(
@@ -434,20 +431,6 @@ fn failure(message: String, cx: &App) -> impl IntoElement + use<> {
         .text_role(Role::Meta, cx)
         .text_color(cx.theme().danger)
         .child(message)
-}
-
-/// The official website, for an unofficial build; nothing while the product has no website yet.
-fn website_button() -> AnyElement {
-    let url = wirecatch_product::WEBSITE_URL;
-    if url.contains("TODO-PRODUCT-") {
-        return div().into_any_element();
-    }
-    Button::new("open-website")
-        .small()
-        .outline()
-        .label("Open website")
-        .on_click(move |_, _, cx| cx.open_url(url))
-        .into_any_element()
 }
 
 fn app_name() -> &'static str {

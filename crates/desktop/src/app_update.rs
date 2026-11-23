@@ -69,30 +69,10 @@ struct Global_(Entity<Updates>);
 
 impl Global for Global_ {}
 
-/// Why a build does not update itself (D111.5).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum NoUpdates {
-    DevBuild,
-    /// Built without the update key, so not from an official release.
-    Unofficial,
-}
-
-/// Why this build does not update itself; `None` for a release build with the update key.
-#[must_use]
-pub fn no_updates() -> Option<NoUpdates> {
-    if host::DEV_BUILD {
-        Some(NoUpdates::DevBuild)
-    } else if wirecatch_product::UPDATER_PUBLIC_KEY.starts_with("TODO-PRODUCT-") {
-        Some(NoUpdates::Unofficial)
-    } else {
-        None
-    }
-}
-
 /// Whether this build can update itself.
 #[must_use]
-pub fn set_up() -> bool {
-    no_updates().is_none()
+pub const fn set_up() -> bool {
+    !host::DEV_BUILD
 }
 
 /// Keeps the update's stage and looks for one in the background, and again when the choice of

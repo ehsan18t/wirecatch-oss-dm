@@ -34,6 +34,7 @@ import {
 } from './package/linux.mjs';
 import { fillTemplate } from './product/manifests.mjs';
 import { readProduct } from './product/read.mjs';
+import { installerName } from './release/installers.mjs';
 
 const PACKAGING = join(ROOT, 'crates', 'desktop', 'packaging');
 const ICONS = join(ROOT, 'crates', 'desktop', 'assets', 'icons');
@@ -222,7 +223,7 @@ function windows(product, built, arch, triple) {
     Icon: join(ICONS, 'icon.ico'),
     Stage: stage,
     Output: OUT,
-    OutputName: `${product.product.name}-${version}-windows-${arch}-setup`,
+    OutputName: installerName(product.product, arch, 'setup').slice(0, -'.exe'.length),
   };
   run(iscc, [
     '/Q',
@@ -315,7 +316,7 @@ function packageHook(name, product, arch) {
 }
 
 async function linux(product, built, arch, triple) {
-  const { name, slug, version, summary, description, license } = product.product;
+  const { slug, version, summary, description, license } = product.product;
   const root = join(OUT, `stage-linux-${arch}`);
   stageLinux(product, built, root, triple);
 
@@ -358,7 +359,7 @@ async function linux(product, built, arch, triple) {
   const configFile = join(OUT, `nfpm-${arch}.yaml`);
   writeFileSync(configFile, JSON.stringify(config, null, 2));
   for (const format of ['deb', 'rpm']) {
-    const target = join(OUT, `${name}-${version}-linux-${arch}.${format}`);
+    const target = join(OUT, installerName(product.product, arch, format));
     run(join(nfpmDir, 'nfpm'), [
       'package',
       '--config',
@@ -374,7 +375,7 @@ async function linux(product, built, arch, triple) {
 
 /** The AppImage: the files every Linux package installs, the libraries it carries, and the entry point. */
 async function appImage(product, root, arch) {
-  const { name, slug, version } = product.product;
+  const { name, slug } = product.product;
   const appDir = join(OUT, `${name}.AppDir`);
   rmSync(appDir, { recursive: true, force: true });
   cpSync(root, appDir, { recursive: true });
@@ -409,7 +410,7 @@ async function appImage(product, root, arch) {
       '--runtime-file',
       runtime,
       appDir,
-      join(OUT, `${name}-${version}-linux-${arch}.AppImage`),
+      join(OUT, installerName(product.product, arch, 'appimage')),
     ],
     {
       // No FUSE in containers and CI runners: the tool unpacks itself instead of mounting.

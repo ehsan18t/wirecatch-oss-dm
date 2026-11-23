@@ -10,6 +10,9 @@ pub const PRODUCT_NAME: &str = "Wirecatch";
 /// The lowercase product name used in file names.
 pub const PRODUCT_SLUG: &str = "wirecatch";
 
+/// The stable prefix of published installer file names.
+pub const INSTALLER_PREFIX: &str = "Wirecatch";
+
 /// The release version of the app and the extension.
 pub const PRODUCT_VERSION: &str = "0.1.0";
 
@@ -41,8 +44,11 @@ pub const ADDON_FILES_URL: &str = "https://github.com/ehsan18t/wirecatch-addons"
 pub const RELEASES_API_URL: &str =
     "https://api.github.com/repos/ehsan18t/wirecatch-oss-dm/releases";
 
-/// The Ed25519 key update manifests are signed with, unpadded base64url (D111).
-pub const UPDATER_PUBLIC_KEY: &str = "TODO-PRODUCT-UPDATER-PUBLIC-KEY-00000000000";
+/// The GitHub asset with the signed update manifest.
+pub const MANIFEST_FILE: &str = "update.json";
+
+/// The GitHub asset with its Ed25519 signature.
+pub const SIGNATURE_FILE: &str = "update.json.sig";
 
 /// The desktop app executable, without `.exe`.
 pub const APP_EXECUTABLE: &str = "wirecatch-app";
@@ -99,6 +105,18 @@ pub const BRIDGE_FILE_NAME: &str = if cfg!(windows) {
 } else {
     BRIDGE_EXECUTABLE
 };
+
+/// The authority this build uses for app updates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UpdateVerification {
+    /// The configured GitHub repository's release metadata.
+    Github,
+    /// An Ed25519 manifest, checked with this base64url public key.
+    Signed(&'static str),
+}
+
+/// Verification for the desktop app's updates.
+pub const UPDATE_VERIFICATION: UpdateVerification = UpdateVerification::Github;
 
 /// A build of the app that runs as an app of its own, next to the others, without touching their downloads, endpoint or settings (D13).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

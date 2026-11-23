@@ -9,7 +9,7 @@
 [product]
 # The name people see: windows, tray, installer, extension.
 name = "Wirecatch"
-# The lowercase name used in file names.
+# The lowercase name used in file names. Keep it stable after publishing installers for updates.
 slug = "wirecatch"
 # The release version of the app and the extension (SemVer).
 version = "0.1.0"
@@ -50,8 +50,8 @@ database = "wirecatch.db"
 notices = "THIRD-PARTY-NOTICES.txt"
 
 [updates]
-# The Ed25519 public key the app checks its update manifests against (D111), as 43 characters of unpadded base64url. `node scripts/release/updater-key.mjs` makes a key pair: this half goes here, the private half into the repository secret `UPDATER_PRIVATE_KEY`, and nowhere else.
-public_key = "TODO-PRODUCT-UPDATER-PUBLIC-KEY-00000000000"
+# Build-time update verification. Use "github" for GitHub's asset digests or "signed" with an Ed25519 public_key.
+verification = "github"
 
 [native_host]
 # The native messaging host name the bridge registers and the extension connects to: lowercase letters, digits, `_` and `.`.
