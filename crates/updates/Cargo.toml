@@ -1,6 +1,6 @@
 [package]
 name = "wirecatch-updates"
-description = "Updates of the Wirecatch app: the signed list of a release's installers, and choosing the release and the installer for this computer"
+description = "Release selection and installer verification for Wirecatch updates from GitHub or a signed manifest"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

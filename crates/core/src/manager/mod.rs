@@ -228,14 +228,6 @@ impl ManagerConfig {
         self
     }
 
-    /// Looks for the app's updates where `releases` says; see
-    /// [`app_releases`](Self::app_releases).
-    #[must_use]
-    pub fn with_app_releases(mut self, releases: AppReleases) -> Self {
-        self.app_releases = Some(releases);
-        self
-    }
-
     /// Looks for updates on the GitHub repository and with the verification in
     /// `config/product.toml` (D111).
     #[must_use]

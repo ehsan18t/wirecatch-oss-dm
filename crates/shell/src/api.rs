@@ -670,7 +670,7 @@ pub async fn check_addon_updates(m: &Manager) -> CommandResult<Vec<AddonInfo>> {
 ///
 /// # Errors
 ///
-/// The releases cannot be reached, or a newer one is not signed with this build's key.
+/// The releases cannot be reached, or a newer one fails this build's verification (D288).
 pub async fn check_app_update(m: &Manager) -> CommandResult<Option<wirecatch_core::AppUpdate>> {
     plain(
         m.check_app_update(
@@ -681,7 +681,7 @@ pub async fn check_app_update(m: &Manager) -> CommandResult<Option<wirecatch_cor
     )
 }
 
-/// Downloads `download` and checks it against its signed manifest, reporting to `progress`.
+/// Downloads `download` and checks its expected size and SHA-256, reporting to `progress`.
 ///
 /// # Errors
 ///

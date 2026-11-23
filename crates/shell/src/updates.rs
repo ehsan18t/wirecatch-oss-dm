@@ -7,10 +7,6 @@ use std::path::{Path, PathBuf};
 
 pub use wirecatch_updates::FileKind;
 
-/// The new AppImage's name beside the running one until it takes its place.
-#[cfg(unix)]
-const STAGED_APPIMAGE: &str = ".wirecatch-update.AppImage";
-
 /// Why an update could not be installed.
 #[derive(Debug, thiserror::Error)]
 pub enum InstallError {
@@ -174,25 +170,29 @@ fn replace_appimage(installer: &Path) -> Result<(), InstallError> {
     put_in_place(installer, &current)
 }
 
-/// Copies `installer` beside `current`, flushed so a crash leaves one whole program or the other,
-/// and renames it over `current`, in one step on the same folder. A failure leaves `current` as it
-/// was, and no copy behind.
+/// Stages the installer in the same directory so replacing the running AppImage is atomic.
 #[cfg(unix)]
 fn put_in_place(installer: &Path, current: &Path) -> Result<(), InstallError> {
     use std::os::unix::fs::PermissionsExt as _;
+    use wirecatch_product::PRODUCT_SLUG;
 
     let folder = current.parent().ok_or(InstallError::NotAppImage)?;
-    let staged = folder.join(STAGED_APPIMAGE);
-    let placed = std::fs::copy(installer, &staged)
-        .and_then(|_| std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o755)))
-        .and_then(|()| std::fs::File::open(&staged)?.sync_all())
-        .and_then(|()| std::fs::rename(&staged, current));
-    placed.map_err(|source| {
-        wirecatch_files::discard::file(&staged);
-        InstallError::Replace {
-            current: current.to_owned(),
-            source,
-        }
+    let placed = || -> std::io::Result<()> {
+        let mut source = std::fs::File::open(installer)?;
+        let mut staged = tempfile::Builder::new()
+            .prefix(&format!(".{PRODUCT_SLUG}-update-"))
+            .tempfile_in(folder)?;
+        std::io::copy(&mut source, staged.as_file_mut())?;
+        staged
+            .as_file()
+            .set_permissions(std::fs::Permissions::from_mode(0o755))?;
+        staged.as_file().sync_all()?;
+        staged.persist(current)?;
+        Ok(())
+    };
+    placed().map_err(|source| InstallError::Replace {
+        current: current.to_owned(),
+        source,
     })
 }
 
@@ -220,7 +220,24 @@ mod tests {
         assert_eq!(std::fs::read(&current).unwrap(), UPDATE);
         let mode = std::fs::metadata(&current).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o755);
-        assert!(!dir.path().join(STAGED_APPIMAGE).exists());
+        assert_eq!(dir.path().read_dir().unwrap().count(), 2);
+    }
+
+    #[test]
+    fn replacing_the_appimage_leaves_other_files_in_its_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let current = dir.path().join("App.AppImage");
+        let installer = dir.path().join("new");
+        let other = dir.path().join(".wirecatch-update.AppImage");
+        std::fs::write(&current, OTHER_PROGRAM).unwrap();
+        std::fs::write(&installer, UPDATE).unwrap();
+        std::fs::write(&other, OTHER_PROGRAM).unwrap();
+
+        put_in_place(&installer, &current).unwrap();
+
+        assert_eq!(std::fs::read(&other).unwrap(), OTHER_PROGRAM);
+        assert_eq!(std::fs::read(&current).unwrap(), UPDATE);
+        assert_eq!(dir.path().read_dir().unwrap().count(), 3);
     }
 
     #[test]
@@ -235,7 +252,8 @@ mod tests {
             put_in_place(&installer, &current),
             Err(InstallError::Replace { .. })
         ));
-        assert!(!dir.path().join(STAGED_APPIMAGE).exists());
+        assert!(current.is_dir());
+        assert_eq!(dir.path().read_dir().unwrap().count(), 2);
     }
 
     #[test]

@@ -10,6 +10,9 @@ pub const PRODUCT_NAME: &str = "Wirecatch";
 /// The lowercase product name used in file names.
 pub const PRODUCT_SLUG: &str = "wirecatch";
 
+/// The stable prefix of published installer file names.
+pub const INSTALLER_PREFIX: &str = "Wirecatch";
+
 /// The release version of the app and the extension.
 pub const PRODUCT_VERSION: &str = "0.1.0";
 
@@ -114,22 +117,6 @@ pub enum UpdateVerification {
 
 /// Verification for the desktop app's updates.
 pub const UPDATE_VERIFICATION: UpdateVerification = UpdateVerification::Github;
-
-/// The suffix of an installer published for this system, architecture and kind.
-#[must_use]
-pub fn installer_suffix(system: &str, arch: &str, kind: &str) -> Option<&'static str> {
-    match (system, arch, kind) {
-        ("windows", "x64", "setup") => Some("windows-x64-setup.exe"),
-        ("windows", "arm64", "setup") => Some("windows-arm64-setup.exe"),
-        ("linux", "x64", "appimage") => Some("linux-x64.AppImage"),
-        ("linux", "arm64", "appimage") => Some("linux-arm64.AppImage"),
-        ("linux", "x64", "deb") => Some("linux-x64.deb"),
-        ("linux", "arm64", "deb") => Some("linux-arm64.deb"),
-        ("linux", "x64", "rpm") => Some("linux-x64.rpm"),
-        ("linux", "arm64", "rpm") => Some("linux-arm64.rpm"),
-        _ => None,
-    }
-}
 
 /// A build of the app that runs as an app of its own, next to the others, without touching their downloads, endpoint or settings (D13).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

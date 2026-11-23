@@ -32,6 +32,7 @@ use std::time::{Duration, Instant, SystemTime};
 use axum::Router;
 use axum::body::Body;
 use axum::extract::{ConnectInfo, State};
+use axum::http::uri::PathAndQuery;
 use axum::http::{HeaderMap, StatusCode, Uri, header};
 use axum::response::Response;
 use axum::routing::get;
@@ -107,8 +108,8 @@ impl FileServer {
         Url::parse(&format!("{}{}", self.base, path_key(path))).unwrap()
     }
 
-    /// Serves `body` at `path` with no `Content-Type`, replacing any file
-    /// there (and how it was set to fail or wait).
+    /// Serves `body` at `path` (optionally including its query) with no `Content-Type`, replacing
+    /// any file there (and how it was set to fail or wait).
     pub fn put(&self, path: &str, body: impl Into<Bytes>) {
         self.insert(path, body.into(), None);
     }
@@ -268,18 +269,23 @@ async fn serve(
     headers: HeaderMap,
 ) -> Response {
     let _active = Active::begin(&inner);
-    let path = uri.path().to_string();
     // Take the file and use up one failure under the same lock, so parallel
     // requests never share one.
-    let file = {
+    let (path, file) = {
         let mut files = inner.files.lock().unwrap();
-        files.get_mut(&path).map(|file| {
+        let path = uri
+            .path_and_query()
+            .map(PathAndQuery::as_str)
+            .filter(|exact| files.contains_key(*exact))
+            .unwrap_or_else(|| uri.path());
+        let file = files.get_mut(path).map(|file| {
             let failing = file.failures > 0;
             if failing {
                 file.failures -= 1;
             }
             (file.clone(), failing)
-        })
+        });
+        (path.to_string(), file)
     };
     let (status, response) = match &file {
         None => (

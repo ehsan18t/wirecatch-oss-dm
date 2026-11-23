@@ -60,7 +60,10 @@ const SCHEMA = {
   },
   publisher: { legal_name: TEXT },
   links: {
-    repository: { test: (url) => githubRepository(url) !== null },
+    repository: {
+      test: (url) => githubRepository(url) !== null,
+      expected: 'Use the GitHub web URL https://github.com/owner/repo.',
+    },
     website: 'url',
     addon_files: 'url',
   },
@@ -116,7 +119,8 @@ export function githubRepository(value) {
     ) {
       return null;
     }
-    return /^\/([\w.-]+\/[\w.-]+)\/?$/.exec(url.pathname)?.[1] ?? null;
+    const repository = /^\/([\w.-]+\/[\w.-]+)\/?$/.exec(url.pathname)?.[1];
+    return repository && !repository.toLowerCase().endsWith('.git') ? repository : null;
   } catch {
     return null;
   }
@@ -141,7 +145,11 @@ function tableProblems(where, table, shape) {
         `${where}.${key} holds a character that breaks the quoting of the generated scripts (" $ \` or \\).`,
       );
     } else if (rule === 'url' ? !isHttpsUrl(value) : !rule.test(value)) {
-      problems.push(`${where}.${key} = ${JSON.stringify(value)} does not have the expected form.`);
+      problems.push(
+        rule.expected
+          ? `${where}.${key}: ${rule.expected}`
+          : `${where}.${key} = ${JSON.stringify(value)} does not have the expected form.`,
+      );
     }
   }
   return problems;

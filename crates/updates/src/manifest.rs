@@ -130,12 +130,15 @@ impl Manifest {
         Ok(manifest)
     }
 
-    /// The installer of `kind` for `system` on `arch`.
+    /// The installer for this target, when the manifest names the target exactly once.
     #[must_use]
-    pub fn file(&self, system: System, arch: Arch, kind: FileKind) -> Option<&UpdateFile> {
-        self.files
+    pub fn unique_file(&self, system: System, arch: Arch, kind: FileKind) -> Option<&UpdateFile> {
+        let mut matches = self
+            .files
             .iter()
-            .find(|file| file.system == system && file.arch == arch && file.kind == kind)
+            .filter(|file| file.system == system && file.arch == arch && file.kind == kind);
+        let file = matches.next()?;
+        matches.next().is_none().then_some(file)
     }
 }
 
@@ -176,11 +179,11 @@ mod tests {
             Manifest::verified(&bytes, &signed(&bytes, &key()), &public(&key())).unwrap();
         assert_eq!(manifest.version, "0.2.0");
         let file = manifest
-            .file(System::Windows, Arch::X64, FileKind::Setup)
+            .unique_file(System::Windows, Arch::X64, FileKind::Setup)
             .unwrap();
         assert_eq!(file.size, 10);
         assert_eq!(
-            manifest.file(System::Windows, Arch::Arm64, FileKind::Setup),
+            manifest.unique_file(System::Windows, Arch::Arm64, FileKind::Setup),
             None
         );
     }
@@ -191,9 +194,17 @@ mod tests {
     fn the_release_workflow_manifest_is_read() {
         let bytes = include_bytes!("../samples/update.json");
         let manifest = Manifest::verified(bytes, &signed(bytes, &key()), &public(&key())).unwrap();
-        assert_eq!(manifest.files.len(), 4);
+        assert_eq!(manifest.files.len(), 8);
+        let version = crate::Version::parse(&manifest.version).unwrap();
+        for file in &manifest.files {
+            assert_eq!(
+                crate::installer_name("App", &version, file.system, file.arch, file.kind)
+                    .as_deref(),
+                Some(file.name.as_str())
+            );
+        }
         let appimage = manifest
-            .file(System::Linux, Arch::Arm64, FileKind::AppImage)
+            .unique_file(System::Linux, Arch::Arm64, FileKind::AppImage)
             .unwrap();
         assert_eq!(appimage.size, 8);
     }

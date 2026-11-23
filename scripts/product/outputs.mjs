@@ -13,7 +13,7 @@ import {
   workspaceCrateNames,
 } from './manifests.mjs';
 import { readProduct } from './read.mjs';
-import { rustSource, typescriptSource } from './sources.mjs';
+import { rustInstallerNames, rustSource, typescriptSource } from './sources.mjs';
 import { workspaceParents } from '../workspace.mjs';
 
 export const PRODUCT_FILE = 'config/product.toml';
@@ -77,6 +77,7 @@ function packageManifests(root) {
 export function outputs(root) {
   return [
     { path: 'crates/product/src/lib.rs', source: rustSource, format: 'rust' },
+    { path: 'crates/updates/src/installer_name.rs', source: rustInstallerNames, format: 'rust' },
     { path: 'packages/product/src/index.ts', source: typescriptSource, format: 'prettier' },
     { path: 'SECURITY.md', template: 'SECURITY.md' },
     { path: 'Cargo.toml', edit: cargoWorkspace },

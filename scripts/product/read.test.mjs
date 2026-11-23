@@ -69,6 +69,15 @@ test('a value of the wrong shape is refused, naming it', () => {
   rejects(withValue('links', 'repository', 'http://example.com/a'), /links\.repository/);
 });
 
+test('the updater repository must be a GitHub web URL', () => {
+  for (const suffix of ['.git', '.git/']) {
+    rejects(
+      withValue('links', 'repository', `https://github.com/owner/app${suffix}`),
+      /links\.repository.*https:\/\/github\.com\/owner\/repo/,
+    );
+  }
+});
+
 test('an unknown or missing value is refused, so none is ever ignored', () => {
   rejects(
     PRODUCT_TOML.replace('[files]\n', '[files]\nbackup = "x.db"\n'),

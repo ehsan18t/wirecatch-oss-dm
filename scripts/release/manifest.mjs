@@ -9,19 +9,19 @@ import { githubRepository, readProduct } from '../product/read.mjs';
 import { installerNames, isInstaller } from './installers.mjs';
 
 /** What `name` is, when it is an installer of `product` at `version`; null otherwise. */
-export function describe(name, product, version) {
-  const installer = installerNames(product, version).find((candidate) => candidate.name === name);
+export function describe(name, product) {
+  const installer = installerNames(product).find((candidate) => candidate.name === name);
   if (!installer) return null;
   const { system, arch, kind } = installer;
   return { system, arch, kind };
 }
 
 /** The manifest of the installers in `folder`, as the bytes that are signed. */
-export function manifest(folder, product, version) {
+export function manifest(folder, product) {
   const files = readdirSync(folder)
     .sort()
     .flatMap((name) => {
-      const what = describe(name, product, version);
+      const what = describe(name, product);
       if (!what) return [];
       const bytes = readFileSync(join(folder, name));
       return [
@@ -33,7 +33,7 @@ export function manifest(folder, product, version) {
         },
       ];
     });
-  return Buffer.from(`${JSON.stringify({ version, files }, null, 2)}\n`);
+  return Buffer.from(`${JSON.stringify({ version: product.version, files }, null, 2)}\n`);
 }
 
 export function prepareRelease(folder, { product, links }, repository, tag) {
@@ -46,7 +46,7 @@ export function prepareRelease(folder, { product, links }, repository, tag) {
     );
   }
   const names = readdirSync(folder).filter(isInstaller).sort();
-  const expected = installerNames(product.name, product.version)
+  const expected = installerNames(product)
     .map(({ name }) => name)
     .sort();
   if (names.length !== expected.length || names.some((name, index) => name !== expected[index])) {
@@ -56,7 +56,7 @@ export function prepareRelease(folder, { product, links }, repository, tag) {
       `Wrong installer set. Missing: ${missing.join(', ') || 'none'}. Unexpected: ${unexpected.join(', ') || 'none'}.`,
     );
   }
-  const bytes = manifest(folder, product.name, product.version);
+  const bytes = manifest(folder, product);
   const empty = JSON.parse(bytes.toString()).files.find((file) => file.size === 0);
   if (empty) throw new Error(`The installer ${empty.name} is empty.`);
   return bytes;
@@ -77,7 +77,6 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     writeFileSync(output, bytes);
     console.log(`verification=${product.updates.verification}`);
     console.log(`public_key=${product.updates.public_key ?? ''}`);
-    console.log(`prerelease=${String(product.product.version.includes('-'))}`);
   } catch (error) {
     console.error(error instanceof Error ? error.message : error);
     process.exitCode = 1;
