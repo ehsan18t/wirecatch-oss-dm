@@ -47,6 +47,7 @@ notify-rust = "4.18.2"
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
+tempfile.workspace = true
 
 [dev-dependencies]
 serde = { workspace = true }
