@@ -180,6 +180,9 @@ fn too_large() -> UserError {
 
 /// What `action` on `path` failing with `source` comes to, while saving into `folder`.
 fn io_failure(action: IoAction, path: &Path, source: &io::Error, folder: &Path) -> UserError {
+    // A partial file is hidden, so the person is shown the file it becomes.
+    let shown = wirecatch_engine::naming::finished_path_of(path);
+    let what = format!("{action} ({})", shown.display());
     // Windows only: a held file refuses other programs there. On Unix nothing holds a file, and a refused rename means the folder cannot be written.
     let existing = (cfg!(windows)
         && matches!(
@@ -192,11 +195,18 @@ fn io_failure(action: IoAction, path: &Path, source: &io::Error, folder: &Path) 
                 | IoAction::DeleteResume
                 | IoAction::Finish
         ))
-    .then_some(path);
-    // A partial file is hidden, so the person is shown the file it becomes.
-    let shown = wirecatch_engine::naming::finished_path_of(path);
-    let what = format!("{action} ({})", shown.display());
+    .then_some(Existing {
+        shown: &shown,
+        opened: matches!(action, IoAction::Write | IoAction::Resize | IoAction::Flush),
+    });
     disk_failure(source, folder, &what, existing)
+}
+
+/// The file already there that a failed operation was done to.
+struct Existing<'a> {
+    shown: &'a Path,
+    /// This run already holds it open for writing, so a refusal now is not another program's hold, which would have refused the open.
+    opened: bool,
 }
 
 /// A download's saved link that no longer parses.
@@ -499,7 +509,7 @@ fn disk_failure(
     error: &io::Error,
     folder: &Path,
     what: &str,
-    existing: Option<&Path>,
+    existing: Option<Existing<'_>>,
 ) -> UserError {
     let folder = folder.display();
     let disk_full = matches!(
@@ -516,20 +526,45 @@ fn disk_failure(
             FixAction::FreeDiskSpace,
         );
     }
-    let held = error.kind() == io::ErrorKind::PermissionDenied
-        || error
-            .raw_os_error()
-            .is_some_and(|code| HELD_FILE_CODES.contains(&code));
-    if held && let Some(file) = existing {
-        return fix(
-            format!(
-                "{PRODUCT_NAME} could not use {}. Another program may have it open, or it may be read-only. Close that program, then try again.",
-                file.display()
-            ),
-            FixAction::Retry,
-        );
+    let held = error
+        .raw_os_error()
+        .is_some_and(|code| HELD_FILE_CODES.contains(&code));
+    let refused = error.kind() == io::ErrorKind::PermissionDenied;
+    if let Some(file) = existing {
+        let name = file.shown.display();
+        if held {
+            return fix(
+                format!(
+                    "{PRODUCT_NAME} could not use {name} because another program has it open. Close that program, then try again."
+                ),
+                FixAction::Retry,
+            );
+        }
+        if refused && file.opened {
+            return fix(
+                format!(
+                    "Windows stopped {PRODUCT_NAME} from writing to {name}. Security software may be blocking {PRODUCT_NAME}: allow it in your antivirus, or in Controlled folder access in Windows Security, then try again."
+                ),
+                FixAction::Retry,
+            );
+        }
+        if refused {
+            return fix(
+                format!(
+                    "{PRODUCT_NAME} could not use {name}. Another program may have it open, it may be read-only, or security software may be blocking {PRODUCT_NAME}. Close that program or allow {PRODUCT_NAME} in your security software, then try again."
+                ),
+                FixAction::Retry,
+            );
+        }
     }
     match error.kind() {
+        // Controlled folder access refuses new files in the folders it protects.
+        io::ErrorKind::PermissionDenied if cfg!(windows) => fix(
+            format!(
+                "{PRODUCT_NAME} is not allowed to save files in {folder}. Choose another folder, or allow {PRODUCT_NAME} in your security software if it blocks {PRODUCT_NAME} there, such as Controlled folder access in Windows Security."
+            ),
+            FixAction::ChooseFolder,
+        ),
         io::ErrorKind::PermissionDenied | io::ErrorKind::ReadOnlyFilesystem => fix(
             format!(
                 "{PRODUCT_NAME} is not allowed to save files in {folder}. Choose another folder."
@@ -652,7 +687,41 @@ mod tests {
             let told = describe(&error, Path::new("/d"), Worked::Before);
             assert_eq!(told.fix, Some(FixAction::Retry), "{}", told.message);
             assert!(told.message.contains("/d/f.bin"), "{}", told.message);
-            assert!(told.message.contains("Another program"), "{}", told.message);
+            assert!(
+                told.message.to_lowercase().contains("another program"),
+                "{}",
+                told.message
+            );
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_write_refused_after_the_file_opened_points_at_security_software() {
+        for action in [
+            wirecatch_engine::IoAction::Write,
+            wirecatch_engine::IoAction::Resize,
+            wirecatch_engine::IoAction::Flush,
+        ] {
+            let error = EngineError::Io {
+                action,
+                path: r"C:\d\f.zip.wcpart".into(),
+                source: io::Error::from(io::ErrorKind::PermissionDenied),
+            };
+            let told = describe(&error, Path::new(r"C:\d"), Worked::Before);
+            assert_eq!(told.fix, Some(FixAction::Retry), "{}", told.message);
+            assert!(told.message.contains(r"C:\d\f.zip"), "{}", told.message);
+            assert!(!told.message.contains(".wcpart"), "{}", told.message);
+            assert!(
+                told.message.contains("Controlled folder access"),
+                "{}",
+                told.message
+            );
+            assert!(
+                !told.message.contains("another program"),
+                "{}",
+                told.message
+            );
         }
     }
 
@@ -959,6 +1028,12 @@ mod tests {
         );
         assert_eq!(e.fix, Some(FixAction::ChooseFolder));
         assert!(e.message.contains("locked"));
+        assert_eq!(
+            e.message.contains("Controlled folder access"),
+            cfg!(windows),
+            "{}",
+            e.message
+        );
     }
 
     fn insecure() -> EngineError {
