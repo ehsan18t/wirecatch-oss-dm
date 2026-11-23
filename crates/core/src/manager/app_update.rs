@@ -1,11 +1,9 @@
 //! The newest app release on GitHub (D111), with an installer checked against either GitHub's
-//! metadata or a signed manifest, as specified by the installed build.
-
-mod github;
+//! metadata or a signed manifest, as specified by the installed build (D288).
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use wirecatch_product::{MANIFEST_FILE, PRODUCT_NAME, SIGNATURE_FILE};
+use wirecatch_product::{INSTALLER_PREFIX, MANIFEST_FILE, PRODUCT_NAME, SIGNATURE_FILE};
 
 use tracing::info;
 use wirecatch_addons::archive;
@@ -13,10 +11,11 @@ use wirecatch_addons::manifest::Sha256Digest;
 use wirecatch_engine::header::{ACCEPT, HeaderValue};
 use wirecatch_engine::units::MIB;
 use wirecatch_engine::{
-    CancellationToken, DownloadRequest, Fetched, Fetcher, Outcome, PrivateNetwork, Progress,
-    RemoteFile, Url,
+    CancellationToken, DownloadRequest, Fetcher, Outcome, PrivateNetwork, Progress, RemoteFile, Url,
 };
-use wirecatch_updates::{FileKind, Manifest, Release, UpdateFile, Version};
+use wirecatch_updates::{
+    Arch, FileKind, Manifest, Release, System, UpdateFile, Version, installer_name, newest,
+};
 
 use super::Manager;
 use crate::error::{CoreError, Result};
@@ -27,13 +26,13 @@ const UPDATE_NETWORK: PrivateNetwork = PrivateNetwork::Block;
 const MAX_METADATA: u64 = 4 * MIB;
 /// The folder in the data folder installers are downloaded to.
 const UPDATES_FOLDER: &str = "updates";
+/// The only scheme a release's page may have: it comes unverified and goes to the system's shell.
+const HTTPS: &str = "https";
 
 /// Where the app's releases are listed and how they are verified.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppReleases {
     list: Url,
-    /// The repository whose release and download addresses the app builds itself (D288).
-    repository: Url,
     verification: ReleaseVerification,
 }
 
@@ -45,9 +44,7 @@ enum ReleaseVerification {
 
 impl AppReleases {
     pub(super) fn official() -> Option<Self> {
-        use wirecatch_product::{
-            RELEASES_API_URL, REPOSITORY_URL, UPDATE_VERIFICATION, UpdateVerification,
-        };
+        use wirecatch_product::{RELEASES_API_URL, UPDATE_VERIFICATION, UpdateVerification};
 
         let verification = match UPDATE_VERIFICATION {
             UpdateVerification::Github => ReleaseVerification::Github,
@@ -57,7 +54,6 @@ impl AppReleases {
         };
         Some(Self {
             list: Url::parse(RELEASES_API_URL).ok()?,
-            repository: Url::parse(REPOSITORY_URL).ok()?,
             verification,
         })
     }
@@ -67,7 +63,7 @@ impl AppReleases {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppUpdate {
     pub version: String,
-    /// The release's page in the repository this build names.
+    /// The release's page, always https.
     pub page: Url,
     /// The installer to install; `None` only for a system package, whose package manager installs
     /// the update.
@@ -89,7 +85,7 @@ impl Manager {
     /// # Errors
     ///
     /// [`CoreError::UpdateCheckFailed`] when the releases cannot be reached, or a newer one is
-    /// not trusted by this build or has no usable installer of `kind`.
+    /// not trusted by this build, has no usable installer of `kind` or no https page.
     pub async fn check_app_update(
         &self,
         current: &str,
@@ -102,16 +98,38 @@ impl Manager {
             CoreError::UpdateCheckFailed(format!("This build's version cannot be read ({e})."))
         })?;
         let prerelease = self.lock().settings.prerelease_updates;
-        let Some((release, version)) =
-            github::newest_release(self, &releases.list, &current, prerelease).await?
-        else {
+        let list = self
+            .fetch_small(&releases.list)
+            .await
+            .map_err(|e| unreachable_releases(&e))?;
+        let listed: Vec<Release> = serde_json::from_slice(&list)
+            .map_err(|e| unreachable_releases(&format!("an unreadable list ({e})")))?;
+        let Some((release, version)) = newest(&listed, &current, prerelease) else {
             return Ok(None);
         };
-        let download = self
-            .release_installer(&releases, &release, &version, kind)
-            .await?;
-        let page = github::release_url(&releases.repository, &release.tag_name, None)
-            .ok_or_else(|| refused("its page address cannot be built"))?;
+        let manifest = match &releases.verification {
+            ReleaseVerification::Github => None,
+            ReleaseVerification::Signed { public_key } => {
+                let manifest = self.signed_manifest(release, public_key).await?;
+                if Version::parse(&manifest.version).ok().as_ref() != Some(&version) {
+                    return Err(refused(&format!(
+                        "its list of files names version {}",
+                        manifest.version
+                    )));
+                }
+                Some(manifest)
+            }
+        };
+        let download = kind
+            .map(|kind| {
+                usable_installer(release, &version, manifest.as_ref(), kind)
+                    .ok_or_else(|| refused("it has no verifiable installer for this computer"))
+            })
+            .transpose()?;
+        let page = Url::parse(&release.html_url)
+            .ok()
+            .filter(|page| page.scheme() == HTTPS)
+            .ok_or_else(|| refused("its page is not at a secure address"))?;
         info!(%version, "a newer version of the app is out");
         Ok(Some(AppUpdate {
             version: version.to_string(),
@@ -120,42 +138,8 @@ impl Manager {
         }))
     }
 
-    async fn release_installer(
-        &self,
-        releases: &AppReleases,
-        release: &Release,
-        version: &Version,
-        kind: Option<FileKind>,
-    ) -> Result<Option<UpdateDownload>> {
-        let repository = &releases.repository;
-        let installer = match &releases.verification {
-            ReleaseVerification::Github => {
-                kind.map(|kind| github::installer(repository, release, version, kind))
-            }
-            ReleaseVerification::Signed { public_key } => {
-                let manifest = self
-                    .signed_manifest(repository, release, public_key)
-                    .await?;
-                if Version::parse(&manifest.version).ok().as_ref() != Some(version) {
-                    return Err(refused(&format!(
-                        "its list of files names version {}",
-                        manifest.version
-                    )));
-                }
-                kind.map(|kind| {
-                    github::signed_installer(repository, release, version, &manifest, kind)
-                })
-            }
-        };
-        installer
-            .map(|file| {
-                file.ok_or_else(|| refused("it has no verifiable installer for this computer"))
-            })
-            .transpose()
-    }
-
     /// Downloads `download` into the data folder's updates folder, reporting to `progress`, and
-    /// returns its path once its size and SHA-256 match the verified release metadata. A file that does not
+    /// returns its path once its size and SHA-256 match those this build trusts. A file that does not
     /// match is deleted; one already there that matches is used as it is, so trying an install
     /// again downloads nothing.
     ///
@@ -170,11 +154,7 @@ impl Manager {
     ) -> Result<PathBuf> {
         let file = &download.file;
         let folder = self.inner.data_dir.join(UPDATES_FOLDER);
-        if file.name.contains('/') {
-            return Err(refused("its installer has an unsafe file name"));
-        }
-        let target = archive::safe_join(&folder, &file.name)
-            .map_err(|_| refused("its installer has an unsafe file name"))?;
+        let target = folder.join(&file.name);
         let expected = Sha256Digest::from_hex(&file.sha256)
             .ok_or_else(|| refused("its list of files has no SHA-256"))?;
         let size = file.size;
@@ -241,31 +221,26 @@ impl Manager {
     }
 
     /// The manifest of `release`, once its signature proves `public_key` signed it.
-    async fn signed_manifest(
-        &self,
-        repository: &Url,
-        release: &Release,
-        public_key: &str,
-    ) -> Result<Manifest> {
-        let signed_asset_url = |name: &str| {
-            github::uploaded_asset(release, name)
-                .and_then(|_| github::release_url(repository, &release.tag_name, Some(name)))
-                .ok_or_else(|| refused(&format!("it has no usable {name}")))
+    async fn signed_manifest(&self, release: &Release, public_key: &str) -> Result<Manifest> {
+        let asset_url = |name: &str| {
+            release
+                .asset(name)
+                .and_then(|asset| Url::parse(&asset.browser_download_url).ok())
+                .ok_or_else(|| refused(&format!("it has no {name}")))
         };
         let manifest = self
-            .fetch_small(&signed_asset_url(MANIFEST_FILE)?)
+            .fetch_small(&asset_url(MANIFEST_FILE)?)
             .await
             .map_err(|e| unreachable_releases(&e))?;
         let signature = self
-            .fetch_small(&signed_asset_url(SIGNATURE_FILE)?)
+            .fetch_small(&asset_url(SIGNATURE_FILE)?)
             .await
             .map_err(|e| unreachable_releases(&e))?;
-        let signature = String::from_utf8_lossy(&signature.body);
-        Manifest::verified(&manifest.body, &signature, public_key)
-            .map_err(|e| refused(&e.to_string()))
+        let signature = String::from_utf8_lossy(&signature);
+        Manifest::verified(&manifest, &signature, public_key).map_err(|e| refused(&e.to_string()))
     }
 
-    async fn fetch_small(&self, url: &Url) -> std::result::Result<Fetched, String> {
+    async fn fetch_small(&self, url: &Url) -> std::result::Result<Vec<u8>, String> {
         let mut options = self.update_options();
         options.headers.insert(
             ACCEPT,
@@ -275,10 +250,12 @@ impl Manager {
         let fetcher = Fetcher::with_private_network(url, &options, cancel, UPDATE_NETWORK)
             .await
             .map_err(|e| e.to_string())?;
-        fetcher
+        Ok(fetcher
             .get(url, None, MAX_METADATA)
             .await
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?
+            .body
+            .to_vec())
     }
 
     /// The app's own identity and proxy, and no request to the local network.
@@ -297,6 +274,35 @@ fn installer_matches(path: &Path, size: u64, expected: &Sha256Digest) -> bool {
 /// file, which then goes at the next start.
 pub(super) fn discard_installers(data_dir: &Path) {
     wirecatch_files::discard::dir(&data_dir.join(UPDATES_FOLDER));
+}
+
+/// The installer of `kind` for this computer, with the size and SHA-256 the signed `manifest`
+/// lists, or without one, those GitHub reports for the uploaded file.
+fn usable_installer(
+    release: &Release,
+    version: &Version,
+    manifest: Option<&Manifest>,
+    kind: FileKind,
+) -> Option<UpdateDownload> {
+    let (system, arch) = (System::current()?, Arch::current()?);
+    let name = installer_name(INSTALLER_PREFIX, version, system, arch, kind)?;
+    let asset = release.asset(&name)?;
+    let file = if let Some(manifest) = manifest {
+        let file = manifest.file(system, arch, kind)?.clone();
+        // The name becomes a local path, and the unprotected job that prepares a release writes it (D288).
+        (file.name == name && asset.size == file.size).then_some(file)?
+    } else {
+        UpdateFile {
+            name,
+            system,
+            arch,
+            kind,
+            size: asset.size,
+            sha256: asset.sha256()?.to_owned(),
+        }
+    };
+    let url = Url::parse(&asset.browser_download_url).ok()?;
+    Some(UpdateDownload { url, file })
 }
 
 fn unreachable_releases(reason: &str) -> CoreError {

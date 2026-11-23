@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import { UNDECIDED_VALUES, withUpdateConfig } from './identity-samples.mjs';
 import { setTomlKey, tomlString } from './manifests.mjs';
 import { chromiumIdOf, placeholders, ProductError, readProduct } from './read.mjs';
+import { rawPublicKey } from '../release/updater-key.mjs';
 
 const PRODUCT_TOML = readFileSync(
   join(import.meta.dirname, '..', '..', 'config', 'product.toml'),
@@ -33,8 +34,7 @@ test('update verification is explicit and only signed mode takes a key', () => {
   const config = (values) => withUpdateConfig(PRODUCT_TOML, values);
   const github = 'verification = "github"';
   const signed = 'verification = "signed"';
-  const { publicKey } = generateKeyPairSync('ed25519');
-  const key = publicKey.export({ type: 'spki', format: 'der' }).subarray(-32).toString('base64url');
+  const key = rawPublicKey(generateKeyPairSync('ed25519').publicKey);
   assert.deepEqual({ ...readProduct(config(github)).updates }, { verification: 'github' });
   assert.deepEqual(
     { ...readProduct(config(`${signed}\npublic_key = "${key}"`)).updates },

@@ -43,7 +43,7 @@ Not tested yet:
 
 - **A real package upgrade.** The post-install hook (D221) has run only against stand-in programs in a test.
 - **Packaging on an RPM system in CI.** The Linux jobs run on Ubuntu, so only tests with stand-in package tools cover the `rpm` licence lookup.
-- **A real update.** Rehearse a download, install and restart with two GitHub prereleases on Windows and AppImage. The [packaging guide](../crates/desktop/PACKAGING.md#rehearsing-an-upgrade) lists the checks, including how to verify signing when it is enabled.
+- **A real update.** Rehearse a download, install and restart with two GitHub prereleases on Windows and AppImage. The [packaging guide](../crates/desktop/PACKAGING.md#rehearsing-an-upgrade) lists the checks.
 - **Real installers.** None has been built with the third-party notices (D117), so the first run of the release workflow is the first test of its Linux steps.
 - **Certificates on Linux (D116).** The change has run only in CI, not on a Linux computer.
 - **A video that fails before its window first reads the question.** The logic has a test; the timing was not reproduced.

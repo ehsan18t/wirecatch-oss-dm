@@ -130,15 +130,12 @@ impl Manifest {
         Ok(manifest)
     }
 
-    /// The installer for this target, when the manifest names the target exactly once.
+    /// The installer of `kind` for `system` on `arch`.
     #[must_use]
-    pub fn unique_file(&self, system: System, arch: Arch, kind: FileKind) -> Option<&UpdateFile> {
-        let mut matches = self
-            .files
+    pub fn file(&self, system: System, arch: Arch, kind: FileKind) -> Option<&UpdateFile> {
+        self.files
             .iter()
-            .filter(|file| file.system == system && file.arch == arch && file.kind == kind);
-        let file = matches.next()?;
-        matches.next().is_none().then_some(file)
+            .find(|file| file.system == system && file.arch == arch && file.kind == kind)
     }
 }
 
@@ -179,11 +176,11 @@ mod tests {
             Manifest::verified(&bytes, &signed(&bytes, &key()), &public(&key())).unwrap();
         assert_eq!(manifest.version, "0.2.0");
         let file = manifest
-            .unique_file(System::Windows, Arch::X64, FileKind::Setup)
+            .file(System::Windows, Arch::X64, FileKind::Setup)
             .unwrap();
         assert_eq!(file.size, 10);
         assert_eq!(
-            manifest.unique_file(System::Windows, Arch::Arm64, FileKind::Setup),
+            manifest.file(System::Windows, Arch::Arm64, FileKind::Setup),
             None
         );
     }
@@ -204,7 +201,7 @@ mod tests {
             );
         }
         let appimage = manifest
-            .unique_file(System::Linux, Arch::Arm64, FileKind::AppImage)
+            .file(System::Linux, Arch::Arm64, FileKind::AppImage)
             .unwrap();
         assert_eq!(appimage.size, 8);
     }

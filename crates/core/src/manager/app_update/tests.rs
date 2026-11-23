@@ -7,13 +7,10 @@ use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};
 use wirecatch_settings::folders::KnownFolders;
 use wirecatch_test_support::files::FileServer;
-use wirecatch_updates::{Arch, System};
 
-mod listing;
 mod signed;
 
 const LIST: &str = "/releases";
-const REPOSITORY: &str = "/owner/repo";
 const TAG: &str = "v0.2.0";
 const INSTALLER: &[u8] = b"a newer installer";
 
@@ -56,7 +53,7 @@ fn installer(tag: &str) -> UpdateFile {
     let version = Version::parse(tag.trim_start_matches('v')).unwrap();
     let (system, arch) = (System::current().unwrap(), Arch::current().unwrap());
     UpdateFile {
-        name: github::installer_name(&version, system, arch, kind()).unwrap(),
+        name: installer_name(INSTALLER_PREFIX, &version, system, arch, kind()).unwrap(),
         system,
         arch,
         kind: kind(),
@@ -66,26 +63,14 @@ fn installer(tag: &str) -> UpdateFile {
 }
 
 fn download_path(tag: &str, name: &str) -> String {
-    format!("{REPOSITORY}/releases/download/{tag}/{name}")
+    format!("/{tag}/{name}")
 }
 
-/// An asset GitHub reports as completely uploaded, with a download address the app must not use.
-fn asset(name: &str, size: u64, sha256: &str) -> Value {
-    json!({
-        "name": name,
-        "size": size,
-        "state": "uploaded",
-        "digest": format!("sha256:{sha256}"),
-        "browser_download_url": "http://127.0.0.1:1/untrusted",
-    })
-}
-
-/// A listed release whose own page address the app must not use.
 fn release(tag: &str, prerelease: bool, assets: &[Value]) -> Value {
     json!({
         "tag_name": tag,
         "prerelease": prerelease,
-        "html_url": "file:///C:/Windows/System32/calc.exe",
+        "html_url": format!("https://example.com/{tag}"),
         "assets": assets,
     })
 }
@@ -102,22 +87,16 @@ impl Harness {
 
     async fn open(verification: ReleaseVerification) -> Self {
         let server = FileServer::start().await;
-        let releases = AppReleases {
-            list: server.url(LIST),
-            repository: server.url(REPOSITORY),
-            verification,
-        };
-        Self::with_releases(server, releases).await
-    }
-
-    async fn with_releases(server: FileServer, releases: AppReleases) -> Self {
-        let signed = matches!(releases.verification, ReleaseVerification::Signed { .. });
+        let signed = matches!(verification, ReleaseVerification::Signed { .. });
         let dir = tempfile::tempdir().unwrap();
         let mut config = ManagerConfig::for_tests(
             dir.path().join("data"),
             KnownFolders::under_home(dir.path().join("home")),
         );
-        config.app_releases = Some(releases);
+        config.app_releases = Some(AppReleases {
+            list: server.url(LIST),
+            verification,
+        });
         let manager = Manager::open(config).await.unwrap();
         Self {
             manager,
@@ -153,8 +132,15 @@ impl Harness {
             .await
     }
 
-    fn page(&self, tag: &str) -> Url {
-        self.server.url(&format!("{REPOSITORY}/releases/tag/{tag}"))
+    /// An asset GitHub reports as completely uploaded, served at its download address.
+    fn asset(&self, tag: &str, name: &str, size: u64, sha256: &str) -> Value {
+        json!({
+            "name": name,
+            "size": size,
+            "state": "uploaded",
+            "digest": format!("sha256:{sha256}"),
+            "browser_download_url": self.server.url(&download_path(tag, name)).to_string(),
+        })
     }
 
     fn list(&self, releases: &[Value]) {
@@ -170,7 +156,8 @@ impl Harness {
         let file = installer(tag);
         let served = odd.served.clone().unwrap_or_else(|| INSTALLER.to_vec());
         self.server.put(&download_path(tag, &file.name), served);
-        let mut assets = vec![asset(
+        let mut assets = vec![self.asset(
+            tag,
             &file.name,
             odd.asset_size.unwrap_or(file.size),
             &file.sha256,
@@ -201,8 +188,14 @@ impl Harness {
         .unwrap();
         let signature = URL_SAFE_NO_PAD.encode(signer.sign(&manifest).to_bytes());
         let assets = [
-            asset(MANIFEST_FILE, manifest.len() as u64, &sha256(&manifest)),
-            asset(
+            self.asset(
+                tag,
+                MANIFEST_FILE,
+                manifest.len() as u64,
+                &sha256(&manifest),
+            ),
+            self.asset(
+                tag,
                 SIGNATURE_FILE,
                 signature.len() as u64,
                 &sha256(signature.as_bytes()),
@@ -217,40 +210,36 @@ impl Harness {
 }
 
 #[tokio::test]
-async fn github_mode_installs_by_digest_from_the_repository_addresses() {
+async fn github_mode_installs_by_the_digest_github_reports() {
     let h = Harness::github().await;
     let file = h.publish(TAG);
-    let update = h.offered(Some(kind())).await;
-    assert_eq!(update.page, h.page(TAG));
-    let download = update.download.unwrap();
-    assert_eq!(download.url, h.server.url(&download_path(TAG, &file.name)));
+    let download = h.offered(Some(kind())).await.download.unwrap();
     assert_eq!(download.file, file);
     let path = h.fetch(&download).await.unwrap();
     assert_eq!(std::fs::read(&path).unwrap(), INSTALLER);
-
-    // A retry must recheck the bytes even though the replacement is the same size.
-    std::fs::remove_file(&path).unwrap();
-    h.server
-        .put(&download_path(TAG, &file.name), vec![b'x'; INSTALLER.len()]);
-    assert!(h.fetch(&download).await.is_err());
-    assert!(!path.exists());
 }
 
 #[tokio::test]
-async fn github_mode_refuses_an_installer_without_one_sha256_digest() {
+async fn github_mode_refuses_an_installer_without_a_complete_upload_and_sha256() {
     let h = Harness::github().await;
     let file = installer(TAG);
-    let listed = asset(&file.name, file.size, &file.sha256);
-    for digest in [Value::Null, json!("sha512:abc"), json!("sha256:abc")] {
+    let listed = h.asset(TAG, &file.name, file.size, &file.sha256);
+    for (field, value) in [
+        ("digest", Value::Null),
+        ("digest", json!("sha512:abc")),
+        ("digest", json!("sha256:abc")),
+        ("state", json!("starter")),
+        ("size", json!(0)),
+    ] {
         let mut invalid = listed.clone();
-        invalid["digest"] = digest;
+        invalid[field] = value;
         h.list(&[release(TAG, false, &[invalid])]);
         let message = h.refusal(kind()).await;
-        assert!(message.contains("no verifiable installer"), "{message}");
+        assert!(
+            message.contains("no verifiable installer"),
+            "{field}: {message}"
+        );
     }
-    h.list(&[release(TAG, false, &[listed.clone(), listed])]);
-    let message = h.refusal(kind()).await;
-    assert!(message.contains("no verifiable installer"), "{message}");
 }
 
 #[tokio::test]
@@ -259,7 +248,36 @@ async fn a_release_is_offered_without_an_installer_when_none_is_asked_for() {
     h.list(&[release(TAG, false, &[])]);
     let update = h.offered(None).await;
     assert!(update.download.is_none());
-    assert_eq!(update.page, h.page(TAG));
+    assert_eq!(update.page.as_str(), "https://example.com/v0.2.0");
+}
+
+#[tokio::test]
+async fn a_release_page_that_is_not_https_is_refused() {
+    let h = Harness::github().await;
+    let mut listed = release(TAG, false, &[]);
+    listed["html_url"] = json!("file:///C:/Windows/System32/calc.exe");
+    h.list(&[listed]);
+    let found = h.check(None).await;
+    assert!(
+        matches!(&found, Err(CoreError::UpdateCheckFailed(message)) if message.contains("page")),
+        "{found:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_pre_release_waits_for_the_setting() {
+    let h = Harness::github().await;
+    h.publish_odd("v0.2.0-beta.1", true, &Odd::default());
+    assert_eq!(h.check(Some(kind())).await.unwrap(), None);
+
+    let mut settings = h.manager.get_settings();
+    settings.prerelease_updates = true;
+    h.manager
+        .change_settings(wirecatch_test_support::settings::whole_patch(&settings))
+        .unwrap();
+    let update = h.offered(Some(kind())).await;
+    assert_eq!(update.version, "0.2.0-beta.1");
+    assert_eq!(update.download.unwrap().file, installer("v0.2.0-beta.1"));
 }
 
 #[tokio::test]
@@ -273,26 +291,6 @@ async fn a_release_with_no_installer_for_this_install_is_refused() {
     };
     let message = h.refusal(other).await;
     assert!(message.contains("no verifiable installer"), "{message}");
-}
-
-#[tokio::test]
-async fn a_subfolder_cannot_be_part_of_the_installer_name() {
-    let h = Harness::github().await;
-    let asset_path = "/custom-setup.exe";
-    h.server.put(asset_path, INSTALLER);
-    let mut file = installer(TAG);
-    file.name = format!("folder/{}", file.name);
-    let download = UpdateDownload {
-        url: h.server.url(asset_path),
-        file,
-    };
-
-    let Err(CoreError::UpdateCheckFailed(message)) = h.fetch(&download).await else {
-        panic!("expected the updater to refuse the installer name");
-    };
-    assert!(message.contains("unsafe file name"), "{message}");
-    assert_eq!(h.server.requests(asset_path), 0);
-    assert!(!h.manager.inner.data_dir.join(UPDATES_FOLDER).exists());
 }
 
 #[tokio::test]

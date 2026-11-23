@@ -1,4 +1,4 @@
-# Builds the release assets (D111). A version tag push also prepares a draft for the maintainer to publish. Only signed update mode needs UPDATER_PRIVATE_KEY.
+# Builds what a release ships and drafts the GitHub release with it (XC-20, D111, D288). A version tag (`v1.2.3`, or `v1.2.3-beta.1` for a pre-release) starts it, or a run by hand, which builds without drafting. Every installer is built on x64 and ARM64; the draft carries them, in signed update mode with the update manifest, signed by its own job in the protected `updater-signing` environment, and waits for the maintainer to read and publish it. The installers themselves are unsigned until a code-signing certificate exists (D19). Drafting runs `node scripts/gate.mjs publish` first, so nothing is drafted while `config/product.toml` holds a placeholder.
 name: Release
 
 on:
@@ -143,7 +143,7 @@ jobs:
       - name: Check the extension release
         run: node scripts/gate.mjs release-build
 
-      - name: Build the browser extension archives
+      - name: Build the store packages
         run: pnpm --filter @wirecatch/extension zip
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -155,7 +155,7 @@ jobs:
           if-no-files-found: error
 
   prepare:
-    name: Validate release inputs
+    name: Check the release
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     needs: [desktop, linux-packages, extension]
     timeout-minutes: 10
@@ -182,25 +182,28 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # No identity value may still be a placeholder (D29).
       - name: Check what is published
         run: node scripts/gate.mjs publish
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          pattern: desktop-*
           path: release
           merge-multiple: true
 
-      - name: Check the repository, tag and installer set
+      # The repository, the tag and the exact installer set; in signed mode, the manifest for the signing job (D111).
+      - name: Check the installers
         id: release
-        run: node scripts/release/manifest.mjs release release-manifest.json >> "$GITHUB_OUTPUT"
+        run: node scripts/release/manifest.mjs release >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: steps.release.outputs.verification == 'signed'
         with:
-          name: release-inventory
-          path: release-manifest.json
+          name: update-manifest
+          path: release/update.json
           if-no-files-found: error
 
+  # UPDATER_PRIVATE_KEY is a secret of the protected updater-signing environment, so only this job can read it (D288). It installs no packages, and signs whatever `prepare` wrote.
   sign:
     name: Sign the update manifest
     if: needs.prepare.outputs.verification == 'signed'
@@ -215,6 +218,7 @@ jobs:
           sparse-checkout: |
             scripts/release/sign.mjs
             scripts/release/update-files.mjs
+            scripts/release/updater-key.mjs
           sparse-checkout-cone-mode: false
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -224,67 +228,73 @@ jobs:
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: release-inventory
+          name: update-manifest
+          path: update
 
-      - name: Sign and verify the prepared manifest
+      - name: Sign the manifest
         env:
-          UPDATER_PUBLIC_KEY: ${{ needs.prepare.outputs.public_key }}
           UPDATER_PRIVATE_KEY: ${{ secrets.UPDATER_PRIVATE_KEY }}
-        run: node scripts/release/sign.mjs release-manifest.json signed
+          UPDATER_PUBLIC_KEY: ${{ needs.prepare.outputs.public_key }}
+        run: node scripts/release/sign.mjs update
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: signed-update
-          path: signed/
+          name: update-signature
+          path: update/update.json.sig
           if-no-files-found: error
 
   draft:
-    name: Draft and verify the release
-    concurrency:
-      group: release-draft-${{ github.ref }}
-      cancel-in-progress: false
+    name: Draft the release
     needs: [prepare, sign]
+    # A skipped signing job is right only in GitHub mode.
     if: >-
       !cancelled() && needs.prepare.result == 'success' &&
       (needs.sign.result == 'success' ||
       (needs.prepare.outputs.verification == 'github' && needs.sign.result == 'skipped'))
+    concurrency:
+      group: release-draft-${{ github.ref }}
+      cancel-in-progress: false
     timeout-minutes: 10
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          package-manager-cache: false
-
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: release-inventory
-
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          pattern: desktop-*
           path: release
           merge-multiple: true
 
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: extension
-          path: release
-
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        if: needs.prepare.outputs.verification == 'signed'
-        with:
-          name: signed-update
-          path: release
-
-      - name: Draft and verify the release
+      # A tag with a pre-release part (`v1.2.3-beta.1`) drafts a pre-release, which the app offers only to those who ask for one. GitHub-mode builds trust the size and digest GitHub reports for each file (D288), so each must match the built file.
+      - name: Draft the release
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-          VERIFICATION: ${{ needs.prepare.outputs.verification }}
-        run: node scripts/release/draft.mjs release-manifest.json release "$VERIFICATION" "$(git rev-parse HEAD)"
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if draft=$(gh release view "$TAG" --json isDraft --jq .isDraft 2> "$RUNNER_TEMP/view"); then
+            if [ "$draft" != true ]; then
+              echo "::error::The release $TAG is already published, so its files stay as they are."
+              exit 1
+            fi
+          elif grep -q 'release not found' "$RUNNER_TEMP/view"; then
+            prerelease=()
+            case "$TAG" in *-*) prerelease=(--prerelease) ;; esac
+            gh release create "$TAG" --draft --verify-tag --title "$TAG" --generate-notes "${prerelease[@]}"
+          else
+            cat "$RUNNER_TEMP/view" >&2
+            exit 1
+          fi
+          gh release upload "$TAG" --clobber release/*
+          for file in release/*; do
+            echo "$(basename "$file") $(stat -c %s "$file") sha256:$(sha256sum "$file" | cut -d ' ' -f 1)"
+          done | sort > "$RUNNER_TEMP/built"
+          # GitHub may report an upload's digest a moment after the upload.
+          for _ in $(seq 10); do
+            gh release view "$TAG" --json assets --jq '.assets[] | "\(.name) \(.size) \(.digest)"' | sort > "$RUNNER_TEMP/uploaded"
+            if cmp -s "$RUNNER_TEMP/built" "$RUNNER_TEMP/uploaded"; then exit 0; fi
+            grep -q ' null$' "$RUNNER_TEMP/uploaded" || break
+            sleep 3
+          done
+          echo "::error::The draft's files are not the built ones."
+          diff -u "$RUNNER_TEMP/built" "$RUNNER_TEMP/uploaded"
+          exit 1

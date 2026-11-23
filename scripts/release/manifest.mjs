@@ -1,12 +1,16 @@
 #!/usr/bin/env node
-// Validates release artifacts and writes their manifest for the next workflow jobs (D111).
+// Checks a release's installers and, in signed mode, writes their manifest `update.json` into the folder for the signing job (D111, D288). Prints the update mode and public key as `name=value` lines for `$GITHUB_OUTPUT`.
+//
+// Usage: GITHUB_REPOSITORY=<owner/name> GITHUB_REF_NAME=v<version> node scripts/release/manifest.mjs <folder>
 
 import { createHash } from 'node:crypto';
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ROOT } from '../gate/process.mjs';
 import { githubRepository, readProduct } from '../product/read.mjs';
 import { installerNames, isInstaller } from './installers.mjs';
+import { MANIFEST_FILE } from './update-files.mjs';
 
 /** What `name` is, when it is an installer of `product` at `version`; null otherwise. */
 export function describe(name, product) {
@@ -36,7 +40,8 @@ export function manifest(folder, product) {
   return Buffer.from(`${JSON.stringify({ version: product.version, files }, null, 2)}\n`);
 }
 
-export function prepareRelease(folder, { product, links }, repository, tag) {
+/** Checks that `folder` holds exactly the installers of this tag's version, built in this repository, and writes their manifest in signed mode. */
+export function prepareRelease(folder, { product, links, updates }, { repository, tag }) {
   if (githubRepository(links.repository)?.toLowerCase() !== repository?.toLowerCase()) {
     throw new Error('The workflow repository must match links.repository in config/product.toml.');
   }
@@ -56,25 +61,22 @@ export function prepareRelease(folder, { product, links }, repository, tag) {
       `Wrong installer set. Missing: ${missing.join(', ') || 'none'}. Unexpected: ${unexpected.join(', ') || 'none'}.`,
     );
   }
-  const bytes = manifest(folder, product);
-  const empty = JSON.parse(bytes.toString()).files.find((file) => file.size === 0);
-  if (empty) throw new Error(`The installer ${empty.name} is empty.`);
-  return bytes;
+  const empty = names.find((name) => statSync(join(folder, name)).size === 0);
+  if (empty) throw new Error(`The installer ${empty} is empty.`);
+  if (updates.verification === 'signed') {
+    writeFileSync(join(folder, MANIFEST_FILE), manifest(folder, product));
+  }
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
-    const [folder, output] = process.argv.slice(2);
-    if (!folder || !output)
-      throw new Error('Usage: node scripts/release/manifest.mjs <folder> <output>');
-    const product = readProduct(readFileSync('config/product.toml', 'utf8'));
-    const bytes = prepareRelease(
-      folder,
-      product,
-      process.env.GITHUB_REPOSITORY,
-      process.env.GITHUB_REF_NAME,
-    );
-    writeFileSync(output, bytes);
+    const [folder] = process.argv.slice(2);
+    if (!folder) throw new Error('Usage: node scripts/release/manifest.mjs <folder>');
+    const product = readProduct(readFileSync(join(ROOT, 'config', 'product.toml'), 'utf8'));
+    prepareRelease(folder, product, {
+      repository: process.env.GITHUB_REPOSITORY,
+      tag: process.env.GITHUB_REF_NAME,
+    });
     console.log(`verification=${product.updates.verification}`);
     console.log(`public_key=${product.updates.public_key ?? ''}`);
   } catch (error) {

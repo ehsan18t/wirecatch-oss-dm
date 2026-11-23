@@ -13,6 +13,8 @@ pub struct Release {
     pub draft: bool,
     #[serde(default)]
     pub prerelease: bool,
+    /// The release's page, for what is new and for a package the app cannot install itself.
+    pub html_url: String,
     #[serde(default)]
     pub assets: Vec<Asset>,
 }
@@ -21,24 +23,16 @@ pub struct Release {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Asset {
     pub name: String,
+    pub browser_download_url: String,
     pub size: u64,
     pub state: Option<String>,
     pub digest: Option<String>,
 }
 
 impl Asset {
-    /// Whether GitHub reports a complete upload.
+    /// The SHA-256 GitHub reports for the file, as lowercase hex.
     #[must_use]
-    pub fn is_uploaded(&self) -> bool {
-        self.size != 0 && self.state.as_deref() == Some("uploaded")
-    }
-
-    /// The digest of a complete GitHub upload, in the form the download verifier uses.
-    #[must_use]
-    pub fn uploaded_sha256(&self) -> Option<&str> {
-        if !self.is_uploaded() {
-            return None;
-        }
+    pub fn sha256(&self) -> Option<&str> {
         self.digest
             .as_deref()?
             .strip_prefix("sha256:")
@@ -52,6 +46,14 @@ impl Release {
     pub fn version(&self) -> Option<Version> {
         Version::parse(self.tag_name.trim().trim_start_matches('v')).ok()
     }
+
+    /// The asset named `name`, once GitHub reports it completely uploaded.
+    #[must_use]
+    pub fn asset(&self, name: &str) -> Option<&Asset> {
+        self.assets.iter().find(|asset| {
+            asset.name == name && asset.size != 0 && asset.state.as_deref() == Some("uploaded")
+        })
+    }
 }
 
 /// The newest of `releases` newer than `current`, with its version. Drafts never count, and a
@@ -59,12 +61,12 @@ impl Release {
 /// `1.2.0-beta.1`, so a release marked wrongly is still not offered to everyone.
 #[must_use]
 pub fn newest<'a>(
-    releases: impl IntoIterator<Item = &'a Release>,
+    releases: &'a [Release],
     current: &Version,
     prerelease: bool,
 ) -> Option<(&'a Release, Version)> {
     releases
-        .into_iter()
+        .iter()
         .filter(|release| !release.draft)
         .filter_map(|release| release.version().map(|version| (release, version)))
         .filter(|(release, version)| prerelease || (!release.prerelease && version.pre.is_empty()))
@@ -81,6 +83,7 @@ mod tests {
             tag_name: tag.to_owned(),
             draft,
             prerelease,
+            html_url: format!("https://example.com/{tag}"),
             assets: Vec::new(),
         }
     }
