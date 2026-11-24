@@ -636,7 +636,6 @@ impl MainWindow {
     fn next_region(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
         if self.page.screen == Screen::QueuePage && self.queue_page.is_some() {
             return self.leave_queue_page_then(window, cx, |main, window, cx| {
-                main.queue_page = None;
                 main.next_region(window, cx);
             });
         }
@@ -655,7 +654,6 @@ impl MainWindow {
     /// The downloads, with the keyboard in the search.
     fn search_list(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
         self.leave_queue_page_then(window, cx, |this, window, cx| {
-            this.queue_page = None;
             this.page.screen = Screen::Downloads;
             this.focus_search(window, cx);
         });
@@ -795,8 +793,8 @@ impl MainWindow {
         queue_delete::ask(&self.library, id, cx.entity().downgrade(), window, cx);
     }
 
-    /// Keeps the window off a queue that was just deleted. While creating a new queue, only the
-    /// return view changes so the draft stays open.
+    /// Keeps the window off a queue that was just deleted. While another screen or a new-queue
+    /// draft is open, only the return view changes so that screen stays open.
     pub(super) fn queue_deleted(
         &mut self,
         id: QueueId,
@@ -806,12 +804,7 @@ impl MainWindow {
         if self.view != View::Queue(id) {
             return;
         }
-        if self.page.screen == Screen::QueuePage
-            && self
-                .queue_page
-                .as_ref()
-                .is_some_and(|form| form.read(cx).editing_queue() != Some(id))
-        {
+        if !self.is_current_view(View::Queue(id), cx) {
             self.view = View::All;
             self.clear_selection();
             let title = self.title(cx);
@@ -1197,6 +1190,75 @@ mod tests {
         assert_eq!(main.read_with(cx, MainWindow::active_queue), None);
         assert!(main.read_with(cx, |main, cx| {
             !main.palette_headings(cx).contains(&"Selected downloads")
+        }));
+    }
+
+    #[gpui_kit::test]
+    fn leaving_an_unchanged_queue_page_for_another_screen_clears_it(
+        cx: &mut gpui_kit::TestAppContext,
+    ) {
+        let (main, cx) = window_with_queues(cx);
+
+        main.update_in(cx, |main, window, cx| {
+            main.edit_queue(Some(QueueId(2)), window, cx);
+        });
+        cx.run_until_parked();
+        assert!(main.read_with(cx, |main, _| main.queue_page.is_some()));
+
+        main.update_in(cx, |main, window, cx| {
+            main.open_screen(Screen::Shortcuts, window, cx);
+        });
+        cx.run_until_parked();
+        assert!(main.read_with(cx, |main, _| {
+            main.page.screen == Screen::Shortcuts && main.queue_page.is_none()
+        }));
+
+        main.update_in(cx, |main, window, cx| {
+            main.edit_queue(None, window, cx);
+            main.open_settings(settings::Page::Browser, window, cx);
+        });
+        cx.run_until_parked();
+        assert!(main.read_with(cx, |main, _| {
+            main.page.screen == Screen::Settings && main.queue_page.is_none()
+        }));
+    }
+
+    #[gpui_kit::test]
+    fn failed_queue_delete_keeps_draft_return_view_until_confirmed(
+        cx: &mut gpui_kit::TestAppContext,
+    ) {
+        let (main, cx) = window_with_queues(cx);
+        main.update_in(cx, |main, window, cx| {
+            main.show_now(View::Queue(QueueId(2)), window, cx);
+            main.edit_queue(None, window, cx);
+        });
+        cx.run_until_parked();
+
+        let weak = main.downgrade();
+        cx.update(|window, cx| {
+            queue_delete::finish_delete(
+                Some(Err("Queue could not be deleted.".to_owned())),
+                QueueId(2),
+                &weak,
+                window,
+                cx,
+            );
+        });
+        cx.run_until_parked();
+        assert!(main.read_with(cx, |main, _| {
+            main.page.screen == Screen::QueuePage
+                && main.view == View::Queue(QueueId(2))
+                && main.queue_page.is_some()
+        }));
+
+        cx.update(|window, cx| {
+            queue_delete::finish_delete(Some(Ok(0)), QueueId(2), &weak, window, cx);
+        });
+        cx.run_until_parked();
+        assert!(main.read_with(cx, |main, _| {
+            main.page.screen == Screen::QueuePage
+                && main.view == View::All
+                && main.queue_page.is_some()
         }));
     }
 }

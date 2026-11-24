@@ -27,6 +27,7 @@ impl MainWindow {
                 .as_ref()
                 .is_some_and(|form| form.read(cx).has_changes(cx));
         if !changed {
+            self.queue_page = None;
             return then(self, window, cx);
         }
         let then: Rc<Cell<Option<Then>>> = Rc::new(Cell::new(Some(Box::new(then))));

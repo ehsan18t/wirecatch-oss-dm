@@ -17,7 +17,8 @@ use wirecatch_protocol::{DownloadId, QueueId};
 use wirecatch_shell::api;
 
 use super::MainWindow;
-use crate::backend::command_saying;
+use crate::backend::{Backend, said};
+use crate::closing::may_have_closed;
 use crate::library::Library;
 use crate::text::{TRASH, left_in_place};
 use crate::ui::{Field, Role, Sentence, Typed as _};
@@ -230,21 +231,46 @@ fn delete(
         (form.queue, removed, form.files())
     };
     window.close_dialog(cx);
-    crate::closing::may_have_closed(main.update(cx, |main, cx| {
-        main.queue_deleted(id, window, cx);
-    }));
-    command_saying(
-        window.window_handle(),
-        cx,
-        move |manager| async move {
-            let left = if removed.is_empty() {
-                0
-            } else {
-                api::remove(&manager, &removed, files).await?
-            };
-            api::delete_queue(&manager, id)?;
-            Ok(left)
-        },
-        left_in_place,
-    );
+    let handle = window.window_handle();
+    let main = main.clone();
+    let done = Backend::run(cx, move |manager| async move {
+        let left = if removed.is_empty() {
+            0
+        } else {
+            api::remove(&manager, &removed, files).await?
+        };
+        api::delete_queue(&manager, id)?;
+        Ok(left)
+    });
+    cx.spawn(async move |cx| {
+        let outcome = said(done.await);
+        may_have_closed(handle.update(cx, |_, window, cx| {
+            finish_delete(outcome, id, &main, window, cx);
+        }));
+    })
+    .detach();
+}
+
+/// Applies queue deletion to the window only after the backend confirms it, or reports why it
+/// failed without disturbing navigation.
+pub(super) fn finish_delete(
+    outcome: Option<Result<usize, String>>,
+    id: QueueId,
+    main: &WeakEntity<MainWindow>,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    let notice = match outcome {
+        Some(Ok(left)) => {
+            may_have_closed(main.update(cx, |main, cx| {
+                main.queue_deleted(id, window, cx);
+            }));
+            left_in_place(left)
+        }
+        Some(Err(refused)) => Some(refused),
+        None => None,
+    };
+    if let Some(notice) = notice {
+        window.push_notification(notice, cx);
+    }
 }

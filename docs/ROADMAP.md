@@ -20,13 +20,6 @@ As of 2026-11-05, items 1 to 12 under "Before the first release" are done, and s
 1. The rest of W6: shared test support, CI, the backlog of proposed gate checks listed under W6, and a way to test the GPUI app's views (blocked until gpui-kit's test support resolves alongside gpui-pre).
 2. W15 last: comments only where they earn their place.
 
-### Pre-existing desktop bugs (separate follow-up PRs)
-
-Each item below is an independent fix for its own branch and pull request:
-
-1. **Leaving an unchanged queue page keeps `MainWindow::queue_page` alive (`crates/desktop/src/main_window/leaving.rs`, `mod.rs`).** `open_settings` and `open_screen` leave `self.queue_page` set when `leave_queue_page_then` takes the unchanged path, leaking the form entity and letting an in-flight `Save` completion jump back to `View::Queue(saved)` from Settings, Shortcuts or About.
-2. **Queue deletion updates navigation before the backend confirms (`crates/desktop/src/main_window/queue_delete.rs`).** `delete` calls `MainWindow::queue_deleted` optimistically before `api::remove` and `api::delete_queue` succeed, so a failure leaves the queue intact while the window or a new-queue draft's Cancel target has already moved to All downloads.
-
 ## Before the first release
 
 Set with the maintainer on 2026-10-30, and extended on 2026-10-31 with items 8 to 12, the audit's remaining code fixes. The release waits for the items below, in this order (reordered the same day so nothing is built twice for D95), and is delayed for them if need be; W6 and W15 do not (see "After the first release"). A bug found on the way is fixed whatever part of the app it is in.
