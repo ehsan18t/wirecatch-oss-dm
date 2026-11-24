@@ -11,8 +11,8 @@ use gpui_kit::component::select::{Select, SelectEvent, SelectItem, SelectState};
 use gpui_kit::component::{ActiveTheme as _, IconName, IndexPath, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, Entity, IntoElement, ParentElement as _, Render,
-    SharedString, Styled as _, Subscription, Window, div,
+    AnyElement, App, AppContext as _, Context, Entity, EventEmitter, IntoElement,
+    ParentElement as _, Render, SharedString, Styled as _, Subscription, Window, div,
 };
 use wirecatch_protocol::app::Setting;
 use wirecatch_protocol::proxy::{ProxySettings, ProxyUse, QueueExceptions};
@@ -44,6 +44,9 @@ impl SelectItem for ProxyChoice {
     }
 }
 
+/// Emitted when any proxy or exception control changes.
+pub(super) struct Changed;
+
 pub struct ProxyForm {
     library: Entity<Library>,
     proxy: Setting<ProxyUse>,
@@ -54,6 +57,8 @@ pub struct ProxyForm {
     listed: Revisions,
     _subscriptions: Vec<Subscription>,
 }
+
+impl EventEmitter<Changed> for ProxyForm {}
 
 impl ProxyForm {
     pub fn new(
@@ -90,7 +95,7 @@ impl ProxyForm {
                     return;
                 };
                 form.proxy = *picked;
-                cx.notify();
+                Self::changed(cx);
             },
         );
         // A proxy added or renamed while the editor is open shows in the list.
@@ -107,9 +112,9 @@ impl ProxyForm {
                 state.set_selected_value(&proxy, window, cx);
             });
         });
-        let typing = cx.subscribe(&hosts, |_, _, event: &InputEvent, cx| {
+        let typing = cx.subscribe(&hosts, |_: &mut Self, _, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
-                cx.notify();
+                Self::changed(cx);
             }
         });
         Self {
@@ -146,6 +151,11 @@ impl ProxyForm {
             .map_or_default(|settings| settings.proxy.clone())
     }
 
+    fn changed(cx: &mut Context<'_, Self>) {
+        cx.emit(Changed);
+        cx.notify();
+    }
+
     fn new_proxy(&self, window: &mut Window, cx: &mut Context<'_, Self>) {
         let form = cx.entity().downgrade();
         let use_it: proxy_dialog::Created = Rc::new(move |id, window, cx| {
@@ -155,7 +165,7 @@ impl ProxyForm {
                 form.choices.update(cx, |state, cx| {
                     state.set_selected_value(&picked, window, cx);
                 });
-                cx.notify();
+                Self::changed(cx);
             }));
         });
         proxy_dialog::open(&self.library, None, Some(use_it), window, cx);
@@ -168,7 +178,7 @@ impl ProxyForm {
     ) {
         if let Setting::Own(own) = &mut self.exceptions {
             edit(own);
-            cx.notify();
+            Self::changed(cx);
         }
     }
 }
@@ -222,7 +232,7 @@ impl ProxyForm {
                 } else {
                     Setting::Global
                 };
-                cx.notify();
+                Self::changed(cx);
             }),
             cx,
         );
