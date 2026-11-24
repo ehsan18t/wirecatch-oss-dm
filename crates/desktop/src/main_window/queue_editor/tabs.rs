@@ -154,10 +154,7 @@ impl QueueForm {
             self.folder.as_deref().map(text::folder),
             FOLDER_BY_TYPE,
             cx.listener(|_, _, _, cx| Self::choose_folder(cx)),
-            cx.listener(|form, _, _, cx| {
-                form.folder = None;
-                cx.notify();
-            }),
+            cx.listener(|form, _, _, cx| form.set_folder(None, cx)),
         );
         v_flex()
             .gap_5()
@@ -277,8 +274,7 @@ impl QueueForm {
             &["When the queue is empty", "At"],
             usize::from(!self.until_empty),
             cx.listener(|form, picked: &usize, _, cx| {
-                form.until_empty = *picked == 0;
-                cx.notify();
+                form.set_until_empty(*picked == 0, cx);
             }),
             cx,
         );
@@ -354,12 +350,12 @@ impl QueueForm {
                 &["Each finishes", "All are done"],
                 usize::from(self.notify == QueueNotify::WhenDone),
                 cx.listener(|form, picked: &usize, _, cx| {
-                    form.notify = if *picked == 1 {
+                    let notify = if *picked == 1 {
                         QueueNotify::WhenDone
                     } else {
                         QueueNotify::EachDownload
                     };
-                    cx.notify();
+                    form.set_notify(notify, cx);
                 }),
                 cx,
             ))

@@ -25,8 +25,7 @@ As of 2026-11-05, items 1 to 12 under "Before the first release" are done, and s
 Each item below is an independent fix for its own branch and pull request:
 
 1. **Leaving an unchanged queue page keeps `MainWindow::queue_page` alive (`crates/desktop/src/main_window/leaving.rs`, `mod.rs`).** `open_settings` and `open_screen` leave `self.queue_page` set when `leave_queue_page_then` takes the unchanged path, leaking the form entity and letting an in-flight `Save` completion jump back to `View::Queue(saved)` from Settings, Shortcuts or About.
-2. **Queue page validation banner stays visible after editing non-text controls (`crates/desktop/src/main_window/queue_editor.rs`, `tabs.rs`, `queue_rules.rs`, `queue_proxy.rs`).** `QueueForm::problem` is not cleared when editing Schedule times, `"Stops"`, `"Save to"` folder, `"Tell me when"`, `RulesForm`, or `ProxyForm`.
-3. **Queue deletion updates navigation before the backend confirms (`crates/desktop/src/main_window/queue_delete.rs`).** `delete` calls `MainWindow::queue_deleted` optimistically before `api::remove` and `api::delete_queue` succeed, so a failure leaves the queue intact while the window or a new-queue draft's Cancel target has already moved to All downloads.
+2. **Queue deletion updates navigation before the backend confirms (`crates/desktop/src/main_window/queue_delete.rs`).** `delete` calls `MainWindow::queue_deleted` optimistically before `api::remove` and `api::delete_queue` succeed, so a failure leaves the queue intact while the window or a new-queue draft's Cancel target has already moved to All downloads.
 
 ## Before the first release
 

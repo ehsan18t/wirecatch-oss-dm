@@ -11,9 +11,9 @@ use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, Div, Entity, InteractiveElement as _, IntoElement,
-    ParentElement as _, Render, StatefulInteractiveElement as _, Styled as _, Subscription, Window,
-    div, px,
+    AnyElement, App, AppContext as _, Context, Div, Entity, EventEmitter, InteractiveElement as _,
+    IntoElement, ParentElement as _, Render, StatefulInteractiveElement as _, Styled as _,
+    Subscription, Window, div, px,
 };
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::Category;
@@ -101,6 +101,9 @@ fn tags(
     cx.new(|cx| TagField::new(values, split, placeholder, window, cx))
 }
 
+/// Emitted when any rule control changes.
+pub(super) struct Changed;
+
 pub struct RulesForm {
     /// The queue edited; `None` for one not made yet.
     queue: Option<QueueId>,
@@ -118,6 +121,8 @@ pub struct RulesForm {
     trial: Entity<LinkTrial>,
     _subscriptions: Vec<Subscription>,
 }
+
+impl EventEmitter<Changed> for RulesForm {}
 
 impl RulesForm {
     pub fn new(
@@ -221,6 +226,7 @@ impl RulesForm {
     /// An answer is for the link and the rules it was given: a change to either takes it away.
     fn forget_answer(&mut self, cx: &mut Context<'_, Self>) {
         self.trial.update(cx, LinkTrial::forget);
+        cx.emit(Changed);
         cx.notify();
     }
 

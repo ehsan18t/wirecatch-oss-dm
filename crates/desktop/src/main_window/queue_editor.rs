@@ -8,7 +8,7 @@ mod tabs;
 
 use chrono::{NaiveTime, Timelike as _};
 use gpui_kit::component::input::{InputEvent, InputState};
-use gpui_kit::component::time_field::TimeFieldState;
+use gpui_kit::component::time_field::{TimeFieldEvent, TimeFieldState};
 use gpui_kit::{App, AppContext as _, Context, Entity, Subscription, WeakEntity, Window};
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{
@@ -18,8 +18,8 @@ use wirecatch_protocol::app::{
 use wirecatch_shell::api;
 
 use super::MainWindow;
-use super::queue_proxy::ProxyForm;
-use super::queue_rules::RulesForm;
+use super::queue_proxy::{self, ProxyForm};
+use super::queue_rules::{self, RulesForm};
 use crate::backend::{Backend, said};
 use crate::library::Library;
 use crate::{files, text};
@@ -240,12 +240,13 @@ impl QueueForm {
             cx,
         );
         let icon = cx.new(|cx| IconPicker::new(opened.icon.clone(), window, cx));
+        let (rules, proxy) = editors(&library, queue, &name, &opened, window, cx);
         let subscriptions = forget_problem_on_edit(
             [&name, &description, &concurrent, &limit, &connections],
-            &icon,
+            [&start, &stop],
+            (&icon, &rules, &proxy),
             cx,
         );
-        let (rules, proxy) = editors(&library, queue, &name, &opened, window, cx);
         Self {
             library,
             main,
@@ -482,11 +483,28 @@ impl QueueForm {
                 return;
             };
             crate::closing::may_have_closed(form.update(cx, |form, cx| {
-                form.folder = Some(folder);
-                cx.notify();
+                form.set_folder(Some(folder), cx);
             }));
         })
         .detach();
+    }
+
+    fn set_folder(&mut self, folder: Option<String>, cx: &mut Context<'_, Self>) {
+        self.folder = folder;
+        self.problem = None;
+        cx.notify();
+    }
+
+    fn set_until_empty(&mut self, until_empty: bool, cx: &mut Context<'_, Self>) {
+        self.until_empty = until_empty;
+        self.problem = None;
+        cx.notify();
+    }
+
+    fn set_notify(&mut self, notify: QueueNotify, cx: &mut Context<'_, Self>) {
+        self.notify = notify;
+        self.problem = None;
+        cx.notify();
     }
 
     fn is_own(&self, setting: Own) -> bool {
@@ -515,6 +533,7 @@ impl QueueForm {
             }
             state.set_step(Some(unit.step().into()), window, cx);
         });
+        self.problem = None;
         cx.notify();
     }
 }
@@ -550,10 +569,11 @@ fn editors(
     (rules, proxy)
 }
 
-/// Any field or icon change clears the problem the form showed.
+/// Any field, time, icon, rule or proxy change clears the problem the form showed.
 fn forget_problem_on_edit(
     fields: [&Entity<InputState>; 5],
-    icon: &Entity<IconPicker>,
+    times: [&Entity<TimeFieldState>; 2],
+    (icon, rules, proxy): (&Entity<IconPicker>, &Entity<RulesForm>, &Entity<ProxyForm>),
     cx: &mut Context<'_, QueueForm>,
 ) -> Vec<Subscription> {
     let mut subs: Vec<Subscription> = fields
@@ -567,12 +587,36 @@ fn forget_problem_on_edit(
             })
         })
         .collect();
+    subs.extend(times.into_iter().map(|time| {
+        cx.subscribe(
+            time,
+            |form: &mut QueueForm, _, event: &TimeFieldEvent, cx| {
+                let TimeFieldEvent::Change(_) = event;
+                form.problem = None;
+                cx.notify();
+            },
+        )
+    }));
     subs.push(
         cx.subscribe(icon, |form: &mut QueueForm, _, _: &IconPicked, cx| {
             form.problem = None;
             cx.notify();
         }),
     );
+    subs.push(cx.subscribe(
+        rules,
+        |form: &mut QueueForm, _, _: &queue_rules::Changed, cx| {
+            form.problem = None;
+            cx.notify();
+        },
+    ));
+    subs.push(cx.subscribe(
+        proxy,
+        |form: &mut QueueForm, _, _: &queue_proxy::Changed, cx| {
+            form.problem = None;
+            cx.notify();
+        },
+    ));
     subs
 }
 
@@ -861,5 +905,64 @@ mod tests {
         cx.simulate_keystrokes("enter");
         cx.run_until_parked();
         assert_eq!(edit_form.read_with(cx, |f, _| f.problem.clone()), None);
+    }
+
+    #[gpui_kit::test]
+    fn editing_non_text_controls_clears_validation_problem(cx: &mut TestAppContext) {
+        cx.update(gpui_kit::component::init);
+        let library = cx.update(|cx| cx.new(|_| Library::empty()));
+        let (form, cx) = cx.add_window_view(|window, cx| {
+            QueueForm::new(library, Opening::New, WeakEntity::new_invalid(), window, cx)
+        });
+        let set_problem = |cx: &mut gpui_kit::VisualTestContext| {
+            form.update(cx, |f, _| {
+                f.problem = Some("Give the queue a name.".to_owned());
+            });
+        };
+
+        // Folder pick and clear.
+        set_problem(cx);
+        form.update(cx, |f, cx| {
+            f.set_folder(Some("/tmp/downloads".to_owned()), cx);
+        });
+        assert_eq!(form.read_with(cx, |f, _| f.problem.clone()), None);
+        set_problem(cx);
+        form.update(cx, |f, cx| f.set_folder(None, cx));
+        assert_eq!(form.read_with(cx, |f, _| f.problem.clone()), None);
+
+        // Schedule "Stops" and time fields.
+        set_problem(cx);
+        form.update(cx, |f, cx| f.set_until_empty(true, cx));
+        assert_eq!(form.read_with(cx, |f, _| f.problem.clone()), None);
+
+        let start = form.read_with(cx, |f, _| f.start.clone());
+        form.update(cx, |f, cx| {
+            f.section = Section::Schedule;
+            f.switch(Own::Schedule, true, cx);
+        });
+        cx.run_until_parked();
+        set_problem(cx);
+        cx.update(|window, cx| start.update(cx, |field, cx| field.focus(window, cx)));
+        cx.run_until_parked();
+        cx.simulate_keystrokes("2");
+        cx.run_until_parked();
+        assert_eq!(form.read_with(cx, |f, _| f.problem.clone()), None);
+
+        // Notifications ("Tell me when").
+        set_problem(cx);
+        form.update(cx, |f, cx| f.set_notify(QueueNotify::WhenDone, cx));
+        assert_eq!(form.read_with(cx, |f, _| f.problem.clone()), None);
+
+        // RulesForm and ProxyForm edits.
+        let (rules, proxy) = form.read_with(cx, |f, _| (f.rules.clone(), f.proxy.clone()));
+        set_problem(cx);
+        rules.update(cx, |_, cx| cx.emit(queue_rules::Changed));
+        cx.run_until_parked();
+        assert_eq!(form.read_with(cx, |f, _| f.problem.clone()), None);
+
+        set_problem(cx);
+        proxy.update(cx, |_, cx| cx.emit(queue_proxy::Changed));
+        cx.run_until_parked();
+        assert_eq!(form.read_with(cx, |f, _| f.problem.clone()), None);
     }
 }
