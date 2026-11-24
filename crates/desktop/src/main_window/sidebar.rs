@@ -238,32 +238,32 @@ impl MainWindow {
             })
     }
 
-    /// The queues, in one panel: the first few, the one on screen, and the rest behind "more
-    /// queues".
+    /// The queues, in one panel: the first few, the active one on screen, and the rest behind
+    /// "more queues".
     fn queues_section(&self, cx: &mut Context<'_, Self>) -> impl IntoElement + use<> {
         let queues = self.library.read(cx).queues.clone();
-        let folded = queues.len() > QUEUES_SHOWN && !self.all_queues;
+        let active = self.active_queue(cx);
+        let in_folded =
+            |index: usize, queue: &Queue| index < QUEUES_SHOWN || active == Some(queue.id);
+        let folded_shown = queues
+            .iter()
+            .enumerate()
+            .filter(|(index, queue)| in_folded(*index, queue))
+            .count();
         let shown: Vec<AnyElement> = queues
             .iter()
             .enumerate()
-            .filter(|(index, queue)| {
-                !folded || *index < QUEUES_SHOWN || self.view == View::Queue(queue.id)
-            })
+            .filter(|(index, queue)| self.all_queues || in_folded(*index, queue))
             .enumerate()
             .map(|(place, (index, queue))| {
                 self.queue_item(queue, index, place == 0, queues.len(), cx)
             })
             .collect();
-        let hidden = queues.len() - shown.len();
-        let toggle = (queues.len() > QUEUES_SHOWN).then(|| {
+        let toggle = fold_toggle_label(queues.len(), folded_shown, self.all_queues).map(|label| {
             Button::new("more-queues")
                 .xsmall()
                 .ghost()
-                .label(match (folded, hidden) {
-                    (false, _) => "Fewer queues".to_owned(),
-                    (true, 1) => "1 more queue".to_owned(),
-                    (true, hidden) => format!("{hidden} more queues"),
-                })
+                .label(label)
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.all_queues = !this.all_queues;
                     cx.notify();
@@ -514,6 +514,22 @@ fn drops(
             this.drop_queue_on(id, dragged, window, cx);
         }),
     )
+}
+
+/// Label for the sidebar's expand/collapse queue button, or `None` when toggling would not change
+/// which queues are shown.
+fn fold_toggle_label(total: usize, folded_shown: usize, expanded: bool) -> Option<String> {
+    let hidden = total.saturating_sub(folded_shown);
+    if hidden == 0 {
+        return None;
+    }
+    Some(if expanded {
+        "Fewer queues".to_owned()
+    } else if hidden == 1 {
+        "1 more queue".to_owned()
+    } else {
+        format!("{hidden} more queues")
+    })
 }
 
 /// What a queue is doing right now, for its tile's tint and status badge.
@@ -935,16 +951,23 @@ mod tests {
     }
 
     #[test]
-    fn queue_state_and_custom_icon_stay_independent() {
+    fn queue_tile_keeps_custom_icon_across_states() {
         let mut q = queue(false);
         q.settings.icon = Some("film".into());
-        assert_eq!(icon::queue_icon(q.settings.icon.as_deref()), Lucide::Film);
-        assert_eq!(queue_state(&q, false), None);
-        assert_eq!(queue_state(&q, true), Some(QueueState::Running));
+        let behind = Hsla::default();
+
+        let idle = queue_tile(&q, false, behind);
+        assert_eq!(idle.icon(), Lucide::Film);
+        assert_eq!(idle.state_of(), None);
+
+        let running = queue_tile(&q, true, behind);
+        assert_eq!(running.icon(), Lucide::Film);
+        assert_eq!(running.state_of(), Some(QueueState::Running));
 
         q.status.paused = true;
-        assert_eq!(queue_state(&q, true), Some(QueueState::Paused));
-        assert_eq!(icon::queue_icon(q.settings.icon.as_deref()), Lucide::Film);
+        let paused = queue_tile(&q, true, behind);
+        assert_eq!(paused.icon(), Lucide::Film);
+        assert_eq!(paused.state_of(), Some(QueueState::Paused));
 
         q.status.paused = false;
         q.settings.schedule = Some(wirecatch_protocol::app::Schedule {
@@ -955,6 +978,27 @@ mod tests {
             stop: None,
             days: vec![],
         });
-        assert_eq!(queue_state(&q, false), Some(QueueState::Scheduled));
+        let scheduled = queue_tile(&q, false, behind);
+        assert_eq!(scheduled.icon(), Lucide::Film);
+        assert_eq!(scheduled.state_of(), Some(QueueState::Scheduled));
+    }
+
+    #[test]
+    fn fold_toggle_is_hidden_when_toggling_would_change_nothing() {
+        assert_eq!(fold_toggle_label(3, 3, false), None);
+        assert_eq!(fold_toggle_label(4, 4, false), None);
+        assert_eq!(fold_toggle_label(4, 4, true), None);
+        assert_eq!(
+            fold_toggle_label(4, 3, false).as_deref(),
+            Some("1 more queue")
+        );
+        assert_eq!(
+            fold_toggle_label(4, 3, true).as_deref(),
+            Some("Fewer queues")
+        );
+        assert_eq!(
+            fold_toggle_label(5, 3, false).as_deref(),
+            Some("2 more queues")
+        );
     }
 }

@@ -699,10 +699,7 @@ impl MainWindow {
             }
             return;
         }
-        let queue = match self.view {
-            View::Queue(queue) => Some(queue),
-            View::All | View::Group(_) => None,
-        };
+        let queue = self.active_queue(cx);
         self.add_form = Some(add_dialog::open(
             self.library.clone(),
             urls,
@@ -730,6 +727,15 @@ impl MainWindow {
             None => self.leave_queue_page_then(window, cx, |main, window, cx| {
                 main.open_queue_page(queue_editor::Opening::New, window, cx);
             }),
+        }
+    }
+
+    /// The queue currently on screen (its downloads or its editor), or `None` elsewhere
+    /// (including while creating a new queue).
+    pub(super) fn active_queue(&self, cx: &App) -> Option<QueueId> {
+        match self.view {
+            View::Queue(id) if self.is_current_view(View::Queue(id), cx) => Some(id),
+            View::Queue(_) | View::All | View::Group(_) => None,
         }
     }
 
@@ -1158,6 +1164,39 @@ mod tests {
         cx.run_until_parked();
         assert!(main.read_with(cx, |main, _| {
             main.page.screen == Screen::Downloads && main.queue_page.is_none()
+        }));
+    }
+
+    #[gpui_kit::test]
+    fn new_queue_draft_uses_automatic_for_new_downloads_and_hides_selection_palette_commands(
+        cx: &mut gpui_kit::TestAppContext,
+    ) {
+        let (main, cx) = window_with_queues(cx);
+        main.update_in(cx, |main, window, cx| {
+            main.library.update(cx, |library, _| {
+                let mut row = wirecatch_test_support::downloads::download(1);
+                row.queue = QueueId(2);
+                library.downloads.replace(vec![row]);
+            });
+            main.show_now(View::Queue(QueueId(2)), window, cx);
+            main.selected.insert(DownloadId(1));
+        });
+        cx.run_until_parked();
+
+        assert_eq!(
+            main.read_with(cx, MainWindow::active_queue),
+            Some(QueueId(2))
+        );
+        assert!(main.read_with(cx, |main, cx| {
+            main.palette_headings(cx).contains(&"Selected downloads")
+        }));
+
+        main.update_in(cx, |main, window, cx| main.edit_queue(None, window, cx));
+        cx.run_until_parked();
+
+        assert_eq!(main.read_with(cx, MainWindow::active_queue), None);
+        assert!(main.read_with(cx, |main, cx| {
+            !main.palette_headings(cx).contains(&"Selected downloads")
         }));
     }
 }

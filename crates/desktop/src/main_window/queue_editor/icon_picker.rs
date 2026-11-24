@@ -98,11 +98,12 @@ impl IconPicker {
     }
 
     pub(super) fn pick(&mut self, slug: Option<String>, cx: &mut Context<'_, Self>) {
-        let current = icon::queue_icon(self.selected.as_deref());
+        let current = resolved_selection(self.selected.as_deref());
         let next = icon::queue_icon(slug.as_deref());
         self.open = false;
-        // Clicking the already-active icon (including stored "list-ordered") leaves the form clean.
-        if next != current {
+        // Clicking the already-active icon (including stored "list-ordered") leaves the form clean,
+        // while explicitly choosing default over an unrecognized slug clears it.
+        if current != Some(next) {
             self.selected = (next != icon::DEFAULT_QUEUE_ICON).then_some(slug).flatten();
             cx.emit(IconPicked);
         }
@@ -158,6 +159,14 @@ impl Render for IconPicker {
     }
 }
 
+/// The bundled icon `selected` names, or `None` when a stored slug is not in this build's catalog.
+fn resolved_selection(selected: Option<&str>) -> Option<gpui_kit::assets::IconName> {
+    match selected {
+        None => Some(icon::DEFAULT_QUEUE_ICON),
+        Some(slug) => icon::by_slug(slug),
+    }
+}
+
 fn popover_body(picker: &WeakEntity<IconPicker>, cx: &App) -> Div {
     let Some(entity) = picker.upgrade() else {
         return v_flex();
@@ -166,8 +175,8 @@ fn popover_body(picker: &WeakEntity<IconPicker>, cx: &App) -> Div {
     let query = state.search.read(cx).value();
     let trimmed = query.trim();
     let result = icon::search(trimmed, state.selected.as_deref(), MAX_SHOWN);
-    let active = icon::queue_icon(state.selected.as_deref());
-    let has_custom = active != icon::DEFAULT_QUEUE_ICON;
+    let active = resolved_selection(state.selected.as_deref());
+    let has_custom = active != Some(icon::DEFAULT_QUEUE_ICON);
     let summary = if !result.searched {
         format!("Popular icons · {} in catalog", icon::catalog_count())
     } else if result.total == 0 {
@@ -223,7 +232,7 @@ fn popover_body(picker: &WeakEntity<IconPicker>, cx: &App) -> Div {
 
 fn icon_grid(
     entries: Vec<&'static icon::IconEntry>,
-    active: gpui_kit::assets::IconName,
+    active: Option<gpui_kit::assets::IconName>,
     scroll: &ScrollHandle,
     picker: &WeakEntity<IconPicker>,
     cx: &App,
@@ -247,7 +256,7 @@ fn icon_grid(
                         .flex_wrap()
                         .gap_1()
                         .children(entries.into_iter().map(|entry| {
-                            let selected = entry.icon == active;
+                            let selected = Some(entry.icon) == active;
                             let target = picker.clone();
                             let slug = entry.slug.clone();
                             let label = entry.label.clone();
@@ -362,5 +371,27 @@ mod tests {
             Some("film")
         );
         assert!(picker.read_with(cx, |p, _| p.is_open()));
+    }
+
+    #[gpui_kit::test]
+    fn choosing_default_clears_an_unrecognized_slug(cx: &mut TestAppContext) {
+        assert_eq!(resolved_selection(Some("future-icon")), None);
+        assert_eq!(resolved_selection(None), Some(icon::DEFAULT_QUEUE_ICON));
+        assert_eq!(
+            resolved_selection(Some("list-ordered")),
+            Some(icon::DEFAULT_QUEUE_ICON)
+        );
+
+        cx.update(gpui_kit::component::init);
+        let (picker, cx) = cx.add_window_view(|window, cx| {
+            IconPicker::new(Some("future-icon".to_owned()), window, cx)
+        });
+        assert_eq!(
+            picker.read_with(cx, |p, _| p.selected()).as_deref(),
+            Some("future-icon")
+        );
+
+        picker.update(cx, |p, cx| p.pick(Some("list-ordered".to_owned()), cx));
+        assert_eq!(picker.read_with(cx, |p, _| p.selected()), None);
     }
 }

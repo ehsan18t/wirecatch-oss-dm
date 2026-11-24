@@ -115,8 +115,19 @@ impl MainWindow {
         groups
     }
 
+    #[cfg(test)]
+    pub(super) fn palette_headings(&self, cx: &App) -> Vec<&'static str> {
+        self.palette_groups(cx)
+            .into_iter()
+            .map(|(heading, _)| heading)
+            .collect()
+    }
+
     /// What the selected downloads can do.
     fn selected_commands(&self, cx: &App) -> Vec<Entry> {
+        if self.page.screen != Screen::Downloads {
+            return Vec::new();
+        }
         let rows = self.selected_rows(cx);
         if rows.is_empty() {
             return Vec::new();

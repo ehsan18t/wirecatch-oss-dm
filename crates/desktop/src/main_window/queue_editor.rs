@@ -807,4 +807,59 @@ mod tests {
         cx.run_until_parked();
         assert!(!form.read_with(cx, QueueForm::has_changes));
     }
+
+    #[gpui_kit::test]
+    fn enter_in_name_submits_only_when_creating_a_new_queue(cx: &mut TestAppContext) {
+        cx.update(gpui_kit::component::init);
+        let library = cx.update(|cx| {
+            cx.new(|_| {
+                let mut library = Library::empty();
+                library.queues.push(Queue {
+                    id: QueueId(2),
+                    is_default: false,
+                    settings: QueueSettings::new("Videos"),
+                    status: wirecatch_protocol::app::QueueStatus::default(),
+                });
+                library
+            })
+        });
+
+        let (new_form, cx) = cx.add_window_view(|window, cx| {
+            QueueForm::new(
+                library.clone(),
+                Opening::New,
+                WeakEntity::new_invalid(),
+                window,
+                cx,
+            )
+        });
+        cx.update(|window, cx| QueueForm::focus_name(&new_form, window, cx));
+        cx.run_until_parked();
+        assert!(cx.update(|window, cx| new_form.read(cx).name_focused(window, cx)));
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        assert_eq!(
+            new_form.read_with(cx, |f, _| f.problem.clone()).as_deref(),
+            Some("Give the queue a name.")
+        );
+
+        let (edit_form, cx) = cx.add_window_view(|window, cx| {
+            QueueForm::new(
+                library,
+                Opening::Queue(QueueId(2)),
+                WeakEntity::new_invalid(),
+                window,
+                cx,
+            )
+        });
+        edit_form.update_in(cx, |f, window, cx| {
+            f.name.update(cx, |name, cx| name.set_value("", window, cx));
+        });
+        cx.update(|window, cx| QueueForm::focus_name(&edit_form, window, cx));
+        cx.run_until_parked();
+        assert!(cx.update(|window, cx| edit_form.read(cx).name_focused(window, cx)));
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        assert_eq!(edit_form.read_with(cx, |f, _| f.problem.clone()), None);
+    }
 }

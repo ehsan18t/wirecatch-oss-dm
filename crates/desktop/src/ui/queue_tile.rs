@@ -39,7 +39,7 @@ pub fn tinted(sidebar: Hsla, tone: Hsla) -> Hsla {
 
 #[derive(IntoElement)]
 pub struct QueueTile {
-    icon: Icon,
+    icon: Lucide,
     state: Option<QueueState>,
     /// Its rules: on, off, or none.
     rules: Option<bool>,
@@ -51,15 +51,25 @@ pub struct QueueTile {
 }
 
 impl QueueTile {
-    pub fn new(icon: impl Into<Icon>, behind: Hsla) -> Self {
+    pub fn new(icon: Lucide, behind: Hsla) -> Self {
         Self {
-            icon: icon.into(),
+            icon,
             state: None,
             rules: None,
             behind,
             hover: None,
             ring: None,
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn icon(&self) -> Lucide {
+        self.icon
+    }
+
+    #[cfg(test)]
+    pub(crate) fn state_of(&self) -> Option<QueueState> {
+        self.state
     }
 
     /// A ring around the tile, `done` of the way round clockwise from the top.
@@ -167,7 +177,7 @@ impl RenderOnce for QueueTile {
             .rounded(theme.radius)
             .bg(tone.map_or(theme.secondary, |tone| tinted(theme.sidebar, tone)))
             .text_color(tone.unwrap_or(theme.muted_foreground))
-            .child(self.icon.with_size(tokens::ICON))
+            .child(Icon::new(self.icon).with_size(tokens::ICON))
             .children(ring)
             .children(status_badge)
             .children(rules_badge)
