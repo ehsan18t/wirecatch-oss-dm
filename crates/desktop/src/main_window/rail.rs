@@ -5,7 +5,7 @@ use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, Context, ElementId, FontWeight, InteractiveElement as _, IntoElement,
+    AnyElement, App, Context, ElementId, FontWeight, Hsla, InteractiveElement as _, IntoElement,
     ParentElement as _, Pixels, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
     div, px,
 };
@@ -120,11 +120,8 @@ impl MainWindow {
         let (id, label, icon) = sidebar::foot_page(screen);
         let current = self.page.screen == screen;
         let dot = screen == Screen::About && sidebar::update_waiting(cx);
-        rail_button(id, label, cx)
+        rail_button(id, label, current, cx)
             .relative()
-            .when(current, |item| {
-                item.bg(theme.sidebar_accent).text_color(theme.primary)
-            })
             .child(Icon::new(icon).with_size(tokens::ICON))
             .when(dot, |item| {
                 item.child(
@@ -209,18 +206,17 @@ impl MainWindow {
             .map(|queue| {
                 let theme = cx.theme();
                 let current = self.is_current_view(queue.view, cx);
-                let behind = if current {
-                    theme.sidebar_accent
-                } else {
-                    theme.sidebar
-                };
-                let hover =
-                    (!current).then(|| (SharedString::from(queue.id.clone()), theme.list_hover));
+                let (behind, hover) = rail_cutout(
+                    theme.sidebar,
+                    theme.sidebar_accent,
+                    theme.list_hover,
+                    current,
+                );
                 let tile = sidebar::queue_tile(&queue.queue, queue.running.is_some(), behind)
                     .rules(queue.rules)
                     .when_some(queue.running, QueueTile::ring)
-                    .when_some(hover, |tile, (group, color)| {
-                        tile.hover_behind(group, color)
+                    .when_some(hover, |tile, color| {
+                        tile.hover_behind(SharedString::from(queue.id.clone()), color)
                     })
                     .into_any_element();
                 self.rail_item(queue.id, tile, queue.label, queue.view, cx)
@@ -237,14 +233,10 @@ impl MainWindow {
         view: View,
         cx: &mut Context<'_, Self>,
     ) -> gpui_kit::Stateful<gpui_kit::Div> {
-        let theme = cx.theme();
         let current = self.is_current_view(view, cx);
-        rail_button(id.clone(), label, cx)
+        rail_button(id.clone(), label, current, cx)
             .relative()
             .group(SharedString::from(id))
-            .when(current, |item| {
-                item.bg(theme.sidebar_accent).text_color(theme.primary)
-            })
             .child(content)
             .on_click(cx.listener(move |this, _, window, cx| this.show(view, window, cx)))
     }
@@ -259,12 +251,12 @@ impl MainWindow {
             (theme.muted_foreground, theme.sidebar)
         };
         let current = self.is_current_view(view, cx);
-        let behind = if current {
-            theme.sidebar_accent
-        } else {
-            theme.sidebar
-        };
-        let hover = theme.list_hover;
+        let (behind, hover) = rail_cutout(
+            theme.sidebar,
+            theme.sidebar_accent,
+            theme.list_hover,
+            current,
+        );
         div()
             .absolute()
             .top(px(-BADGE_OUT))
@@ -279,7 +271,7 @@ impl MainWindow {
             .bg(bg)
             .border_2()
             .border_color(behind)
-            .when(!current, |badge| {
+            .when_some(hover, |badge, hover| {
                 badge.group_hover(SharedString::from(group.to_owned()), move |style| {
                     style.border_color(hover)
                 })
@@ -304,10 +296,20 @@ struct RailQueue {
     running: Option<f32>,
 }
 
+/// The opaque colour behind a rail button's badges: active or idle, and on hover.
+fn rail_cutout(sidebar: Hsla, accent: Hsla, hover: Hsla, current: bool) -> (Hsla, Option<Hsla>) {
+    if current {
+        (sidebar.blend(accent), None)
+    } else {
+        (sidebar, Some(sidebar.blend(hover)))
+    }
+}
+
 /// A square rail button with its name in a tooltip beside it.
 fn rail_button(
     id: impl Into<SharedString>,
     label: impl Into<SharedString>,
+    current: bool,
     cx: &Context<'_, MainWindow>,
 ) -> gpui_kit::Stateful<gpui_kit::Div> {
     let theme = cx.theme();
@@ -320,8 +322,16 @@ fn rail_button(
         .justify_center()
         .rounded(theme.radius)
         .cursor_pointer()
-        .text_color(theme.muted_foreground)
-        .hover(|item| item.bg(theme.list_hover).text_color(theme.foreground))
+        // GPUI keeps a hover's look until the mouse moves if the style first appears on leaving.
+        .when(current, |item| {
+            item.bg(theme.sidebar_accent)
+                .text_color(theme.primary)
+                .hover(|item| item.bg(theme.sidebar_accent))
+        })
+        .when(!current, |item| {
+            item.text_color(theme.muted_foreground)
+                .hover(|item| item.bg(theme.list_hover).text_color(theme.foreground))
+        })
         .tooltip(tooltip::plain(label))
 }
 
@@ -400,5 +410,22 @@ mod tests {
         assert_eq!(badge_text(7), "7");
         assert_eq!(badge_text(99), "99");
         assert_eq!(badge_text(100), "99+");
+    }
+
+    #[test]
+    fn rail_cutout_blends_translucent_fills_onto_the_sidebar() {
+        let sidebar = gpui_kit::hsla(0.6, 0.1, 0.12, 1.0);
+        let accent = gpui_kit::hsla(0.55, 0.8, 0.5, 0.2);
+        let hover = gpui_kit::hsla(0.0, 0.0, 1.0, 0.08);
+
+        let (active_behind, active_hover) = rail_cutout(sidebar, accent, hover, true);
+        assert_eq!(active_behind, sidebar.blend(accent));
+        assert!((active_behind.a - 1.0).abs() < f32::EPSILON);
+        assert_eq!(active_hover, None);
+
+        let (idle_behind, idle_hover) = rail_cutout(sidebar, accent, hover, false);
+        assert_eq!(idle_behind, sidebar);
+        assert_eq!(idle_hover, Some(sidebar.blend(hover)));
+        assert!((idle_hover.unwrap().a - 1.0).abs() < f32::EPSILON);
     }
 }
