@@ -217,7 +217,7 @@ impl MainWindow {
                 };
                 let hover =
                     (!current).then(|| (SharedString::from(queue.id.clone()), theme.list_hover));
-                let tile = sidebar::queue_tile(&queue.queue, queue.running.is_some(), behind, cx)
+                let tile = sidebar::queue_tile(&queue.queue, queue.running.is_some(), behind)
                     .rules(queue.rules)
                     .when_some(queue.running, QueueTile::ring)
                     .when_some(hover, |tile, (group, color)| {

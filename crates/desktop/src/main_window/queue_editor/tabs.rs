@@ -66,6 +66,7 @@ impl QueueForm {
             .child(
                 h_flex()
                     .gap_3()
+                    .child(self.icon.clone())
                     .child(
                         div()
                             .flex_1()

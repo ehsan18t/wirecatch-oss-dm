@@ -1,8 +1,9 @@
-//! A queue's own page in the main window (D255): its settings under tabs, General (name,
-//! description, its own folder, D94), Rules, Limits, Schedule, Network and Notifications. A
-//! limit follows the app's until it is switched on (D72.1). Its rules and its proxy have editors
+//! A queue's own page in the main window (D255): its icon and name, then its settings under tabs,
+//! General (description, its own folder, D94), Rules, Limits, Schedule, Network and Notifications.
+//! A limit follows the app's until it is switched on (D72.1). Its rules and its proxy have editors
 //! of their own.
 
+mod icon_picker;
 mod tabs;
 
 use chrono::{NaiveTime, Timelike as _};
@@ -22,6 +23,7 @@ use super::queue_rules::RulesForm;
 use crate::backend::{Backend, said};
 use crate::library::Library;
 use crate::{files, text};
+use icon_picker::IconPicker;
 
 /// What a speed limit switched on starts at when the app has none.
 const FIRST_SPEED_LIMIT: u64 = 2 * Unit::Mb.bytes();
@@ -133,6 +135,7 @@ pub struct QueueForm {
     /// The queue as it was when the page opened; `None` for a new one.
     original: Option<Queue>,
     section: Section,
+    icon: Entity<IconPicker>,
     name: Entity<InputState>,
     description: Entity<InputState>,
     folder: Option<String>,
@@ -162,8 +165,8 @@ pub struct QueueForm {
 pub(super) enum Opening {
     /// A queue that exists.
     Queue(QueueId),
-    /// A queue not made yet, starting from these settings.
-    New(Box<QueueSettings>),
+    /// A queue not made yet.
+    New,
 }
 
 impl Opening {
@@ -177,7 +180,7 @@ impl Opening {
                     .map_or_else(|| QueueSettings::new(""), |queue| queue.settings.clone());
                 (original, opened)
             }
-            Self::New(settings) => (None, *settings),
+            Self::New => (None, QueueSettings::new("")),
         }
     }
 }
@@ -238,12 +241,14 @@ impl QueueForm {
         );
         let edited =
             forget_problem_on_edit([&name, &description, &concurrent, &limit, &connections], cx);
+        let icon = cx.new(|cx| IconPicker::new(opened.icon.clone(), window, cx));
         let (rules, proxy) = editors(&library, queue, &name, &opened, window, cx);
         Self {
             library,
             main,
             rules,
             proxy,
+            icon,
             name,
             description,
             folder: opened.folder.own_ref().map(|folder| folder.0.clone()),
@@ -272,8 +277,17 @@ impl QueueForm {
         name.update(cx, |name, cx| name.focus(window, cx));
     }
 
-    /// Whether leaving would lose something: an edit to the queue, or anything typed for a new
-    /// one, the New queue dialog's name and rules included.
+    /// Closes the icon picker popover if it is open; returns whether it was open.
+    pub(super) fn close_icon_picker(form: &Entity<Self>, cx: &mut App) -> bool {
+        let icon = form.read(cx).icon.clone();
+        if !icon.read(cx).is_open() {
+            return false;
+        }
+        icon.update(cx, IconPicker::close);
+        true
+    }
+
+    /// Whether leaving would lose something: an edit to the queue, or anything set for a new one.
     pub(super) fn has_changes(&self, cx: &App) -> bool {
         let before = self
             .original
@@ -306,6 +320,7 @@ impl QueueForm {
         settings.folder = own_if(self.folder.is_some(), || {
             PortablePath(self.folder.clone().unwrap_or_default())
         });
+        settings.icon = self.icon.read(cx).selected();
         let limits = |problem: String| (Section::Limits, problem);
         settings.max_concurrent = if self.is_own(Own::Concurrent) {
             Setting::Own(whole(&self.concurrent, MAX_CONCURRENT_DOWNLOADS, cx).ok_or_else(

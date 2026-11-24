@@ -2557,6 +2557,7 @@ mod tests {
                 }),
                 notify: QueueNotify::WhenDone,
                 folder: Setting::Own(PortablePath("{Downloads}/Night".into())),
+                icon: Some("moon".into()),
             },
             status: QueueStatus {
                 paused: true,

@@ -26,7 +26,7 @@ use crate::library::Library;
 use crate::rows::Tally;
 use crate::text;
 use crate::ui::speed_graph::{SpeedHistory, speed_graph};
-use crate::ui::{QueueTile, Role, Typed as _, tokens, tooltip};
+use crate::ui::{QueueState, QueueTile, Role, Typed as _, icon, tokens, tooltip};
 
 pub(super) const WIDTH: f32 = 256.;
 /// Queues shown before the rest fold away under "more queues".
@@ -386,7 +386,7 @@ impl MainWindow {
             panel
         };
         let group = SharedString::new(format!("queue-{}", id.0));
-        let tile = queue_tile(queue, facts.running > 0, behind, cx)
+        let tile = queue_tile(queue, facts.running > 0, behind)
             .rules(rules)
             .when(!current, |tile| tile.hover_behind(group.clone(), hovered));
         h_flex()
@@ -516,18 +516,19 @@ fn drops(
     )
 }
 
-/// A queue's tile: paused, downloading, waiting for its hours, or holding.
-pub(super) fn queue_tile(queue: &Queue, running: bool, behind: Hsla, cx: &App) -> QueueTile {
-    let theme = cx.theme();
-    if queue.status.paused {
-        QueueTile::new(IconName::Pause, behind)
+/// A queue's tile: its chosen icon, with a status badge when paused, downloading or waiting for its
+/// hours.
+pub(super) fn queue_tile(queue: &Queue, running: bool, behind: Hsla) -> QueueTile {
+    let state = if queue.status.paused {
+        Some(QueueState::Paused)
     } else if running {
-        QueueTile::new(IconName::Play, behind).tone(theme.primary)
+        Some(QueueState::Running)
     } else if outside_schedule(queue).is_some() {
-        QueueTile::new(Icon::new(Lucide::Moon), behind).tone(theme.warning)
+        Some(QueueState::Scheduled)
     } else {
-        QueueTile::new(Icon::new(Lucide::ListOrdered), behind)
-    }
+        None
+    };
+    QueueTile::new(icon::queue_icon(queue.settings.icon.as_deref()), behind).state(state)
 }
 
 /// A queue's text: its name with a failure dot and its speed or count, its line with the speed

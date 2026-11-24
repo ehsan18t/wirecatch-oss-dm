@@ -1,0 +1,28 @@
+{
+  "name": "Videos",
+  "description": "Captured clips",
+  "max_concurrent": {
+    "source": "global"
+  },
+  "speed_limit": {
+    "source": "global"
+  },
+  "connections": {
+    "source": "global"
+  },
+  "proxy": {
+    "source": "global"
+  },
+  "exceptions": {
+    "source": "global"
+  },
+  "add_downloads": {
+    "kind": "manual"
+  },
+  "schedule": null,
+  "notify": "each_download",
+  "folder": {
+    "source": "global"
+  },
+  "icon": "film"
+}

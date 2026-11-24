@@ -1914,3 +1914,11 @@ Decided with the maintainer on 2026-11-22.
 4. The release workflow drafts a release only with all eight installers and a tag naming the product version, then checks every uploaded file's size and digest against the built file. The maintainer publishes it.
 5. The installed build's mode applies until its replacement starts. `github` to `signed` keeps the upgrade path; back to `github` stops publishing the manifest, so signed builds need a manual upgrade.
 6. The release list's address is fixed in every build. GitHub redirects a renamed or transferred repository's old address only until someone claims the old name, who would then supply updates to `github` builds. So the repository is never renamed or transferred while `github` builds are installed: a build pointing at the new address, or a `signed` build, ships first.
+
+### D289. New queue opens the full queue page, and each queue can pick a bundled icon
+
+Decided with the maintainer on 2026-11-24. It amends D255.2.
+
+1. Creating a queue from the sidebar's `+` button or the command palette opens the full queue page directly (`Opening::New`), with focus in the name field, instead of an intermediate New queue dialog.
+2. Each queue carries an optional `icon` slug (`QueueSettings::icon`, defaulting to `None`, validated as lowercase ASCII kebab-case within `MAX_QUEUE_ICON_CHARS`). The desktop app embeds gpui-kit's complete Lucide catalogue (`AllAssets`), offers a searchable icon picker button beside the queue name in the queue page header, and falls back to `ListOrdered` when unset or unrecognized.
+3. A queue's tile in the sidebar and rail always shows the queue's own icon, while its running, paused or outside-schedule state shows as a tile tint and a top-right status badge alongside the bottom-right rules badge. The queue header shows the queue's icon beside its name.

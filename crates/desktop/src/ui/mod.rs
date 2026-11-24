@@ -31,7 +31,7 @@ pub use field::Field;
 pub use file_tile::FileTile;
 pub use folder_row::FolderRow;
 pub use path_text::PathText;
-pub use queue_tile::QueueTile;
+pub use queue_tile::{QueueState, QueueTile};
 pub use sentence::Sentence;
 pub use switch_row::SwitchRow;
 pub use tokens::{Role, Typed};

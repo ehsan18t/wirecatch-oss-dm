@@ -47,7 +47,7 @@ const PROTOCOLS: [(LinkProtocol, &str); 3] = [
 
 /// What a rule looks at. A queue has at most one rule of each kind.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(super) enum Kind {
+enum Kind {
     Sites,
     FileNames,
     FileTypes,
@@ -56,7 +56,7 @@ pub(super) enum Kind {
 }
 
 impl Kind {
-    pub(super) const ALL: [Self; 5] = [
+    const ALL: [Self; 5] = [
         Self::Sites,
         Self::FileNames,
         Self::FileTypes,
@@ -64,7 +64,7 @@ impl Kind {
         Self::Protocols,
     ];
 
-    pub(super) const fn label(self) -> &'static str {
+    const fn label(self) -> &'static str {
         match self {
             Self::Sites => "Site is",
             Self::FileNames => "File name matches",
@@ -91,22 +91,6 @@ const FILE_TYPES: (Split, &str) = (
     Split::Words(text::typed_extensions),
     "Add a type, such as mp4",
 );
-
-/// The field a kind of rule types its values in; `None` for the kinds picked from a list.
-pub(super) fn values_field(
-    kind: Kind,
-    values: &[String],
-    window: &mut Window,
-    cx: &mut App,
-) -> Option<Entity<TagField>> {
-    let typing = match kind {
-        Kind::Sites => SITES,
-        Kind::FileNames => FILE_NAMES,
-        Kind::FileTypes => FILE_TYPES,
-        Kind::Categories | Kind::Protocols => return None,
-    };
-    Some(tags(typing, values, window, cx))
-}
 
 fn tags(
     (split, placeholder): (Split, &'static str),

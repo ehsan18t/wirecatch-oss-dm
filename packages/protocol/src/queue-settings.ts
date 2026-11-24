@@ -25,6 +25,7 @@ export function newQueueSettings(name: string): QueueSettings {
     schedule: null,
     notify: 'each_download',
     folder: GLOBAL,
+    icon: null,
   };
 }
 

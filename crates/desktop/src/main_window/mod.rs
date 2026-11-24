@@ -22,7 +22,6 @@ mod proxy_dialog;
 mod queue_delete;
 mod queue_editor;
 mod queue_header;
-mod queue_new;
 mod queue_proxy;
 mod queue_rules;
 mod rail;
@@ -679,6 +678,13 @@ impl MainWindow {
             self.clear_selection();
             cx.notify();
         } else if self.page.screen == Screen::QueuePage {
+            if self
+                .queue_page
+                .as_ref()
+                .is_some_and(|form| queue_editor::QueueForm::close_icon_picker(form, cx))
+            {
+                return;
+            }
             self.close_queue_page(window, cx);
         } else {
             self.open_screen(Screen::Downloads, window, cx);
@@ -706,7 +712,7 @@ impl MainWindow {
         ));
     }
 
-    /// Opens the page of `queue`, shown in the navigation, or New queue when `None`.
+    /// Opens the page of `queue`, shown in the navigation, or a new queue page when `None`.
     fn edit_queue(
         &mut self,
         queue: Option<QueueId>,
@@ -722,10 +728,7 @@ impl MainWindow {
             }
             Some(_) => {}
             None => self.leave_queue_page_then(window, cx, |main, window, cx| {
-                if main.page.screen == Screen::QueuePage {
-                    main.show_now(main.view, window, cx);
-                }
-                queue_new::open(cx.entity().downgrade(), window, cx);
+                main.open_queue_page(queue_editor::Opening::New, window, cx);
             }),
         }
     }
@@ -737,7 +740,7 @@ impl MainWindow {
         window: &mut Window,
         cx: &mut Context<'_, Self>,
     ) {
-        let new = matches!(opening, queue_editor::Opening::New(_));
+        let new = matches!(opening, queue_editor::Opening::New);
         let (library, main) = (self.library.clone(), cx.entity().downgrade());
         let form = cx.new(|cx| queue_editor::QueueForm::new(library, opening, main, window, cx));
         if new {

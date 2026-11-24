@@ -19,7 +19,7 @@ use wirecatch_shell::api;
 use super::{Group, MainWindow, View, order, sidebar};
 use crate::backend::act;
 use crate::text;
-use crate::ui::{Role, Typed as _};
+use crate::ui::{Role, Typed as _, icon, tokens};
 
 impl MainWindow {
     /// The header of a queue's own view; `None` in other views.
@@ -36,6 +36,7 @@ impl MainWindow {
             .pb_1()
             .gap_0p5()
             .child(heading(
+                icon::queue_icon(queue.settings.icon.as_deref()),
                 queue.settings.name.clone(),
                 format!("{summary} · {facts}"),
                 queue_actions(&queue, cx),
@@ -106,6 +107,7 @@ impl MainWindow {
 
 /// The name yields space to the actions at the window's minimum width (D268).
 fn heading(
+    queue_icon: Lucide,
     name: impl IntoElement,
     summary: impl IntoElement,
     actions: impl IntoElement,
@@ -114,12 +116,22 @@ fn heading(
     h_flex()
         .gap_3()
         .child(
-            div()
+            h_flex()
                 .min_w_0()
                 .max_w(relative(0.4))
-                .truncate()
-                .text_role(Role::PageTitle, cx)
-                .child(name),
+                .gap_2()
+                .child(
+                    Icon::new(queue_icon)
+                        .with_size(tokens::ICON)
+                        .flex_shrink_0(),
+                )
+                .child(
+                    div()
+                        .min_w_0()
+                        .truncate()
+                        .text_role(Role::PageTitle, cx)
+                        .child(name),
+                ),
         )
         .child(
             div()
@@ -278,6 +290,7 @@ mod tests {
             fn render(&mut self, _: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
                 div().w(px(600.)).child(
                     heading(
+                        icon::DEFAULT_QUEUE_ICON,
                         div().w(px(250.)).h(px(20.)),
                         "",
                         div()

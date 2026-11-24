@@ -1,6 +1,8 @@
-//! A rounded square with the picture of what a queue is doing, with a badge in its corner when
-//! the queue adds downloads by its rules, and in the rail a ring of how far a running queue got.
+//! A rounded square with a queue's icon, a top-right badge for its running, paused or scheduled
+//! state, a bottom-right badge when it adds downloads by its rules, and in the rail a ring of how
+//! far a running queue got.
 
+use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
@@ -12,6 +14,7 @@ use super::tokens;
 
 const SIZE: f32 = 30.;
 const BADGE: f32 = 16.;
+const BADGE_OUT: f32 = -5.;
 /// How strongly a tile's tone tints it.
 const TINT: f32 = 0.15;
 /// The ring's gap from the tile, and its stroke.
@@ -19,6 +22,14 @@ const RING_GAP: f32 = 1.;
 const RING: f32 = 2.;
 /// Points along each rounded corner of the ring.
 const CORNER_STEPS: u8 = 8;
+
+/// What a queue is doing now, shown as a tile tint and corner badge while keeping its own icon.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum QueueState {
+    Running,
+    Paused,
+    Scheduled,
+}
 
 /// A toned tile's fill: `tone` mixed once onto `sidebar`, opaque, so a highlighted or hovered
 /// item behind it cannot darken it further.
@@ -29,10 +40,10 @@ pub fn tinted(sidebar: Hsla, tone: Hsla) -> Hsla {
 #[derive(IntoElement)]
 pub struct QueueTile {
     icon: Icon,
-    tone: Option<Hsla>,
+    state: Option<QueueState>,
     /// Its rules: on, off, or none.
     rules: Option<bool>,
-    /// The row's colour, cut around the badge; a hover colour for the row's group.
+    /// The row's colour, cut around the badges; a hover colour for the row's group.
     behind: Hsla,
     hover: Option<(SharedString, Hsla)>,
     /// How much of a running queue is done, from 0 to 1, drawn as a ring around the tile.
@@ -43,7 +54,7 @@ impl QueueTile {
     pub fn new(icon: impl Into<Icon>, behind: Hsla) -> Self {
         Self {
             icon: icon.into(),
-            tone: None,
+            state: None,
             rules: None,
             behind,
             hover: None,
@@ -57,9 +68,9 @@ impl QueueTile {
         self
     }
 
-    /// Tints the tile, as the colour of the queue's state.
-    pub fn tone(mut self, tone: Hsla) -> Self {
-        self.tone = Some(tone);
+    /// Marks the queue's current state with a tint and top-right status badge.
+    pub fn state(mut self, state: Option<QueueState>) -> Self {
+        self.state = state;
         self
     }
 
@@ -68,29 +79,21 @@ impl QueueTile {
         self
     }
 
-    /// The badge's cut follows the row's hover colour, for a row in `group`.
+    /// The badges' cut follows the row's hover colour, for a row in `group`.
     pub fn hover_behind(mut self, group: impl Into<SharedString>, color: Hsla) -> Self {
         self.hover = Some((group.into(), color));
         self
     }
 }
 
-/// The corner badge of a queue that adds downloads by its rules, `on` or off, placed by the caller; its border cuts it out of `behind`, or of the hover colour of a row in the group.
-fn rules_badge(on: bool, behind: Hsla, hover: Option<(SharedString, Hsla)>, cx: &App) -> Div {
-    let theme = cx.theme();
-    let (icon, bg, fg) = if on {
-        (
-            gpui_kit::assets::IconName::Zap,
-            theme.primary,
-            theme.primary_foreground,
-        )
-    } else {
-        (
-            gpui_kit::assets::IconName::ZapOff,
-            theme.secondary_active,
-            theme.muted_foreground,
-        )
-    };
+/// A circular corner badge cut out of `behind`, or of the hover colour of a row in the group.
+fn corner_badge(
+    icon: Lucide,
+    bg: Hsla,
+    fg: Hsla,
+    behind: Hsla,
+    hover: Option<(SharedString, Hsla)>,
+) -> Div {
     div()
         .absolute()
         .size(px(BADGE))
@@ -111,12 +114,39 @@ fn rules_badge(on: bool, behind: Hsla, hover: Option<(SharedString, Hsla)>, cx: 
 impl RenderOnce for QueueTile {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
-        let badge = self.rules.map(|on| {
-            rules_badge(on, self.behind, self.hover.clone(), cx)
-                .right(px(-5.))
-                .bottom(px(-5.))
+        let tone = match self.state {
+            Some(QueueState::Running) => Some(theme.primary),
+            Some(QueueState::Scheduled) => Some(theme.warning),
+            Some(QueueState::Paused) | None => None,
+        };
+        let status_badge = self.state.map(|state| {
+            let (icon, bg, fg) = match state {
+                QueueState::Running => (Lucide::Play, theme.primary, theme.primary_foreground),
+                QueueState::Paused => (
+                    Lucide::Pause,
+                    theme.secondary_active,
+                    theme.muted_foreground,
+                ),
+                QueueState::Scheduled => (Lucide::Moon, theme.warning, theme.warning_foreground),
+            };
+            corner_badge(icon, bg, fg, self.behind, self.hover.clone())
+                .right(px(BADGE_OUT))
+                .top(px(BADGE_OUT))
         });
-        let tone = self.tone;
+        let rules_badge = self.rules.map(|on| {
+            let (icon, bg, fg) = if on {
+                (Lucide::Zap, theme.primary, theme.primary_foreground)
+            } else {
+                (
+                    Lucide::ZapOff,
+                    theme.secondary_active,
+                    theme.muted_foreground,
+                )
+            };
+            corner_badge(icon, bg, fg, self.behind, self.hover.clone())
+                .right(px(BADGE_OUT))
+                .bottom(px(BADGE_OUT))
+        });
         let ring = self
             .ring
             .map(|done| progress_ring(done, theme.radius, theme.primary, theme.secondary_active));
@@ -132,7 +162,8 @@ impl RenderOnce for QueueTile {
             .text_color(tone.unwrap_or(theme.muted_foreground))
             .child(self.icon.with_size(tokens::ICON))
             .children(ring)
-            .children(badge)
+            .children(status_badge)
+            .children(rules_badge)
     }
 }
 

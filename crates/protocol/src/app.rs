@@ -258,6 +258,9 @@ pub struct QueueSettings {
     /// Where its downloads are saved (D94); following the app picks a folder by file type.
     #[serde(default)]
     pub folder: Setting<PortablePath>,
+    /// Bundled Lucide icon name (kebab-case, e.g. `"film"`); `None` draws the default queue icon.
+    #[serde(default)]
+    pub icon: Option<String>,
 }
 
 impl QueueSettings {
@@ -275,6 +278,7 @@ impl QueueSettings {
             schedule: None,
             notify: QueueNotify::EachDownload,
             folder: Setting::Global,
+            icon: None,
         }
     }
 }
@@ -1542,6 +1546,8 @@ crate::exported::exported_consts! {
     pub const DEFAULT_MAX_CONCURRENT_DOWNLOADS: u32 = 5;
     /// Most characters in [`QueueSettings::description`].
     pub const MAX_QUEUE_DESCRIPTION_CHARS: usize = 500;
+    /// Most characters in [`QueueSettings::icon`].
+    pub const MAX_QUEUE_ICON_CHARS: usize = 64;
     /// [`ProcessingProgress::per_mille`] of a finished step: progress is counted in tenths of
     /// a percent.
     pub const PER_MILLE_DONE: u16 = 1000;
