@@ -52,4 +52,8 @@ export type QueueSettings = {
    * Where its downloads are saved (D94); following the app picks a folder by file type.
    */
   folder: Setting<PortablePath>;
+  /**
+   * Bundled Lucide icon name (kebab-case, e.g. `"film"`); `None` draws the default queue icon.
+   */
+  icon: string | null;
 };

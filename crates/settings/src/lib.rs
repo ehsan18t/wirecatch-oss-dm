@@ -13,7 +13,7 @@ use wirecatch_protocol::app::{
     DEFAULT_MAX_CONCURRENT_DOWNLOADS, FinishNoticeTime, ListLines, MAX_CONCURRENT_DOWNLOADS,
     MAX_CONNECTIONS_PER_DOWNLOAD, MAX_QUEUE_DESCRIPTION_CHARS, MediaDefaults, NotifyOnFinish,
     NotifyOnStart, OutputDefaults, PortablePath, Queue, QueueSettings, QueueStatus, Setting,
-    StartNoticeTime, Theme, VideoQuality, WhenFileExists,
+    StartNoticeTime, Theme, VideoQuality, WhenFileExists, is_valid_queue_icon,
 };
 use wirecatch_protocol::extension::{
     ExtensionSettings, ExtensionSettingsPatch, MAX_IGNORED_SITES, MAX_SITE_CHARS, MAX_VIDEO_SITES,
@@ -468,6 +468,7 @@ pub fn validate_queue(mut queue: QueueSettings, folders: &KnownFolders) -> Resul
     if let Setting::Own(folder) = &queue.folder {
         check_folder(folder, folders)?;
     }
+    queue.icon = clean_queue_icon(queue.icon)?;
     queue.exceptions = crate::proxy::validate_queue_exceptions(queue.exceptions)?;
     if let AddDownloads::Auto(rules) = queue.add_downloads {
         queue.add_downloads =
@@ -483,6 +484,24 @@ pub fn validate_queue(mut queue: QueueSettings, folders: &KnownFolders) -> Resul
         }
     }
     Ok(queue)
+}
+
+/// Checks an optional queue icon slug: trimmed, empty means none, kebab-case ASCII within the
+/// length limit.
+fn clean_queue_icon(icon: Option<String>) -> Result<Option<String>> {
+    let Some(raw) = icon else {
+        return Ok(None);
+    };
+    let slug = raw.trim();
+    if slug.is_empty() {
+        return Ok(None);
+    }
+    if !is_valid_queue_icon(slug) {
+        return Err(SettingsError::Invalid(
+            "That queue icon name is not valid. Pick one from the icon list.".into(),
+        ));
+    }
+    Ok(Some(slug.to_owned()))
 }
 
 /// A category from a `Content-Type`, for a file whose name says nothing (no
@@ -738,7 +757,7 @@ fn clean_list(
 mod tests {
     use super::*;
     use wirecatch_protocol::QueueId;
-    use wirecatch_protocol::app::{OutputFormat, Schedule, TimeOfDay};
+    use wirecatch_protocol::app::{MAX_QUEUE_ICON_CHARS, OutputFormat, Schedule, TimeOfDay};
 
     fn folders() -> KnownFolders {
         KnownFolders::under_home(std::env::temp_dir().join("wc-home"))
@@ -1170,5 +1189,30 @@ mod tests {
             "a".repeat(MAX_FOLDER_CHARS)
         )));
         assert!(validate_queue(q, &folders()).is_err());
+    }
+
+    #[test]
+    fn a_queue_icon_accepts_kebab_slugs_and_refuses_hostile_names() {
+        let f = folders();
+        let mut q = default_queue().settings;
+        q.icon = Some("  file-video  ".into());
+        assert_eq!(
+            validate_queue(q.clone(), &f).unwrap().icon.as_deref(),
+            Some("file-video")
+        );
+        q.icon = Some("   ".into());
+        assert_eq!(validate_queue(q.clone(), &f).unwrap().icon, None);
+        for bad in [
+            "../secret",
+            "Film",
+            "bad--slug",
+            "-leading",
+            "trailing-",
+            "has space",
+            &"a".repeat(MAX_QUEUE_ICON_CHARS + 1),
+        ] {
+            q.icon = Some(bad.into());
+            assert!(validate_queue(q.clone(), &f).is_err(), "{bad} should fail");
+        }
     }
 }

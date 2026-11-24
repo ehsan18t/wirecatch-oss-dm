@@ -100,7 +100,7 @@ impl MainWindow {
                     .items_center()
                     .children(view_items)
                     .child(div().h(px(12.)))
-                    .children(queue_items),
+                    .child(v_flex().gap_2().items_center().children(queue_items)),
             )
             .child(
                 v_flex()
@@ -208,8 +208,7 @@ impl MainWindow {
             .into_iter()
             .map(|queue| {
                 let theme = cx.theme();
-                let current = matches!(self.page.screen, Screen::Downloads | Screen::QueuePage)
-                    && self.view == queue.view;
+                let current = self.is_current_view(queue.view, cx);
                 let behind = if current {
                     theme.sidebar_accent
                 } else {
@@ -217,7 +216,7 @@ impl MainWindow {
                 };
                 let hover =
                     (!current).then(|| (SharedString::from(queue.id.clone()), theme.list_hover));
-                let tile = sidebar::queue_tile(&queue.queue, queue.running.is_some(), behind, cx)
+                let tile = sidebar::queue_tile(&queue.queue, queue.running.is_some(), behind)
                     .rules(queue.rules)
                     .when_some(queue.running, QueueTile::ring)
                     .when_some(hover, |tile, (group, color)| {
@@ -239,7 +238,7 @@ impl MainWindow {
         cx: &mut Context<'_, Self>,
     ) -> gpui_kit::Stateful<gpui_kit::Div> {
         let theme = cx.theme();
-        let current = self.current(view);
+        let current = self.is_current_view(view, cx);
         rail_button(id.clone(), label, cx)
             .relative()
             .group(SharedString::from(id))
@@ -248,10 +247,6 @@ impl MainWindow {
             })
             .child(content)
             .on_click(cx.listener(move |this, _, window, cx| this.show(view, window, cx)))
-    }
-
-    fn current(&self, view: View) -> bool {
-        self.page.screen == Screen::Downloads && self.view == view
     }
 
     /// A count at the rail item's top right corner, cut out of the colour behind it as the
@@ -263,7 +258,7 @@ impl MainWindow {
         } else {
             (theme.muted_foreground, theme.sidebar)
         };
-        let current = self.current(view);
+        let current = self.is_current_view(view, cx);
         let behind = if current {
             theme.sidebar_accent
         } else {

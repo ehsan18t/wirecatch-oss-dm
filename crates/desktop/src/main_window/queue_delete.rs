@@ -16,7 +16,7 @@ use wirecatch_protocol::app::DownloadStatus;
 use wirecatch_protocol::{DownloadId, QueueId};
 use wirecatch_shell::api;
 
-use super::{MainWindow, View};
+use super::MainWindow;
 use crate::backend::command_saying;
 use crate::library::Library;
 use crate::text::{TRASH, left_in_place};
@@ -231,10 +231,7 @@ fn delete(
     };
     window.close_dialog(cx);
     crate::closing::may_have_closed(main.update(cx, |main, cx| {
-        if main.view == View::Queue(id) {
-            main.queue_page = None;
-            main.show(View::All, window, cx);
-        }
+        main.queue_deleted(id, window, cx);
     }));
     command_saying(
         window.window_handle(),

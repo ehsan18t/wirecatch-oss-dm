@@ -88,6 +88,11 @@ export const DEFAULT_MAX_CONCURRENT_DOWNLOADS = 5;
 export const MAX_QUEUE_DESCRIPTION_CHARS = 500;
 
 /**
+ * Most characters in [`QueueSettings::icon`].
+ */
+export const MAX_QUEUE_ICON_CHARS = 64;
+
+/**
  * [`ProcessingProgress::per_mille`] of a finished step: progress is counted in tenths of
  * a percent.
  */

@@ -22,7 +22,6 @@ mod proxy_dialog;
 mod queue_delete;
 mod queue_editor;
 mod queue_header;
-mod queue_new;
 mod queue_proxy;
 mod queue_rules;
 mod rail;
@@ -679,6 +678,13 @@ impl MainWindow {
             self.clear_selection();
             cx.notify();
         } else if self.page.screen == Screen::QueuePage {
+            if self
+                .queue_page
+                .as_ref()
+                .is_some_and(|form| queue_editor::QueueForm::close_icon_picker(form, cx))
+            {
+                return;
+            }
             self.close_queue_page(window, cx);
         } else {
             self.open_screen(Screen::Downloads, window, cx);
@@ -693,10 +699,7 @@ impl MainWindow {
             }
             return;
         }
-        let queue = match self.view {
-            View::Queue(queue) => Some(queue),
-            View::All | View::Group(_) => None,
-        };
+        let queue = self.active_queue(cx);
         self.add_form = Some(add_dialog::open(
             self.library.clone(),
             urls,
@@ -706,7 +709,7 @@ impl MainWindow {
         ));
     }
 
-    /// Opens the page of `queue`, shown in the navigation, or New queue when `None`.
+    /// Opens the page of `queue`, shown in the navigation, or a new queue page when `None`.
     fn edit_queue(
         &mut self,
         queue: Option<QueueId>,
@@ -722,11 +725,32 @@ impl MainWindow {
             }
             Some(_) => {}
             None => self.leave_queue_page_then(window, cx, |main, window, cx| {
-                if main.page.screen == Screen::QueuePage {
-                    main.show_now(main.view, window, cx);
-                }
-                queue_new::open(cx.entity().downgrade(), window, cx);
+                main.open_queue_page(queue_editor::Opening::New, window, cx);
             }),
+        }
+    }
+
+    /// The queue currently on screen (its downloads or its editor), or `None` elsewhere
+    /// (including while creating a new queue).
+    pub(super) fn active_queue(&self, cx: &App) -> Option<QueueId> {
+        match self.view {
+            View::Queue(id) if self.is_current_view(View::Queue(id), cx) => Some(id),
+            View::Queue(_) | View::All | View::Group(_) => None,
+        }
+    }
+
+    /// Whether `view` is the navigation item currently shown: its downloads, or the queue page
+    /// editing that queue (never while creating a new queue).
+    pub(super) fn is_current_view(&self, view: View, cx: &App) -> bool {
+        match self.page.screen {
+            Screen::Downloads => self.view == view,
+            Screen::QueuePage => {
+                matches!(view, View::Queue(id) if self
+                    .queue_page
+                    .as_ref()
+                    .is_some_and(|form| form.read(cx).editing_queue() == Some(id)))
+            }
+            Screen::Settings | Screen::Shortcuts | Screen::About => false,
         }
     }
 
@@ -737,7 +761,7 @@ impl MainWindow {
         window: &mut Window,
         cx: &mut Context<'_, Self>,
     ) {
-        let new = matches!(opening, queue_editor::Opening::New(_));
+        let new = matches!(opening, queue_editor::Opening::New);
         let (library, main) = (self.library.clone(), cx.entity().downgrade());
         let form = cx.new(|cx| queue_editor::QueueForm::new(library, opening, main, window, cx));
         if new {
@@ -769,6 +793,33 @@ impl MainWindow {
     /// Asks before deleting queue `id`, its name typed to confirm.
     fn delete_queue(&mut self, id: QueueId, window: &mut Window, cx: &mut Context<'_, Self>) {
         queue_delete::ask(&self.library, id, cx.entity().downgrade(), window, cx);
+    }
+
+    /// Keeps the window off a queue that was just deleted. While creating a new queue, only the
+    /// return view changes so the draft stays open.
+    pub(super) fn queue_deleted(
+        &mut self,
+        id: QueueId,
+        window: &mut Window,
+        cx: &mut Context<'_, Self>,
+    ) {
+        if self.view != View::Queue(id) {
+            return;
+        }
+        if self.page.screen == Screen::QueuePage
+            && self
+                .queue_page
+                .as_ref()
+                .is_some_and(|form| form.read(cx).editing_queue() != Some(id))
+        {
+            self.view = View::All;
+            self.clear_selection();
+            let title = self.title(cx);
+            self.name_search(View::All, &title, window, cx);
+            cx.notify();
+            return;
+        }
+        self.show_now(View::All, window, cx);
     }
 
     /// Ctrl+V outside a text field: the links in what was copied go to the Add dialog.
@@ -980,5 +1031,172 @@ mod tests {
             assert_eq!(page.screen, screen);
             assert!(!page.drawer);
         }
+    }
+
+    fn window_with_queues(
+        cx: &mut gpui_kit::TestAppContext,
+    ) -> (Entity<MainWindow>, &mut gpui_kit::VisualTestContext) {
+        use wirecatch_protocol::app::{Queue, QueueSettings, QueueStatus};
+
+        let (window, main) = cx
+            .update(|cx| {
+                gpui_kit::component::init(cx);
+                let library = cx.new(|_| {
+                    let mut library = Library::empty();
+                    library.queues = vec![
+                        Queue {
+                            id: QueueId(1),
+                            is_default: true,
+                            settings: QueueSettings::new("Main"),
+                            status: QueueStatus::default(),
+                        },
+                        Queue {
+                            id: QueueId(2),
+                            is_default: false,
+                            settings: QueueSettings::new("Videos"),
+                            status: QueueStatus::default(),
+                        },
+                    ];
+                    library
+                });
+                crate::app_update::start(&library, cx);
+                gpui_kit::open_window(gpui_kit::WindowOptions::default(), cx, |window, cx| {
+                    cx.new(|cx| MainWindow::new(library, window, cx))
+                })
+            })
+            .unwrap();
+        let cx = gpui_kit::VisualTestContext::from_window(window, cx).into_mut();
+        cx.run_until_parked();
+        (main, cx)
+    }
+
+    #[gpui_kit::test]
+    fn edit_queue_new_focuses_name_and_marks_no_queue_current(cx: &mut gpui_kit::TestAppContext) {
+        let (main, cx) = window_with_queues(cx);
+        main.update_in(cx, |main, window, cx| {
+            main.show_now(View::Queue(QueueId(2)), window, cx);
+            main.edit_queue(None, window, cx);
+        });
+        cx.run_until_parked();
+
+        assert!(main.read_with(cx, |main, cx| {
+            main.page.screen == Screen::QueuePage
+                && !main.is_current_view(View::Queue(QueueId(1)), cx)
+                && !main.is_current_view(View::Queue(QueueId(2)), cx)
+        }));
+        assert!(cx.update(|window, cx| {
+            main.read(cx)
+                .queue_page
+                .as_ref()
+                .is_some_and(|form| form.read(cx).name_focused(window, cx))
+        }));
+
+        main.update_in(cx, |main, window, cx| {
+            main.edit_queue(Some(QueueId(2)), window, cx);
+        });
+        cx.run_until_parked();
+        assert!(main.read_with(cx, |main, cx| {
+            main.is_current_view(View::Queue(QueueId(2)), cx)
+                && !main.is_current_view(View::Queue(QueueId(1)), cx)
+        }));
+    }
+
+    #[gpui_kit::test]
+    fn deleting_background_queue_during_new_queue_keeps_draft_and_retargets_cancel(
+        cx: &mut gpui_kit::TestAppContext,
+    ) {
+        let (main, cx) = window_with_queues(cx);
+        main.update_in(cx, |main, window, cx| {
+            main.show_now(View::Queue(QueueId(2)), window, cx);
+            main.edit_queue(None, window, cx);
+        });
+        cx.run_until_parked();
+
+        let draft = main.read_with(cx, |main, _| main.queue_page.clone().unwrap());
+        main.update_in(cx, |main, window, cx| {
+            main.queue_deleted(QueueId(2), window, cx);
+        });
+        cx.run_until_parked();
+
+        assert!(main.read_with(cx, |main, _| {
+            main.page.screen == Screen::QueuePage
+                && main.view == View::All
+                && main.queue_page.as_ref().map(Entity::entity_id) == Some(draft.entity_id())
+        }));
+
+        // Deleting the queue currently being edited still closes its editor.
+        main.update_in(cx, |main, window, cx| {
+            main.edit_queue(Some(QueueId(2)), window, cx);
+            main.queue_deleted(QueueId(2), window, cx);
+        });
+        cx.run_until_parked();
+        assert!(main.read_with(cx, |main, _| {
+            main.page.screen == Screen::Downloads
+                && main.view == View::All
+                && main.queue_page.is_none()
+        }));
+    }
+
+    #[gpui_kit::test]
+    fn dismiss_closes_open_icon_picker_before_leaving_queue_page(
+        cx: &mut gpui_kit::TestAppContext,
+    ) {
+        let (main, cx) = window_with_queues(cx);
+        main.update_in(cx, |main, window, cx| {
+            main.edit_queue(None, window, cx);
+            if let Some(form) = main.queue_page.clone() {
+                queue_editor::QueueForm::open_icon_picker(&form, window, cx);
+            }
+        });
+        cx.run_until_parked();
+
+        main.update_in(cx, MainWindow::dismiss);
+        cx.run_until_parked();
+        assert!(main.read_with(cx, |main, cx| {
+            main.page.screen == Screen::QueuePage
+                && main
+                    .queue_page
+                    .as_ref()
+                    .is_some_and(|form| !form.read(cx).icon_picker_open(cx))
+        }));
+
+        main.update_in(cx, MainWindow::dismiss);
+        cx.run_until_parked();
+        assert!(main.read_with(cx, |main, _| {
+            main.page.screen == Screen::Downloads && main.queue_page.is_none()
+        }));
+    }
+
+    #[gpui_kit::test]
+    fn new_queue_draft_uses_automatic_for_new_downloads_and_hides_selection_palette_commands(
+        cx: &mut gpui_kit::TestAppContext,
+    ) {
+        let (main, cx) = window_with_queues(cx);
+        main.update_in(cx, |main, window, cx| {
+            main.library.update(cx, |library, _| {
+                let mut row = wirecatch_test_support::downloads::download(1);
+                row.queue = QueueId(2);
+                library.downloads.replace(vec![row]);
+            });
+            main.show_now(View::Queue(QueueId(2)), window, cx);
+            main.selected.insert(DownloadId(1));
+        });
+        cx.run_until_parked();
+
+        assert_eq!(
+            main.read_with(cx, MainWindow::active_queue),
+            Some(QueueId(2))
+        );
+        assert!(main.read_with(cx, |main, cx| {
+            main.palette_headings(cx).contains(&"Selected downloads")
+        }));
+
+        main.update_in(cx, |main, window, cx| main.edit_queue(None, window, cx));
+        cx.run_until_parked();
+
+        assert_eq!(main.read_with(cx, MainWindow::active_queue), None);
+        assert!(main.read_with(cx, |main, cx| {
+            !main.palette_headings(cx).contains(&"Selected downloads")
+        }));
     }
 }

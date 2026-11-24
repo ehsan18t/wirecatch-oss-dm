@@ -4,7 +4,6 @@ export * from './generated/validators';
 export * from './extension-settings';
 export * from './hosts';
 export * from './ids';
-export * from './queue-settings';
 export * from './secrets';
 export * from './video-sites';
 export type { Accent } from './generated/Accent';

@@ -26,7 +26,7 @@ use crate::library::Library;
 use crate::rows::Tally;
 use crate::text;
 use crate::ui::speed_graph::{SpeedHistory, speed_graph};
-use crate::ui::{QueueTile, Role, Typed as _, tokens, tooltip};
+use crate::ui::{QueueState, QueueTile, Role, Typed as _, icon, tokens, tooltip};
 
 pub(super) const WIDTH: f32 = 256.;
 /// Queues shown before the rest fold away under "more queues".
@@ -238,32 +238,32 @@ impl MainWindow {
             })
     }
 
-    /// The queues, in one panel: the first few, the one on screen, and the rest behind "more
-    /// queues".
+    /// The queues, in one panel: the first few, the active one on screen, and the rest behind
+    /// "more queues".
     fn queues_section(&self, cx: &mut Context<'_, Self>) -> impl IntoElement + use<> {
         let queues = self.library.read(cx).queues.clone();
-        let folded = queues.len() > QUEUES_SHOWN && !self.all_queues;
+        let active = self.active_queue(cx);
+        let in_folded =
+            |index: usize, queue: &Queue| index < QUEUES_SHOWN || active == Some(queue.id);
+        let folded_shown = queues
+            .iter()
+            .enumerate()
+            .filter(|(index, queue)| in_folded(*index, queue))
+            .count();
         let shown: Vec<AnyElement> = queues
             .iter()
             .enumerate()
-            .filter(|(index, queue)| {
-                !folded || *index < QUEUES_SHOWN || self.view == View::Queue(queue.id)
-            })
+            .filter(|(index, queue)| self.all_queues || in_folded(*index, queue))
             .enumerate()
             .map(|(place, (index, queue))| {
                 self.queue_item(queue, index, place == 0, queues.len(), cx)
             })
             .collect();
-        let hidden = queues.len() - shown.len();
-        let toggle = (queues.len() > QUEUES_SHOWN).then(|| {
+        let toggle = fold_toggle_label(queues.len(), folded_shown, self.all_queues).map(|label| {
             Button::new("more-queues")
                 .xsmall()
                 .ghost()
-                .label(match (folded, hidden) {
-                    (false, _) => "Fewer queues".to_owned(),
-                    (true, 1) => "1 more queue".to_owned(),
-                    (true, hidden) => format!("{hidden} more queues"),
-                })
+                .label(label)
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.all_queues = !this.all_queues;
                     cx.notify();
@@ -364,7 +364,7 @@ impl MainWindow {
     ) -> AnyElement {
         let id = queue.id;
         let view = View::Queue(id);
-        let current = self.view == view;
+        let current = self.is_current_view(view, cx);
         let library = self.library.read(cx);
         let facts = QueueFacts::of(library.downloads.tally_of(id));
         let order: Vec<QueueId> = library.queues.iter().map(|q| q.id).collect();
@@ -386,7 +386,7 @@ impl MainWindow {
             panel
         };
         let group = SharedString::new(format!("queue-{}", id.0));
-        let tile = queue_tile(queue, facts.running > 0, behind, cx)
+        let tile = queue_tile(queue, facts.running > 0, behind)
             .rules(rules)
             .when(!current, |tile| tile.hover_behind(group.clone(), hovered));
         h_flex()
@@ -516,18 +516,40 @@ fn drops(
     )
 }
 
-/// A queue's tile: paused, downloading, waiting for its hours, or holding.
-pub(super) fn queue_tile(queue: &Queue, running: bool, behind: Hsla, cx: &App) -> QueueTile {
-    let theme = cx.theme();
-    if queue.status.paused {
-        QueueTile::new(IconName::Pause, behind)
-    } else if running {
-        QueueTile::new(IconName::Play, behind).tone(theme.primary)
-    } else if outside_schedule(queue).is_some() {
-        QueueTile::new(Icon::new(Lucide::Moon), behind).tone(theme.warning)
-    } else {
-        QueueTile::new(Icon::new(Lucide::ListOrdered), behind)
+/// Label for the sidebar's expand/collapse queue button, or `None` when toggling would not change
+/// which queues are shown.
+fn fold_toggle_label(total: usize, folded_shown: usize, expanded: bool) -> Option<String> {
+    let hidden = total.saturating_sub(folded_shown);
+    if hidden == 0 {
+        return None;
     }
+    Some(if expanded {
+        "Fewer queues".to_owned()
+    } else if hidden == 1 {
+        "1 more queue".to_owned()
+    } else {
+        format!("{hidden} more queues")
+    })
+}
+
+/// What a queue is doing right now, for its tile's tint and status badge.
+pub(super) fn queue_state(queue: &Queue, running: bool) -> Option<QueueState> {
+    if queue.status.paused {
+        Some(QueueState::Paused)
+    } else if running {
+        Some(QueueState::Running)
+    } else if outside_schedule(queue).is_some() {
+        Some(QueueState::Scheduled)
+    } else {
+        None
+    }
+}
+
+/// A queue's tile: its chosen icon, with a status badge when paused, downloading or waiting for its
+/// hours.
+pub(super) fn queue_tile(queue: &Queue, running: bool, behind: Hsla) -> QueueTile {
+    QueueTile::new(icon::queue_icon(queue.settings.icon.as_deref()), behind)
+        .state(queue_state(queue, running))
 }
 
 /// A queue's text: its name with a failure dot and its speed or count, its line with the speed
@@ -926,5 +948,57 @@ mod tests {
             "All done · via Home"
         );
         assert_eq!(summary(&queue(true), &done, None).1, "Paused · 3 of 3 done");
+    }
+
+    #[test]
+    fn queue_tile_keeps_custom_icon_across_states() {
+        let mut q = queue(false);
+        q.settings.icon = Some("film".into());
+        let behind = Hsla::default();
+
+        let idle = queue_tile(&q, false, behind);
+        assert_eq!(idle.icon(), Lucide::Film);
+        assert_eq!(idle.state_of(), None);
+
+        let running = queue_tile(&q, true, behind);
+        assert_eq!(running.icon(), Lucide::Film);
+        assert_eq!(running.state_of(), Some(QueueState::Running));
+
+        q.status.paused = true;
+        let paused = queue_tile(&q, true, behind);
+        assert_eq!(paused.icon(), Lucide::Film);
+        assert_eq!(paused.state_of(), Some(QueueState::Paused));
+
+        q.status.paused = false;
+        q.settings.schedule = Some(wirecatch_protocol::app::Schedule {
+            start: wirecatch_protocol::app::TimeOfDay {
+                hour: 22,
+                minute: 0,
+            },
+            stop: None,
+            days: vec![],
+        });
+        let scheduled = queue_tile(&q, false, behind);
+        assert_eq!(scheduled.icon(), Lucide::Film);
+        assert_eq!(scheduled.state_of(), Some(QueueState::Scheduled));
+    }
+
+    #[test]
+    fn fold_toggle_is_hidden_when_toggling_would_change_nothing() {
+        assert_eq!(fold_toggle_label(3, 3, false), None);
+        assert_eq!(fold_toggle_label(4, 4, false), None);
+        assert_eq!(fold_toggle_label(4, 4, true), None);
+        assert_eq!(
+            fold_toggle_label(4, 3, false).as_deref(),
+            Some("1 more queue")
+        );
+        assert_eq!(
+            fold_toggle_label(4, 3, true).as_deref(),
+            Some("Fewer queues")
+        );
+        assert_eq!(
+            fold_toggle_label(5, 3, false).as_deref(),
+            Some("2 more queues")
+        );
     }
 }

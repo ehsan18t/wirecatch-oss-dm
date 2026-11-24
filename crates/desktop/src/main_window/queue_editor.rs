@@ -1,8 +1,9 @@
-//! A queue's own page in the main window (D255): its settings under tabs, General (name,
-//! description, its own folder, D94), Rules, Limits, Schedule, Network and Notifications. A
-//! limit follows the app's until it is switched on (D72.1). Its rules and its proxy have editors
+//! A queue's own page in the main window (D255): its icon and name, then its settings under tabs,
+//! General (description, its own folder, D94), Rules, Limits, Schedule, Network and Notifications.
+//! A limit follows the app's until it is switched on (D72.1). Its rules and its proxy have editors
 //! of their own.
 
+mod icon_picker;
 mod tabs;
 
 use chrono::{NaiveTime, Timelike as _};
@@ -22,6 +23,7 @@ use super::queue_rules::RulesForm;
 use crate::backend::{Backend, said};
 use crate::library::Library;
 use crate::{files, text};
+use icon_picker::{IconPicked, IconPicker};
 
 /// What a speed limit switched on starts at when the app has none.
 const FIRST_SPEED_LIMIT: u64 = 2 * Unit::Mb.bytes();
@@ -133,6 +135,7 @@ pub struct QueueForm {
     /// The queue as it was when the page opened; `None` for a new one.
     original: Option<Queue>,
     section: Section,
+    icon: Entity<IconPicker>,
     name: Entity<InputState>,
     description: Entity<InputState>,
     folder: Option<String>,
@@ -162,8 +165,8 @@ pub struct QueueForm {
 pub(super) enum Opening {
     /// A queue that exists.
     Queue(QueueId),
-    /// A queue not made yet, starting from these settings.
-    New(Box<QueueSettings>),
+    /// A queue not made yet.
+    New,
 }
 
 impl Opening {
@@ -177,7 +180,7 @@ impl Opening {
                     .map_or_else(|| QueueSettings::new(""), |queue| queue.settings.clone());
                 (original, opened)
             }
-            Self::New(settings) => (None, *settings),
+            Self::New => (None, QueueSettings::new("")),
         }
     }
 }
@@ -236,14 +239,19 @@ impl QueueForm {
             window,
             cx,
         );
-        let edited =
-            forget_problem_on_edit([&name, &description, &concurrent, &limit, &connections], cx);
+        let icon = cx.new(|cx| IconPicker::new(opened.icon.clone(), window, cx));
+        let subscriptions = forget_problem_on_edit(
+            [&name, &description, &concurrent, &limit, &connections],
+            &icon,
+            cx,
+        );
         let (rules, proxy) = editors(&library, queue, &name, &opened, window, cx);
         Self {
             library,
             main,
             rules,
             proxy,
+            icon,
             name,
             description,
             folder: opened.folder.own_ref().map(|folder| folder.0.clone()),
@@ -262,8 +270,13 @@ impl QueueForm {
             stage: Stage::Editing,
             original,
             section: Section::General,
-            _subscriptions: edited.into(),
+            _subscriptions: subscriptions,
         }
+    }
+
+    /// The id of the queue being edited, or `None` when creating a new queue.
+    pub(super) fn editing_queue(&self) -> Option<QueueId> {
+        self.original.as_ref().map(|queue| queue.id)
     }
 
     /// Gives the keyboard to the name of `form`'s queue.
@@ -272,8 +285,29 @@ impl QueueForm {
         name.update(cx, |name, cx| name.focus(window, cx));
     }
 
-    /// Whether leaving would lose something: an edit to the queue, or anything typed for a new
-    /// one, the New queue dialog's name and rules included.
+    pub(super) fn close_icon_picker(form: &Entity<Self>, cx: &mut App) -> bool {
+        let icon = form.read(cx).icon.clone();
+        icon.update(cx, IconPicker::close)
+    }
+
+    #[cfg(test)]
+    pub(super) fn name_focused(&self, window: &Window, cx: &App) -> bool {
+        use gpui_kit::Focusable as _;
+        self.name.read(cx).focus_handle(cx).is_focused(window)
+    }
+
+    #[cfg(test)]
+    pub(super) fn open_icon_picker(form: &Entity<Self>, window: &mut Window, cx: &mut App) {
+        let icon = form.read(cx).icon.clone();
+        icon.update(cx, |picker, cx| picker.set_open(true, window, cx));
+    }
+
+    #[cfg(test)]
+    pub(super) fn icon_picker_open(&self, cx: &App) -> bool {
+        self.icon.read(cx).is_open()
+    }
+
+    /// Whether leaving would lose something: an edit to the queue, or anything set for a new one.
     pub(super) fn has_changes(&self, cx: &App) -> bool {
         let before = self
             .original
@@ -306,6 +340,7 @@ impl QueueForm {
         settings.folder = own_if(self.folder.is_some(), || {
             PortablePath(self.folder.clone().unwrap_or_default())
         });
+        settings.icon = self.icon.read(cx).selected();
         let limits = |problem: String| (Section::Limits, problem);
         settings.max_concurrent = if self.is_own(Own::Concurrent) {
             Setting::Own(whole(&self.concurrent, MAX_CONCURRENT_DOWNLOADS, cx).ok_or_else(
@@ -515,19 +550,30 @@ fn editors(
     (rules, proxy)
 }
 
-/// A field edited takes away the problem the form showed.
+/// Any field or icon change clears the problem the form showed.
 fn forget_problem_on_edit(
     fields: [&Entity<InputState>; 5],
+    icon: &Entity<IconPicker>,
     cx: &mut Context<'_, QueueForm>,
-) -> [Subscription; 5] {
-    fields.map(|field| {
-        cx.subscribe(field, |form: &mut QueueForm, _, event: &InputEvent, cx| {
-            if matches!(event, InputEvent::Change) {
-                form.problem = None;
-                cx.notify();
-            }
+) -> Vec<Subscription> {
+    let mut subs: Vec<Subscription> = fields
+        .into_iter()
+        .map(|field| {
+            cx.subscribe(field, |form: &mut QueueForm, _, event: &InputEvent, cx| {
+                if matches!(event, InputEvent::Change) {
+                    form.problem = None;
+                    cx.notify();
+                }
+            })
         })
-    })
+        .collect();
+    subs.push(
+        cx.subscribe(icon, |form: &mut QueueForm, _, _: &IconPicked, cx| {
+            form.problem = None;
+            cx.notify();
+        }),
+    );
+    subs
 }
 
 fn number_field(
@@ -728,5 +774,92 @@ mod tests {
             saved_days(&[Weekday::Sun, Weekday::Mon]),
             vec![Weekday::Mon, Weekday::Sun]
         );
+    }
+
+    #[gpui_kit::test]
+    fn picking_an_icon_marks_the_form_changed_carries_it_in_settings_and_clears_problem(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_kit::component::init);
+        let library = cx.update(|cx| cx.new(|_| Library::empty()));
+        let (form, cx) = cx.add_window_view(|window, cx| {
+            QueueForm::new(library, Opening::New, WeakEntity::new_invalid(), window, cx)
+        });
+        assert_eq!(form.read_with(cx, |f, _| f.editing_queue()), None);
+        assert!(!form.read_with(cx, QueueForm::has_changes));
+
+        form.update(cx, |f, _| {
+            f.problem = Some("Give the queue a name.".to_owned());
+        });
+        let picker = form.read_with(cx, |f, _| f.icon.clone());
+        picker.update(cx, |p, cx| p.pick(Some("film".to_owned()), cx));
+        cx.run_until_parked();
+
+        assert!(form.read_with(cx, QueueForm::has_changes));
+        assert_eq!(
+            form.read_with(cx, |f, cx| f.typed(cx).unwrap().icon)
+                .as_deref(),
+            Some("film")
+        );
+        assert_eq!(form.read_with(cx, |f, _| f.problem.clone()), None);
+
+        picker.update(cx, |p, cx| p.pick(None, cx));
+        cx.run_until_parked();
+        assert!(!form.read_with(cx, QueueForm::has_changes));
+    }
+
+    #[gpui_kit::test]
+    fn enter_in_name_submits_only_when_creating_a_new_queue(cx: &mut TestAppContext) {
+        cx.update(gpui_kit::component::init);
+        let library = cx.update(|cx| {
+            cx.new(|_| {
+                let mut library = Library::empty();
+                library.queues.push(Queue {
+                    id: QueueId(2),
+                    is_default: false,
+                    settings: QueueSettings::new("Videos"),
+                    status: wirecatch_protocol::app::QueueStatus::default(),
+                });
+                library
+            })
+        });
+
+        let (new_form, cx) = cx.add_window_view(|window, cx| {
+            QueueForm::new(
+                library.clone(),
+                Opening::New,
+                WeakEntity::new_invalid(),
+                window,
+                cx,
+            )
+        });
+        cx.update(|window, cx| QueueForm::focus_name(&new_form, window, cx));
+        cx.run_until_parked();
+        assert!(cx.update(|window, cx| new_form.read(cx).name_focused(window, cx)));
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        assert_eq!(
+            new_form.read_with(cx, |f, _| f.problem.clone()).as_deref(),
+            Some("Give the queue a name.")
+        );
+
+        let (edit_form, cx) = cx.add_window_view(|window, cx| {
+            QueueForm::new(
+                library,
+                Opening::Queue(QueueId(2)),
+                WeakEntity::new_invalid(),
+                window,
+                cx,
+            )
+        });
+        edit_form.update_in(cx, |f, window, cx| {
+            f.name.update(cx, |name, cx| name.set_value("", window, cx));
+        });
+        cx.update(|window, cx| QueueForm::focus_name(&edit_form, window, cx));
+        cx.run_until_parked();
+        assert!(cx.update(|window, cx| edit_form.read(cx).name_focused(window, cx)));
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        assert_eq!(edit_form.read_with(cx, |f, _| f.problem.clone()), None);
     }
 }

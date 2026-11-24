@@ -1595,7 +1595,8 @@ export function isQueueSettings(value: unknown): value is QueueSettings {
       ((value2: unknown): boolean =>
         isRecord(value2) && value2['source'] === 'own' && isPortablePath(value2['value']))(
         value1['folder'],
-      )))(value);
+      )) &&
+    (typeof value1['icon'] === 'string' || value1['icon'] === null))(value);
 }
 
 /** Whether `value` has the shape of a {@link QueueStatus}; fields it does not name are not checked. */

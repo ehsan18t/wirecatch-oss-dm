@@ -48,7 +48,7 @@ use crate::main_window::fixes::run_from_download_window;
 use crate::text::{ASK_EACH_VIDEO, REMEMBER_CHOICES};
 use crate::ui::small_title_bar::small_title_bar;
 use crate::ui::speed_graph::run_graph;
-use crate::ui::{Callout, Field, PathText, Role, Sentence, Typed as _, tokens, tooltip};
+use crate::ui::{Callout, Field, PathText, Role, Sentence, Typed as _, icon, tokens, tooltip};
 use crate::{files, text};
 
 type ChooseQueue = Rc<dyn Fn(Option<QueueId>, &mut App)>;
@@ -776,11 +776,12 @@ impl DownloadWindow {
         self.question = None;
         self.media = None;
         self.record.watch(&row, Instant::now());
-        let queue = self
-            .library
-            .read(cx)
-            .queue_name(row.queue)
-            .map(str::to_owned);
+        let queue = self.library.read(cx).queue(row.queue).map(|queue| {
+            (
+                queue.settings.name.clone(),
+                icon::queue_icon(queue.settings.icon.as_deref()),
+            )
+        });
         let folder = Path::new(&row.path)
             .parent()
             .map(|folder| text::folder(&folder.to_string_lossy()));
@@ -802,7 +803,12 @@ impl DownloadWindow {
                     )))
                     .children(state_mark(&row, self.record.stalled(Instant::now()), cx)),
             )
-            .child(run_panel(&self.record, &row, queue.as_deref(), cx))
+            .child(run_panel(
+                &self.record,
+                &row,
+                queue.as_ref().map(|(name, _)| name.as_str()),
+                cx,
+            ))
             .children(run_facts(&self.record, &row, cx))
             .when_some(folder, |body, folder| {
                 body.child(
@@ -826,12 +832,9 @@ impl DownloadWindow {
                 h_flex()
                     .w_full()
                     .gap_2()
-                    .child(
-                        h_flex()
-                            .flex_1()
-                            .min_w_0()
-                            .children(queue.map(|name| queue_badge(name, cx))),
-                    )
+                    .child(h_flex().flex_1().min_w_0().children(
+                        queue.map(|(name, queue_icon)| queue_badge(queue_icon, name, cx)),
+                    ))
                     .children(buttons),
             )
             .into_any_element()
@@ -1050,14 +1053,13 @@ pub(super) fn queue_badge_picker(
         .iter()
         .map(|queue| (queue.id, queue.settings.name.clone()))
         .collect();
+    let button_icon = picked.map_or(Lucide::Zap, |id| {
+        icon::queue_icon(library.queue(id).and_then(|q| q.settings.icon.as_deref()))
+    });
     let accent = cx.theme().primary;
     let opener = Button::new(id)
         .ghost()
-        .icon(Icon::new(if picked.is_none() {
-            Lucide::Zap
-        } else {
-            Lucide::ListOrdered
-        }))
+        .icon(Icon::new(button_icon))
         .label(shown)
         .dropdown_caret(true)
         .max_w(px(PICKER_WIDTH))
@@ -1169,9 +1171,9 @@ fn picker_tip(proposed: &str, reason: &QueueReason, picked: Option<&str>) -> Str
     value.map_or_else(|| lead.clone(), |value| format!("{lead} {value}"))
 }
 
-/// A queue's name, tinted so it reads as the name of something.
-fn queue_badge(name: String, cx: &App) -> impl IntoElement {
-    tinted_chip(Lucide::ListOrdered, name, cx.theme().primary, cx)
+/// A queue's name and icon, tinted so it reads as the name of something.
+fn queue_badge(queue_icon: Lucide, name: String, cx: &App) -> impl IntoElement {
+    tinted_chip(queue_icon, name, cx.theme().primary, cx)
 }
 
 /// A warning that the question's link is already in the list, with the way to the file once it

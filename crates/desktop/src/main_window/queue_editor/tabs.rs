@@ -1,7 +1,7 @@
 //! The queue page drawn: its header with the tabs, and each tab's fields.
 
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::input::{Input, NumberInput};
+use gpui_kit::component::input::{Enter, Input, NumberInput};
 use gpui_kit::component::tab::{Tab, TabBar};
 use gpui_kit::component::time_field::TimeField;
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _, h_flex, v_flex};
@@ -66,11 +66,17 @@ impl QueueForm {
             .child(
                 h_flex()
                     .gap_3()
+                    .child(self.icon.clone())
                     .child(
                         div()
                             .flex_1()
                             .min_w_0()
                             .text_role(Role::PageTitle, cx)
+                            .when(self.original.is_none(), |field| {
+                                field.on_action(cx.listener(|form, _: &Enter, window, cx| {
+                                    form.save(window, cx);
+                                }))
+                            })
                             .child(Input::new(&self.name).large().aria_label("Queue name")),
                     )
                     .child(

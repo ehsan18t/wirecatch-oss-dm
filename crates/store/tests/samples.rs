@@ -146,3 +146,14 @@ fn a_conversion_saved_without_its_optional_fields_adds_none() {
     assert_eq!(older.extras, Extras::default());
     assert!(!older.subtitle_files && !older.original);
 }
+
+#[test]
+fn queue_settings_keep_their_icon_and_older_samples_default_to_none() {
+    let main_json = fs::read_to_string(samples().join("queue_settings/main.json")).unwrap();
+    let main = serde_json::from_str::<QueueSettings>(&main_json).unwrap();
+    assert_eq!(main.icon, None);
+
+    let icon_json = fs::read_to_string(samples().join("queue_settings/with_icon.json")).unwrap();
+    let with_icon = serde_json::from_str::<QueueSettings>(&icon_json).unwrap();
+    assert_eq!(with_icon.icon.as_deref(), Some("film"));
+}
