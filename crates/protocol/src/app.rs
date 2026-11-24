@@ -1591,6 +1591,20 @@ crate::exported::exported_consts! {
     ];
 }
 
+/// Whether `slug` is a valid non-empty lowercase ASCII kebab-case queue icon name within
+/// [`MAX_QUEUE_ICON_CHARS`].
+#[must_use]
+pub fn is_valid_queue_icon(slug: &str) -> bool {
+    !slug.is_empty()
+        && slug.len() <= MAX_QUEUE_ICON_CHARS
+        && !slug.starts_with('-')
+        && !slug.ends_with('-')
+        && !slug.contains("--")
+        && slug
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
+
 /// Every user setting. The app is the only store (D5).
 #[expect(
     clippy::struct_excessive_bools,

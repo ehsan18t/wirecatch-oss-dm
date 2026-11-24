@@ -11,9 +11,9 @@ use std::path::PathBuf;
 use wirecatch_protocol::app::{
     Accent, AppSettings, Category, CategoryRule, ClockFormat, DEFAULT_CONNECTIONS_PER_DOWNLOAD,
     DEFAULT_MAX_CONCURRENT_DOWNLOADS, FinishNoticeTime, ListLines, MAX_CONCURRENT_DOWNLOADS,
-    MAX_CONNECTIONS_PER_DOWNLOAD, MAX_QUEUE_DESCRIPTION_CHARS, MAX_QUEUE_ICON_CHARS, MediaDefaults,
-    NotifyOnFinish, NotifyOnStart, OutputDefaults, PortablePath, Queue, QueueSettings, QueueStatus,
-    Setting, StartNoticeTime, Theme, VideoQuality, WhenFileExists,
+    MAX_CONNECTIONS_PER_DOWNLOAD, MAX_QUEUE_DESCRIPTION_CHARS, MediaDefaults, NotifyOnFinish,
+    NotifyOnStart, OutputDefaults, PortablePath, Queue, QueueSettings, QueueStatus, Setting,
+    StartNoticeTime, Theme, VideoQuality, WhenFileExists, is_valid_queue_icon,
 };
 use wirecatch_protocol::extension::{
     ExtensionSettings, ExtensionSettingsPatch, MAX_IGNORED_SITES, MAX_SITE_CHARS, MAX_VIDEO_SITES,
@@ -496,14 +496,7 @@ fn clean_queue_icon(icon: Option<String>) -> Result<Option<String>> {
     if slug.is_empty() {
         return Ok(None);
     }
-    if slug.len() > MAX_QUEUE_ICON_CHARS
-        || slug.starts_with('-')
-        || slug.ends_with('-')
-        || slug.contains("--")
-        || !slug
-            .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
-    {
+    if !is_valid_queue_icon(slug) {
         return Err(SettingsError::Invalid(
             "That queue icon name is not valid. Pick one from the icon list.".into(),
         ));
@@ -764,7 +757,7 @@ fn clean_list(
 mod tests {
     use super::*;
     use wirecatch_protocol::QueueId;
-    use wirecatch_protocol::app::{OutputFormat, Schedule, TimeOfDay};
+    use wirecatch_protocol::app::{MAX_QUEUE_ICON_CHARS, OutputFormat, Schedule, TimeOfDay};
 
     fn folders() -> KnownFolders {
         KnownFolders::under_home(std::env::temp_dir().join("wc-home"))

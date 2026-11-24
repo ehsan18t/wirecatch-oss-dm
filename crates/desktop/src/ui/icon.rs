@@ -269,7 +269,7 @@ pub fn category(category: Category) -> IconName {
 #[cfg(test)]
 mod tests {
     use gpui_kit::AssetSource as _;
-    use wirecatch_protocol::app::MAX_QUEUE_ICON_CHARS;
+    use wirecatch_protocol::app::is_valid_queue_icon;
 
     use super::*;
 
@@ -343,14 +343,10 @@ mod tests {
     fn every_pickable_catalog_slug_satisfies_protocol_rules() {
         assert!(catalog_count() > 1500);
         for entry in &catalog().all {
-            let slug = &entry.slug;
-            assert!(slug.len() <= MAX_QUEUE_ICON_CHARS, "{slug} too long");
-            assert!(!slug.starts_with('-') && !slug.ends_with('-'), "{slug}");
-            assert!(!slug.contains("--"), "{slug}");
             assert!(
-                slug.bytes()
-                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-'),
-                "{slug}"
+                is_valid_queue_icon(&entry.slug),
+                "{} violates queue icon slug rules",
+                entry.slug
             );
         }
     }
@@ -361,12 +357,27 @@ mod tests {
         assert!(!initial.searched);
         assert_eq!(initial.total, FEATURED_QUEUE_ICONS.len());
 
+        let featured_pinned = search("", Some("film"), 100);
+        assert!(!featured_pinned.searched);
+        assert_eq!(featured_pinned.total, FEATURED_QUEUE_ICONS.len());
+        assert_eq!(featured_pinned.entries[0].slug, "list-ordered");
+
         let pinned = search("", Some("telescope"), 100);
         assert_eq!(pinned.entries[0].slug, "telescope");
 
-        let exact = search("film", None, 20);
-        assert!(exact.searched);
-        assert_eq!(exact.entries[0].slug, "film");
+        let ranked = search("lock", None, 200);
+        assert!(ranked.searched);
+        let pos = |slug: &str| {
+            ranked
+                .entries
+                .iter()
+                .position(|entry| entry.slug == slug)
+                .unwrap_or_else(|| panic!("{slug} missing from lock results"))
+        };
+        // Exact ("lock") < Prefix ("lock-open") < WordPrefix ("folder-lock") < Substring ("clock").
+        assert!(pos("lock") < pos("lock-open"));
+        assert!(pos("lock-open") < pos("folder-lock"));
+        assert!(pos("folder-lock") < pos("clock"));
 
         let spaced = search("hard   drive", None, 20);
         assert_eq!(spaced.entries[0].slug, "hard-drive");
@@ -378,6 +389,11 @@ mod tests {
         assert!(punctuation_only.searched);
         assert_eq!(punctuation_only.total, 0);
         assert!(punctuation_only.entries.is_empty());
+
+        let non_ascii = search("caf\u{00e9}", None, 20);
+        assert!(non_ascii.searched);
+        assert_eq!(non_ascii.total, 0);
+        assert!(non_ascii.entries.is_empty());
 
         let missing = search("zzzznotanicon", None, 20);
         assert!(missing.searched);

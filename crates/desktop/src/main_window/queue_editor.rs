@@ -287,11 +287,24 @@ impl QueueForm {
 
     pub(super) fn close_icon_picker(form: &Entity<Self>, cx: &mut App) -> bool {
         let icon = form.read(cx).icon.clone();
-        if !icon.read(cx).is_open() {
-            return false;
-        }
-        icon.update(cx, IconPicker::close);
-        true
+        icon.update(cx, IconPicker::close)
+    }
+
+    #[cfg(test)]
+    pub(super) fn name_focused(&self, window: &Window, cx: &App) -> bool {
+        use gpui_kit::Focusable as _;
+        self.name.read(cx).focus_handle(cx).is_focused(window)
+    }
+
+    #[cfg(test)]
+    pub(super) fn open_icon_picker(form: &Entity<Self>, window: &mut Window, cx: &mut App) {
+        let icon = form.read(cx).icon.clone();
+        icon.update(cx, |picker, cx| picker.set_open(true, window, cx));
+    }
+
+    #[cfg(test)]
+    pub(super) fn icon_picker_open(&self, cx: &App) -> bool {
+        self.icon.read(cx).is_open()
     }
 
     /// Whether leaving would lose something: an edit to the queue, or anything set for a new one.

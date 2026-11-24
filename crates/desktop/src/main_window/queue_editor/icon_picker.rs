@@ -5,7 +5,9 @@ use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::popover::Popover;
 use gpui_kit::component::scroll::ScrollableElement as _;
-use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex, v_flex};
+use gpui_kit::component::{
+    ActiveTheme as _, Icon, IconName, Selectable as _, Sizable as _, h_flex, v_flex,
+};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     Anchor, App, AppContext as _, Context, Div, ElementId, Entity, EventEmitter, Focusable as _,
@@ -68,18 +70,21 @@ impl IconPicker {
         self.selected.clone()
     }
 
+    #[cfg(test)]
     pub(super) fn is_open(&self) -> bool {
         self.open
     }
 
-    pub(super) fn close(&mut self, cx: &mut Context<'_, Self>) {
-        if self.open {
-            self.open = false;
-            cx.notify();
+    pub(super) fn close(&mut self, cx: &mut Context<'_, Self>) -> bool {
+        if !self.open {
+            return false;
         }
+        self.open = false;
+        cx.notify();
+        true
     }
 
-    fn set_open(&mut self, open: bool, window: &mut Window, cx: &mut Context<'_, Self>) {
+    pub(super) fn set_open(&mut self, open: bool, window: &mut Window, cx: &mut Context<'_, Self>) {
         if self.open == open {
             return;
         }
@@ -105,11 +110,13 @@ impl IconPicker {
     }
 
     fn pick_first_match(&mut self, cx: &mut Context<'_, Self>) {
-        let query = self.search.read(cx).value().to_string();
-        let result = icon::search(&query, self.selected.as_deref(), 1);
+        let query = self.search.read(cx).value();
+        if query.trim().is_empty() {
+            return;
+        }
+        let result = icon::search(&query, None, 1);
         if let Some(first) = result.entries.first() {
-            let chosen = (first.icon != icon::DEFAULT_QUEUE_ICON).then(|| first.slug.clone());
-            self.pick(chosen, cx);
+            self.pick(Some(first.slug.clone()), cx);
         }
     }
 }
@@ -156,7 +163,7 @@ fn popover_body(picker: &WeakEntity<IconPicker>, cx: &App) -> Div {
         return v_flex();
     };
     let state = entity.read(cx);
-    let query = state.search.read(cx).value().to_string();
+    let query = state.search.read(cx).value();
     let trimmed = query.trim();
     let result = icon::search(trimmed, state.selected.as_deref(), MAX_SHOWN);
     let active = icon::queue_icon(state.selected.as_deref());
@@ -242,13 +249,14 @@ fn icon_grid(
                         .children(entries.into_iter().map(|entry| {
                             let selected = entry.icon == active;
                             let target = picker.clone();
-                            let chosen_slug = (entry.icon != icon::DEFAULT_QUEUE_ICON)
-                                .then(|| entry.slug.clone());
+                            let slug = entry.slug.clone();
                             let label = entry.label.clone();
                             let id =
                                 ElementId::Name(format!("queue-icon-choice-{}", entry.slug).into());
                             Button::new(id)
                                 .ghost()
+                                .selected(selected)
+                                .toggled(selected)
                                 .w(px(CELL_SIZE))
                                 .h(px(CELL_SIZE))
                                 .p_0()
@@ -265,7 +273,7 @@ fn icon_grid(
                                 .when(!selected, |button| button.text_color(muted))
                                 .on_click(move |_, _, cx| {
                                     may_have_closed(target.update(cx, |picker, cx| {
-                                        picker.pick(chosen_slug.clone(), cx);
+                                        picker.pick(Some(slug.clone()), cx);
                                     }));
                                 })
                         })),
@@ -329,5 +337,30 @@ mod tests {
             picker.read_with(cx, |p, _| p.selected()).as_deref(),
             Some("list-ordered")
         );
+    }
+
+    #[gpui_kit::test]
+    fn pressing_enter_with_empty_or_whitespace_query_keeps_featured_icon(cx: &mut TestAppContext) {
+        cx.update(gpui_kit::component::init);
+        let (picker, cx) =
+            cx.add_window_view(|window, cx| IconPicker::new(Some("film".to_owned()), window, cx));
+        picker.update_in(cx, |p, window, cx| p.set_open(true, window, cx));
+        cx.run_until_parked();
+
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        assert_eq!(
+            picker.read_with(cx, |p, _| p.selected()).as_deref(),
+            Some("film")
+        );
+        assert!(picker.read_with(cx, |p, _| p.is_open()));
+
+        cx.simulate_keystrokes("space space enter");
+        cx.run_until_parked();
+        assert_eq!(
+            picker.read_with(cx, |p, _| p.selected()).as_deref(),
+            Some("film")
+        );
+        assert!(picker.read_with(cx, |p, _| p.is_open()));
     }
 }
