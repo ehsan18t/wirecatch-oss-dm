@@ -1115,4 +1115,55 @@ mod tests {
         .unwrap();
         assert_eq!(queue_names(&imported), ["Everything", own_name.as_str()]);
     }
+
+    #[test]
+    fn queue_icons_round_trip_through_export_and_import_and_default_when_omitted() {
+        let f = folders();
+        let mut videos = queue(2, "Videos");
+        videos.settings.icon = Some("film".into());
+        let exported = export(
+            &default_settings(),
+            &[default_queue(), videos],
+            &[],
+            &f,
+            UnixMillis(0),
+        );
+        let bytes = serde_json::to_vec(&exported).unwrap();
+        let parsed = parse(&bytes).unwrap();
+        let imported = merge(parsed, &[default_queue()], &f, || QueueId(3)).unwrap();
+        let videos = imported
+            .queues
+            .iter()
+            .find(|q| q.settings.name == "Videos")
+            .unwrap();
+        assert_eq!(videos.settings.icon.as_deref(), Some("film"));
+
+        // Older profiles without an `icon` field import cleanly as `None`.
+        let mut raw: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        for entry in raw["queues"].as_array_mut().unwrap() {
+            entry["settings"].as_object_mut().unwrap().remove("icon");
+        }
+        let legacy_bytes = serde_json::to_vec(&raw).unwrap();
+        let legacy = merge(
+            parse(&legacy_bytes).unwrap(),
+            &[default_queue()],
+            &f,
+            || QueueId(4),
+        )
+        .unwrap();
+        assert!(legacy.queues.iter().all(|q| q.settings.icon.is_none()));
+
+        // Hostile icon slugs in an imported profile are refused.
+        raw["queues"][1]["settings"]["icon"] = serde_json::Value::String("../bad".into());
+        let hostile_bytes = serde_json::to_vec(&raw).unwrap();
+        assert!(
+            merge(
+                parse(&hostile_bytes).unwrap(),
+                &[default_queue()],
+                &f,
+                || { QueueId(5) }
+            )
+            .is_err()
+        );
+    }
 }

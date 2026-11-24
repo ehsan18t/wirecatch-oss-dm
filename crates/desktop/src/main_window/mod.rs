@@ -733,6 +733,21 @@ impl MainWindow {
         }
     }
 
+    /// Whether `view` is the navigation item currently shown: its downloads, or the queue page
+    /// editing that queue (never while creating a new queue).
+    pub(super) fn is_current_view(&self, view: View, cx: &App) -> bool {
+        match self.page.screen {
+            Screen::Downloads => self.view == view,
+            Screen::QueuePage => {
+                matches!(view, View::Queue(id) if self
+                    .queue_page
+                    .as_ref()
+                    .is_some_and(|form| form.read(cx).editing_queue() == Some(id)))
+            }
+            Screen::Settings | Screen::Shortcuts | Screen::About => false,
+        }
+    }
+
     /// Shows the queue page; Cancel leads back to the view shown now.
     fn open_queue_page(
         &mut self,

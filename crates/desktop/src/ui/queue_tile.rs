@@ -119,20 +119,27 @@ impl RenderOnce for QueueTile {
             Some(QueueState::Scheduled) => Some(theme.warning),
             Some(QueueState::Paused) | None => None,
         };
-        let status_badge = self.state.map(|state| {
-            let (icon, bg, fg) = match state {
-                QueueState::Running => (Lucide::Play, theme.primary, theme.primary_foreground),
-                QueueState::Paused => (
-                    Lucide::Pause,
-                    theme.secondary_active,
-                    theme.muted_foreground,
-                ),
-                QueueState::Scheduled => (Lucide::Moon, theme.warning, theme.warning_foreground),
-            };
-            corner_badge(icon, bg, fg, self.behind, self.hover.clone())
-                .right(px(BADGE_OUT))
-                .top(px(BADGE_OUT))
-        });
+        // In the rail, the progress ring already communicates the running state and starts at
+        // 12 o'clock; omitting the redundant Play badge keeps the ring unobstructed.
+        let status_badge = self
+            .state
+            .filter(|state| !(*state == QueueState::Running && self.ring.is_some()))
+            .map(|state| {
+                let (icon, bg, fg) = match state {
+                    QueueState::Running => (Lucide::Play, theme.primary, theme.primary_foreground),
+                    QueueState::Paused => (
+                        Lucide::Pause,
+                        theme.secondary_active,
+                        theme.muted_foreground,
+                    ),
+                    QueueState::Scheduled => {
+                        (Lucide::Moon, theme.warning, theme.warning_foreground)
+                    }
+                };
+                corner_badge(icon, bg, fg, self.behind, self.hover.clone())
+                    .right(px(BADGE_OUT))
+                    .top(px(BADGE_OUT))
+            });
         let rules_badge = self.rules.map(|on| {
             let (icon, bg, fg) = if on {
                 (Lucide::Zap, theme.primary, theme.primary_foreground)

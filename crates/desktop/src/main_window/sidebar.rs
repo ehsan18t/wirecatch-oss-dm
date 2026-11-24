@@ -364,7 +364,7 @@ impl MainWindow {
     ) -> AnyElement {
         let id = queue.id;
         let view = View::Queue(id);
-        let current = self.view == view;
+        let current = self.is_current_view(view, cx);
         let library = self.library.read(cx);
         let facts = QueueFacts::of(library.downloads.tally_of(id));
         let order: Vec<QueueId> = library.queues.iter().map(|q| q.id).collect();
@@ -516,10 +516,9 @@ fn drops(
     )
 }
 
-/// A queue's tile: its chosen icon, with a status badge when paused, downloading or waiting for its
-/// hours.
-pub(super) fn queue_tile(queue: &Queue, running: bool, behind: Hsla) -> QueueTile {
-    let state = if queue.status.paused {
+/// What a queue is doing right now, for its tile's tint and status badge.
+pub(super) fn queue_state(queue: &Queue, running: bool) -> Option<QueueState> {
+    if queue.status.paused {
         Some(QueueState::Paused)
     } else if running {
         Some(QueueState::Running)
@@ -527,8 +526,14 @@ pub(super) fn queue_tile(queue: &Queue, running: bool, behind: Hsla) -> QueueTil
         Some(QueueState::Scheduled)
     } else {
         None
-    };
-    QueueTile::new(icon::queue_icon(queue.settings.icon.as_deref()), behind).state(state)
+    }
+}
+
+/// A queue's tile: its chosen icon, with a status badge when paused, downloading or waiting for its
+/// hours.
+pub(super) fn queue_tile(queue: &Queue, running: bool, behind: Hsla) -> QueueTile {
+    QueueTile::new(icon::queue_icon(queue.settings.icon.as_deref()), behind)
+        .state(queue_state(queue, running))
 }
 
 /// A queue's text: its name with a failure dot and its speed or count, its line with the speed
@@ -927,5 +932,29 @@ mod tests {
             "All done · via Home"
         );
         assert_eq!(summary(&queue(true), &done, None).1, "Paused · 3 of 3 done");
+    }
+
+    #[test]
+    fn queue_state_and_custom_icon_stay_independent() {
+        let mut q = queue(false);
+        q.settings.icon = Some("film".into());
+        assert_eq!(icon::queue_icon(q.settings.icon.as_deref()), Lucide::Film);
+        assert_eq!(queue_state(&q, false), None);
+        assert_eq!(queue_state(&q, true), Some(QueueState::Running));
+
+        q.status.paused = true;
+        assert_eq!(queue_state(&q, true), Some(QueueState::Paused));
+        assert_eq!(icon::queue_icon(q.settings.icon.as_deref()), Lucide::Film);
+
+        q.status.paused = false;
+        q.settings.schedule = Some(wirecatch_protocol::app::Schedule {
+            start: wirecatch_protocol::app::TimeOfDay {
+                hour: 22,
+                minute: 0,
+            },
+            stop: None,
+            days: vec![],
+        });
+        assert_eq!(queue_state(&q, false), Some(QueueState::Scheduled));
     }
 }

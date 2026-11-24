@@ -1,17 +1,17 @@
-//! Icons from gpui-kit's complete Lucide catalogue, plus lookup and search for queue icons.
+//! Icons from gpui-kit's complete Lucide catalog, plus lookup and search for queue icons.
 
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-use gpui_kit::assets::{AllAssets, IconName};
-use gpui_kit::{AssetSource, Result, SharedString};
+use gpui_kit::assets::IconName;
 use wirecatch_protocol::app::Category;
 
-/// The icon a queue draws when the person has not picked one.
+pub use gpui_kit::assets::AllAssets as Assets;
+
+/// The icon a queue draws when none has been picked.
 pub const DEFAULT_QUEUE_ICON: IconName = IconName::ListOrdered;
 
-/// Curated queue icons shown before the person types a search query.
+/// Curated queue icons shown before a search query is typed.
 const FEATURED_QUEUE_ICONS: &[IconName] = &[
     IconName::ListOrdered,
     IconName::Film,
@@ -79,20 +79,6 @@ const FEATURED_QUEUE_ICONS: &[IconName] = &[
     IconName::Rocket,
 ];
 
-/// Every icon in gpui-kit's bundled Lucide and component catalogue.
-pub struct Assets;
-
-impl AssetSource for Assets {
-    fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
-        AllAssets.load(path)
-    }
-
-    fn list(&self, path: &str) -> Result<Vec<SharedString>> {
-        AllAssets.list(path)
-    }
-}
-
-/// One icon in the searchable queue icon catalogue.
 #[derive(Debug)]
 pub struct IconEntry {
     pub icon: IconName,
@@ -101,10 +87,25 @@ pub struct IconEntry {
     search: String,
 }
 
+#[derive(Debug)]
+pub struct SearchResult {
+    pub entries: Vec<&'static IconEntry>,
+    pub total: usize,
+    pub searched: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum MatchRank {
+    Exact,
+    Prefix,
+    WordPrefix,
+    Substring,
+}
+
 struct Catalog {
     all: Vec<IconEntry>,
     featured: Vec<usize>,
-    by_slug: HashMap<String, IconName>,
+    by_slug: HashMap<String, usize>,
 }
 
 static CATALOG: OnceLock<Catalog> = OnceLock::new();
@@ -112,13 +113,12 @@ static CATALOG: OnceLock<Catalog> = OnceLock::new();
 fn catalog() -> &'static Catalog {
     CATALOG.get_or_init(|| {
         let mut all = Vec::with_capacity(IconName::ALL.len());
-        let mut by_slug = HashMap::with_capacity(IconName::ALL.len());
         for &icon in IconName::ALL {
             let path = icon.path();
             let Some(slug) = slug_from_path(path.as_ref()) else {
                 continue;
             };
-            by_slug.insert(slug.to_owned(), icon);
+            // Window chrome icons are for title bars, not queue icons.
             if slug.starts_with("window-") {
                 continue;
             }
@@ -132,6 +132,11 @@ fn catalog() -> &'static Catalog {
             });
         }
         all.sort_by(|a, b| a.slug.cmp(&b.slug));
+        let by_slug: HashMap<String, usize> = all
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| (entry.slug.clone(), index))
+            .collect();
         let index_by_icon: HashMap<IconName, usize> = all
             .iter()
             .enumerate()
@@ -161,9 +166,15 @@ fn human_label(words: &str) -> String {
     }
 }
 
-/// The bundled icon named by `slug`, or `None` when no bundled icon has that slug.
+/// The pickable catalog entry for `slug`, or `None` when no pickable icon has that slug.
+pub fn entry_by_slug(slug: &str) -> Option<&'static IconEntry> {
+    let cat = catalog();
+    cat.by_slug.get(slug).map(|&index| &cat.all[index])
+}
+
+/// The bundled icon named by `slug`, or `None` when no pickable icon has that slug.
 pub fn by_slug(slug: &str) -> Option<IconName> {
-    catalog().by_slug.get(slug).copied()
+    entry_by_slug(slug).map(|entry| entry.icon)
 }
 
 /// The icon a queue draws: its chosen bundled icon, or [`DEFAULT_QUEUE_ICON`].
@@ -171,59 +182,75 @@ pub fn queue_icon(slug: Option<&str>) -> IconName {
     slug.and_then(by_slug).unwrap_or(DEFAULT_QUEUE_ICON)
 }
 
-/// Total number of pickable icons in the catalogue.
 pub fn catalog_count() -> usize {
     catalog().all.len()
 }
 
-/// Curated icons for the picker's initial view before a query is typed.
-pub fn featured() -> Vec<&'static IconEntry> {
+/// Searches the full catalog for icons matching every whitespace-separated term in `query`.
+/// An empty query returns the curated icons, optionally pinning `pinned` first when it is outside
+/// the curated set.
+pub fn search(query: &str, pinned: Option<&str>, limit: usize) -> SearchResult {
     let cat = catalog();
-    cat.featured.iter().map(|&index| &cat.all[index]).collect()
-}
-
-/// Searches the full catalogue for icons matching every whitespace-separated term in `query`.
-/// Returns up to `limit` ranked matches and the total number of matches.
-pub fn search(query: &str, limit: usize) -> (Vec<&'static IconEntry>, usize) {
-    let cat = catalog();
-    let normalized = query.trim().to_ascii_lowercase().replace(['-', '_'], " ");
-    let terms: Vec<&str> = normalized.split_whitespace().collect();
-    if terms.is_empty() {
-        let items = featured();
-        let total = items.len();
-        return (items.into_iter().take(limit).collect(), total);
+    if query.trim().is_empty() {
+        let mut entries: Vec<&'static IconEntry> =
+            cat.featured.iter().map(|&index| &cat.all[index]).collect();
+        if let Some(selected) = pinned.and_then(entry_by_slug)
+            && !entries.iter().any(|entry| entry.icon == selected.icon)
+        {
+            entries.insert(0, selected);
+        }
+        let total = entries.len();
+        entries.truncate(limit);
+        return SearchResult {
+            entries,
+            total,
+            searched: false,
+        };
     }
-    let mut matched: Vec<(u8, &'static IconEntry)> = cat
+    let cleaned = query.to_ascii_lowercase().replace(['-', '_'], " ");
+    let terms: Vec<&str> = cleaned.split_whitespace().collect();
+    if terms.is_empty() {
+        return SearchResult {
+            entries: Vec::new(),
+            total: 0,
+            searched: true,
+        };
+    }
+    let normalized = terms.join(" ");
+    let mut matched: Vec<(MatchRank, &'static IconEntry)> = cat
         .all
         .iter()
         .filter_map(|entry| {
-            let all_hit = terms.iter().all(|term| entry.search.contains(term));
-            if !all_hit {
+            if !terms.iter().all(|term| entry.search.contains(term)) {
                 return None;
             }
             let rank = if entry.search == normalized {
-                0
+                MatchRank::Exact
             } else if entry.search.starts_with(&normalized) {
-                1
+                MatchRank::Prefix
             } else if terms
                 .iter()
                 .all(|term| entry.search.split(' ').any(|word| word.starts_with(term)))
             {
-                2
+                MatchRank::WordPrefix
             } else {
-                3
+                MatchRank::Substring
             };
             Some((rank, entry))
         })
         .collect();
     matched.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.slug.cmp(&b.1.slug)));
     let total = matched.len();
-    let items = matched
+    let entries = matched
         .into_iter()
         .take(limit)
         .map(|(_, entry)| entry)
         .collect();
-    (items, total)
+    SearchResult {
+        entries,
+        total,
+        searched: true,
+    }
 }
 
 /// The picture of a download's kind of file.
@@ -241,6 +268,9 @@ pub fn category(category: Category) -> IconName {
 
 #[cfg(test)]
 mod tests {
+    use gpui_kit::AssetSource as _;
+    use wirecatch_protocol::app::MAX_QUEUE_ICON_CHARS;
+
     use super::*;
 
     /// `IconName::ArrowUpDown` is drawn from `icons/arrow-up-down.svg`.
@@ -300,22 +330,57 @@ mod tests {
     }
 
     #[test]
-    fn queue_icon_resolves_slugs_and_falls_back_to_default() {
+    fn queue_icon_resolves_slugs_and_excludes_window_chrome() {
         assert_eq!(queue_icon(None), DEFAULT_QUEUE_ICON);
         assert_eq!(queue_icon(Some("film")), IconName::Film);
         assert_eq!(queue_icon(Some("does-not-exist")), DEFAULT_QUEUE_ICON);
         assert_eq!(by_slug("film"), Some(IconName::Film));
+        assert_eq!(by_slug("window-close"), None);
+        assert_eq!(queue_icon(Some("window-close")), DEFAULT_QUEUE_ICON);
     }
 
     #[test]
-    fn catalog_includes_all_featured_icons_and_searches_by_terms() {
-        assert_eq!(featured().len(), FEATURED_QUEUE_ICONS.len());
+    fn every_pickable_catalog_slug_satisfies_protocol_rules() {
         assert!(catalog_count() > 1500);
-        let (hits, total) = search("film", 20);
-        assert!(total >= 1);
-        assert_eq!(hits[0].slug, "film");
-        let (hits, total) = search("file-video", 20);
-        assert!(total >= 1);
-        assert!(hits.iter().any(|entry| entry.slug.contains("video")));
+        for entry in &catalog().all {
+            let slug = &entry.slug;
+            assert!(slug.len() <= MAX_QUEUE_ICON_CHARS, "{slug} too long");
+            assert!(!slug.starts_with('-') && !slug.ends_with('-'), "{slug}");
+            assert!(!slug.contains("--"), "{slug}");
+            assert!(
+                slug.bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-'),
+                "{slug}"
+            );
+        }
+    }
+
+    #[test]
+    fn search_ranks_queries_pins_selected_icon_and_handles_separators() {
+        let initial = search("", None, 100);
+        assert!(!initial.searched);
+        assert_eq!(initial.total, FEATURED_QUEUE_ICONS.len());
+
+        let pinned = search("", Some("telescope"), 100);
+        assert_eq!(pinned.entries[0].slug, "telescope");
+
+        let exact = search("film", None, 20);
+        assert!(exact.searched);
+        assert_eq!(exact.entries[0].slug, "film");
+
+        let spaced = search("hard   drive", None, 20);
+        assert_eq!(spaced.entries[0].slug, "hard-drive");
+
+        let dashed = search("hard--drive", None, 20);
+        assert_eq!(dashed.entries[0].slug, "hard-drive");
+
+        let punctuation_only = search("---", None, 20);
+        assert!(punctuation_only.searched);
+        assert_eq!(punctuation_only.total, 0);
+        assert!(punctuation_only.entries.is_empty());
+
+        let missing = search("zzzznotanicon", None, 20);
+        assert!(missing.searched);
+        assert_eq!(missing.total, 0);
     }
 }

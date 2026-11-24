@@ -23,7 +23,7 @@ use super::queue_rules::RulesForm;
 use crate::backend::{Backend, said};
 use crate::library::Library;
 use crate::{files, text};
-use icon_picker::IconPicker;
+use icon_picker::{IconPicked, IconPicker};
 
 /// What a speed limit switched on starts at when the app has none.
 const FIRST_SPEED_LIMIT: u64 = 2 * Unit::Mb.bytes();
@@ -239,9 +239,12 @@ impl QueueForm {
             window,
             cx,
         );
-        let edited =
-            forget_problem_on_edit([&name, &description, &concurrent, &limit, &connections], cx);
         let icon = cx.new(|cx| IconPicker::new(opened.icon.clone(), window, cx));
+        let subscriptions = forget_problem_on_edit(
+            [&name, &description, &concurrent, &limit, &connections],
+            &icon,
+            cx,
+        );
         let (rules, proxy) = editors(&library, queue, &name, &opened, window, cx);
         Self {
             library,
@@ -267,8 +270,13 @@ impl QueueForm {
             stage: Stage::Editing,
             original,
             section: Section::General,
-            _subscriptions: edited.into(),
+            _subscriptions: subscriptions,
         }
+    }
+
+    /// The id of the queue being edited, or `None` when creating a new queue.
+    pub(super) fn editing_queue(&self) -> Option<QueueId> {
+        self.original.as_ref().map(|queue| queue.id)
     }
 
     /// Gives the keyboard to the name of `form`'s queue.
@@ -277,7 +285,6 @@ impl QueueForm {
         name.update(cx, |name, cx| name.focus(window, cx));
     }
 
-    /// Closes the icon picker popover if it is open; returns whether it was open.
     pub(super) fn close_icon_picker(form: &Entity<Self>, cx: &mut App) -> bool {
         let icon = form.read(cx).icon.clone();
         if !icon.read(cx).is_open() {
@@ -530,19 +537,30 @@ fn editors(
     (rules, proxy)
 }
 
-/// A field edited takes away the problem the form showed.
+/// Any field or icon change clears the problem the form showed.
 fn forget_problem_on_edit(
     fields: [&Entity<InputState>; 5],
+    icon: &Entity<IconPicker>,
     cx: &mut Context<'_, QueueForm>,
-) -> [Subscription; 5] {
-    fields.map(|field| {
-        cx.subscribe(field, |form: &mut QueueForm, _, event: &InputEvent, cx| {
-            if matches!(event, InputEvent::Change) {
-                form.problem = None;
-                cx.notify();
-            }
+) -> Vec<Subscription> {
+    let mut subs: Vec<Subscription> = fields
+        .into_iter()
+        .map(|field| {
+            cx.subscribe(field, |form: &mut QueueForm, _, event: &InputEvent, cx| {
+                if matches!(event, InputEvent::Change) {
+                    form.problem = None;
+                    cx.notify();
+                }
+            })
         })
-    })
+        .collect();
+    subs.push(
+        cx.subscribe(icon, |form: &mut QueueForm, _, _: &IconPicked, cx| {
+            form.problem = None;
+            cx.notify();
+        }),
+    );
+    subs
 }
 
 fn number_field(
@@ -743,5 +761,37 @@ mod tests {
             saved_days(&[Weekday::Sun, Weekday::Mon]),
             vec![Weekday::Mon, Weekday::Sun]
         );
+    }
+
+    #[gpui_kit::test]
+    fn picking_an_icon_marks_the_form_changed_carries_it_in_settings_and_clears_problem(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_kit::component::init);
+        let library = cx.update(|cx| cx.new(|_| Library::empty()));
+        let (form, cx) = cx.add_window_view(|window, cx| {
+            QueueForm::new(library, Opening::New, WeakEntity::new_invalid(), window, cx)
+        });
+        assert_eq!(form.read_with(cx, |f, _| f.editing_queue()), None);
+        assert!(!form.read_with(cx, QueueForm::has_changes));
+
+        form.update(cx, |f, _| {
+            f.problem = Some("Give the queue a name.".to_owned());
+        });
+        let picker = form.read_with(cx, |f, _| f.icon.clone());
+        picker.update(cx, |p, cx| p.pick(Some("film".to_owned()), cx));
+        cx.run_until_parked();
+
+        assert!(form.read_with(cx, QueueForm::has_changes));
+        assert_eq!(
+            form.read_with(cx, |f, cx| f.typed(cx).unwrap().icon)
+                .as_deref(),
+            Some("film")
+        );
+        assert_eq!(form.read_with(cx, |f, _| f.problem.clone()), None);
+
+        picker.update(cx, |p, cx| p.pick(None, cx));
+        cx.run_until_parked();
+        assert!(!form.read_with(cx, QueueForm::has_changes));
     }
 }
