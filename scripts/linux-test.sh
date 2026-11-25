@@ -16,7 +16,6 @@ docker volume create "$VOLUME" >/dev/null
 tar -C "$ROOT" \
   --exclude=./.git --exclude=./target --exclude=./node_modules --exclude='./apps/*/node_modules' \
   --exclude='./packages/*/node_modules' --exclude=./.claude --exclude=./.cache \
-  --exclude='./apps/extension/.output' \
   -cf - . |
 docker run --rm -i \
   -v "$VOLUME:/target" \

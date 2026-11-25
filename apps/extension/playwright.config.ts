@@ -4,7 +4,7 @@ import { defineConfig } from '@playwright/test';
 // (`preview/`, sample data, every word pseudo-translated longer), built and served on a port of its own.
 // Run with `pnpm e2e`; the gate runs it as `e2e-extension`.
 const PORT = 4329;
-const OUT = '../.output/e2e-preview';
+const OUT = '../../../target/extension/e2e-preview';
 // An address, not `localhost`: on Windows that name is both `::1` and `127.0.0.1`, and the server
 // listens on one, so a request the browser sends to the other is refused and the page never draws.
 const HOST = '127.0.0.1';

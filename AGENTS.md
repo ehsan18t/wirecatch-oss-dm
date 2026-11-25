@@ -58,7 +58,7 @@ That runs every check CI runs (`node scripts/gate.mjs --list` shows them; `pnpm 
 
 - Install once with `pnpm install`; it also turns on the commit-msg hook.
 - Lint and format from the root only (`pnpm lint`, `pnpm format`); packages have no lint or format scripts, and list ESLint or Prettier only when their own code imports it (D42).
-- Build the installers with `node scripts/package.mjs` (output in `target/packages`, see `crates/desktop/PACKAGING.md`).
+- Build what ships with `pnpm build` (`node scripts/build.mjs`): the extension unpacked in `target/extension`, the installers and the extension's zips in `target/packages`. `pnpm build app` or `pnpm build extension` builds one (see `crates/desktop/PACKAGING.md`).
 - Changing `crates/protocol` means running `pnpm protocol:generate` and committing the generated files; the gate fails otherwise.
 - Changing `config/product.toml` or `config/templates/` means running `pnpm product:generate` and committing the generated files; the gate fails otherwise. Before a release, `node scripts/gate.mjs publish` must pass: no identity value may still be a `TODO-PRODUCT-` placeholder.
 - `wirecatch-bridge/test-overrides` is for tests only and is never enabled in a build.

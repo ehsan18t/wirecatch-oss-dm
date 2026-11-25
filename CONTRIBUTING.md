@@ -24,17 +24,13 @@ Run the desktop app (a development build with GPUI optimised, so it draws at the
 cargo ui
 ```
 
-Build the installers for this machine (output in `target/packages`; see [crates/desktop/PACKAGING.md](crates/desktop/PACKAGING.md)):
+Build everything that ships: the extension for both browsers, unpacked in `target/extension`, and the installers for this machine with the extension's zips in `target/packages` (see [crates/desktop/PACKAGING.md](crates/desktop/PACKAGING.md)). `pnpm build app` or `pnpm build extension` builds one of them, and `node scripts/build.mjs` is the same command:
 
 ```bash
-node scripts/package.mjs
+pnpm build
 ```
 
-Build the extension for both browsers (output in `apps/extension/.output`):
-
-```bash
-pnpm --filter @wirecatch/extension build
-```
+The extension reaches the app through the bridge, which the installer registers. Load `target/extension/chrome-mv3` or `firefox-mv3` in the browser once Wirecatch is installed, or register a bridge you built with `cargo run -p wirecatch-bridge -- install`.
 
 Download from the command line:
 
@@ -97,7 +93,7 @@ Notes:
 
 - Lint and format from the root only (`pnpm lint`, `pnpm format`); packages have no lint or format scripts of their own (D42).
 - `pnpm install` also turns on a commit-msg hook that checks your commit messages (unless you already use another hooks folder; it says so).
-- The desktop crate's tests run with every other crate's, in one build. Cargo builds of the desktop app link the Visual C++ runtime dynamically; `scripts/package.mjs` links it statically (D33).
+- The desktop crate's tests run with every other crate's, in one build. Cargo builds of the desktop app link the Visual C++ runtime dynamically; `pnpm build app` links it statically (D33).
 - Debug builds carry line tables for the workspace's crates and no debug info for dependencies (D33). For a debugger session, set `CARGO_PROFILE_DEV_DEBUG=full`.
 - `wirecatch-bridge/test-overrides` is for tests only and must never be enabled in a build.
 - Every bridge build trusts the same Chromium extension id (`chromium_id` in `config/product.toml`) and the Firefox add-on id (D22). Every Chromium build of the extension (`pnpm dev`, `pnpm build` or `pnpm build:dev` in `apps/extension`) carries the matching public key, so an unpacked load gets that id and works with any bridge, including an installed release. Only `pnpm build:store` leaves the key out, for the Chrome Web Store (`apps/extension/PUBLISHING.md`). To register a bridge you built yourself, run `cargo run -p wirecatch-bridge -- install`.

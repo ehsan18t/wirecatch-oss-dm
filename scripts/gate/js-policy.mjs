@@ -59,7 +59,7 @@ function rootScripts() {
     check: 'node scripts/gate.mjs js-check',
     lint: 'node scripts/gate.mjs js-lint',
     test: 'node scripts/gate.mjs js-test',
-    build: 'node scripts/gate.mjs js-build',
+    build: 'node scripts/build.mjs',
     format: `prettier --write ${lintTargets().formatted.join(' ')}`,
   };
 }

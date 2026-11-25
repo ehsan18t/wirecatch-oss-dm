@@ -16,8 +16,8 @@ The private key that belongs to `chromium_public_key` is kept by the maintainer 
 
 ## Chrome Web Store
 
-1. Build the package: `pnpm build:store`. It first runs `node scripts/gate.mjs release-build` from the repository root, which warns while `config/product.toml` still holds a placeholder, so the package is for testing only (D49). `pnpm sign:firefox` runs `publish`, which fails on a placeholder too (D29). The extension bundles no Public Suffix List: the app picks every cookie (D280). It builds `.output/chrome-mv3-store` and zips it to `.output/wirecatchextension-<version>-chrome-store.zip`. It is the same as `pnpm build` without the `key` field.
-2. First upload only: add the private key to the root of the zip, named `key.pem`, for example by copying it into an empty temporary folder as `key.pem` and running `zip -j .output/wirecatchextension-<version>-chrome-store.zip <that folder>/key.pem`. Upload that zip as a new item, then delete the temporary copy and that zip. The Chrome Web Store uses the key to give the item our id instead of a new one.
+1. Build the package: `pnpm build:store`. It first runs `node scripts/gate.mjs release-build` from the repository root, which warns while `config/product.toml` still holds a placeholder, so the package is for testing only (D49). `pnpm sign:firefox` runs `publish`, which fails on a placeholder too (D29). The extension bundles no Public Suffix List: the app picks every cookie (D280). It builds `target/extension/chrome-mv3-store` and zips it to `target/extension/wirecatchextension-<version>-chrome-store.zip`. It is the same as `pnpm build` without the `key` field.
+2. First upload only: add the private key to the root of the zip, named `key.pem`, for example by copying it into an empty temporary folder as `key.pem` and running `zip -j target/extension/wirecatchextension-<version>-chrome-store.zip <that folder>/key.pem`. Upload that zip as a new item, then delete the temporary copy and that zip. The Chrome Web Store uses the key to give the item our id instead of a new one.
 3. Before publishing, check that the item's id in the developer dashboard is `chdgnmpjoipbgfeldicipccjjghmagki`. An item's id never changes, so if it shows another id, remove that item and upload again with the key.
 4. Every later update: upload the zip from step 1 as it is, without `key.pem`.
 
@@ -49,14 +49,14 @@ The developer dashboard's Privacy tab asks for a single purpose, a reason for ea
 
 ## Firefox
 
-Firefox builds use the add-on id `extension@wirecatch.app` (`firefox_id`) from `browser_specific_settings.gecko` and never carry a `key`. Every bridge lists that id in `allowed_extensions`. `pnpm build:firefox` builds `.output/firefox-mv3`; `pnpm zip` also makes the Firefox package and its sources zip.
+Firefox builds use the add-on id `extension@wirecatch.app` (`firefox_id`) from `browser_specific_settings.gecko` and never carry a `key`. Every bridge lists that id in `allowed_extensions`. `node scripts/build.mjs extension`, run from the repository root, builds `target/extension/firefox-mv3` and puts the Firefox package and its sources zip in `target/packages`.
 
 ### Signing for self-distribution
 
 Release and Beta Firefox only install add-ons signed by Mozilla. Signing on the unlisted channel gives a signed `.xpi` that we host ourselves (for example on the Wirecatch website or GitHub Releases) and that release Firefox installs permanently. It is not shown on addons.mozilla.org.
 
 1. Create an account on [addons.mozilla.org](https://addons.mozilla.org) (a Mozilla account), then make API credentials under Tools, Manage API Keys (<https://addons.mozilla.org/developers/addon/api/key/>). The JWT issuer is the API key and the JWT secret is the API secret. Keep both in a password manager, never in the repository or in a config file.
-2. Run `pnpm sign:firefox` with the credentials in the environment, for example `WEB_EXT_API_KEY=... WEB_EXT_API_SECRET=... pnpm sign:firefox`. It builds the Firefox package and its sources zip, sends both to addons.mozilla.org on the unlisted channel, and saves the signed `.xpi` in `.output/signed`. web-ext reads the credentials from those variables itself, and config file discovery is turned off, so no file can supply them. Automatic signing usually takes a few minutes; Mozilla may still review unlisted versions later.
+2. Run `pnpm sign:firefox` with the credentials in the environment, for example `WEB_EXT_API_KEY=... WEB_EXT_API_SECRET=... pnpm sign:firefox`. It builds the Firefox package and its sources zip, sends both to addons.mozilla.org on the unlisted channel, and saves the signed `.xpi` in `target/extension/signed`. web-ext reads the credentials from those variables itself, and config file discovery is turned off, so no file can supply them. Automatic signing usually takes a few minutes; Mozilla may still review unlisted versions later.
 3. Raise `version` in `package.json` before each new submission: addons.mozilla.org refuses a version number it has already signed.
 
 The first signing creates the add-on on addons.mozilla.org under `extension@wirecatch.app`, which reserves that id for our account so nobody else can claim it. D21 lists this as an action only the maintainer can take; do it soon, even before the first release.
@@ -77,5 +77,5 @@ Wirecatch is to be listed on addons.mozilla.org, so every copy updates by itself
 
 ### Testing unsigned builds
 
-- Any Firefox: open `about:debugging#/runtime/this-firefox`, choose Load Temporary Add-on, and pick `.output/firefox-mv3/manifest.json` (or run `pnpm dev:firefox`). It keeps the `extension@wirecatch.app` id, so it talks to an installed Wirecatch, and it is removed when Firefox restarts.
-- To keep an unsigned build installed: Firefox Developer Edition, Nightly, ESR or an unbranded build, with `xpinstall.signatures.required` set to `false` in `about:config`, then install the zip from `pnpm zip`. Release and Beta Firefox ignore that setting.
+- Any Firefox: open `about:debugging#/runtime/this-firefox`, choose Load Temporary Add-on, and pick `target/extension/firefox-mv3/manifest.json` (or run `pnpm dev:firefox`). It keeps the `extension@wirecatch.app` id, so it talks to an installed Wirecatch, and it is removed when Firefox restarts.
+- To keep an unsigned build installed: Firefox Developer Edition, Nightly, ESR or an unbranded build, with `xpinstall.signatures.required` set to `false` in `about:config`, then install the Firefox zip that `node scripts/build.mjs extension` puts in `target/packages`. Release and Beta Firefox ignore that setting.

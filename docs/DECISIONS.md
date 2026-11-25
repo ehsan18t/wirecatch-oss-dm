@@ -1922,3 +1922,11 @@ Decided with the maintainer on 2026-11-24. It amends D255.1, D255.2 and D267.2.
 1. Creating a queue from the sidebar's `+` button or the command palette opens the full queue page directly (`Opening::New`), with focus in the name field and no existing queue marked as active in the navigation, instead of an intermediate New queue dialog.
 2. Each queue carries an optional `icon` slug (`QueueSettings::icon`, defaulting to `None`, validated as lowercase ASCII kebab-case within `MAX_QUEUE_ICON_CHARS`). The desktop app embeds gpui-kit's complete Lucide catalog (`AllAssets`), offers a searchable icon picker button beside the queue name in the queue page header, and falls back to `ListOrdered` when unset or unrecognized.
 3. A queue's tile in the sidebar and rail always shows the queue's own icon. Running and outside-schedule states tint the tile (`primary` and `warning`), and paused, running (in the sidebar) and outside-schedule states show a top-right status badge alongside the bottom-right rules badge; in the rail, a running queue's progress ring carries the running state without a redundant Play badge over the ring. The queue header and download window queue chips (progress badge and picked queue in the queue picker, keeping the bolt for Automatic) show the queue's icon beside its name.
+
+### D291. One build command, and every build output under target/
+
+Decided with the maintainer on 2026-11-25. It amends D106.3.
+
+1. `pnpm build`, the same as `node scripts/build.mjs` from the repository root, builds what ships: the browser extension for Chromium and Firefox, and the desktop app's installers for this machine. `pnpm build app` and `pnpm build extension` build one of them. It checks the product identity once, before either (D29, D49). The installers are made by `scripts/package/app.mjs`, as D106.3 gives for `scripts/package.mjs`.
+2. Every build output of the repository is under `target/`: Cargo's own, the extension unpacked in `target/extension` (WXT's `outDir`), and the installers with the extension's zips in `target/packages`, so one folder holds what a release attaches.
+3. The gate's `js-build` check keeps building every workspace package that has a `build` script; it is no longer the root `build` script.

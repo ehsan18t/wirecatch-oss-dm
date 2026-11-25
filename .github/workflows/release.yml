@@ -60,7 +60,7 @@ jobs:
 
       # Runs `gate.mjs release-build` first, then builds the app, the bridge and the installers.
       - name: Build the installers
-        run: node scripts/package.mjs
+        run: node scripts/build.mjs app
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -148,18 +148,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Check the extension release
-        run: node scripts/gate.mjs release-build
-
+      # Runs `gate.mjs release-build` first, then builds and zips the extension for both browsers.
       - name: Build the store packages
-        run: pnpm --filter @wirecatch/extension zip
+        run: node scripts/build.mjs extension
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: extension
-          path: apps/extension/.output/*.zip
-          # WXT writes the packages to `.output`, which the action skips as hidden unless told.
-          include-hidden-files: true
+          path: target/packages/*.zip
           if-no-files-found: error
 
   prepare:

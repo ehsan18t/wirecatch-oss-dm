@@ -16,7 +16,7 @@
     "lint": "node scripts/gate.mjs js-lint",
     "format": "prettier --write apps packages scripts eslint.config.js",
     "test": "node scripts/gate.mjs js-test",
-    "build": "node scripts/gate.mjs js-build"
+    "build": "node scripts/build.mjs"
   },
   "devDependencies": {
     "@wirecatch/eslint-config": "workspace:*",

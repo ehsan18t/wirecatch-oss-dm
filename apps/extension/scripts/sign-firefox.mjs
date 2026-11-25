@@ -51,7 +51,7 @@ function main() {
     process.exit(1);
   }
   const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-  const output = join(root, '.output');
+  const output = join(root, '..', '..', 'target', 'extension');
   /** Runs a package's command line tool with this Node, without a shell. */
   const run = (bin, args) =>
     execFileSync(process.execPath, [join(root, 'node_modules', ...bin), ...args], {
@@ -59,7 +59,7 @@ function main() {
       stdio: 'inherit',
     });
 
-  // Builds .output/firefox-mv3 and zips it with its sources, which AMO asks for because the
+  // Builds target/extension/firefox-mv3 and zips it with its sources, which AMO asks for because the
   // code is bundled.
   run(['wxt', 'bin', 'wxt.mjs'], ['zip', '-b', 'firefox', '--mv3']);
   const sources = readdirSync(output).find((name) => name.endsWith('-sources.zip'));
