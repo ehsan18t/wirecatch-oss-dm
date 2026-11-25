@@ -11,13 +11,13 @@ coverage/
 .claude/worktrees/
 .playwright-mcp/
 .cache/
-# Signing keys never belong in the repository (apps/extension/PUBLISHING.md).
+# Signing keys never belong in the repository (extension/PUBLISHING.md).
 *.pem
 # The extension's web-ext local settings and its bundle size report.
-apps/extension/web-ext.config.ts
-apps/extension/stats.html
+extension/web-ext.config.ts
+extension/stats.html
 # The extension's browser test reports.
-apps/extension/test-results/
-apps/extension/playwright-report/
+extension/test-results/
+extension/playwright-report/
 # The protocol generator's working folders next to src/generated (packages/protocol/scripts/generate.mjs); they exist only while it runs, or after it was interrupted.
 packages/protocol/src/generated.*/

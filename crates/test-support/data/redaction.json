@@ -1,6 +1,6 @@
 {
   "about": [
-    "Every sample the redaction tests of the log (wirecatch-logging) and of the extension (apps/extension/src/lib/diag) read, in one file both load: wirecatch_test_support::redaction in Rust, @wirecatch/protocol/testing/redaction in TypeScript (D40.10).",
+    "Every sample the redaction tests of the log (wirecatch-logging) and of the extension (extension/src/lib/diag) read, in one file both load: wirecatch_test_support::redaction in Rust, @wirecatch/protocol/testing/redaction in TypeScript (D40.10).",
     "A text, secret or input may be a list of pieces, joined by the loaders, so no file holds a string shaped like a real credential whole (the text gate check refuses one).",
     "Sides: log is text_for_log, display is text_for_display, diagnostics is the extension's redact. secrets must not survive log or diagnostics in any of the wrappings; private must not survive diagnostics; log, display and diagnostics are exact outputs of the bare text; kept_by lists the sides that leave the text as it is; skipped_by names the redaction that does not read a form on purpose, and why says why."
   ],

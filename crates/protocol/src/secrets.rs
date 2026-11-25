@@ -1,4 +1,4 @@
-//! What a secret is, for both redactions: the log's (`wirecatch-logging`) and the extension's diagnostics (`apps/extension/src/lib/diag`). The rules are [`is_secret_name`], [`names_a_password`], [`looks_like_a_credential`] and [`is_service_key`], ported into `@wirecatch/protocol`; the words, header names and scheme words they and the redactions read are generated as constants. The cases both the rules and the two redactions are tested against live in one file both languages load, `crates/test-support/data/redaction.json` (D40.10).
+//! What a secret is, for both redactions: the log's (`wirecatch-logging`) and the extension's diagnostics (`extension/src/lib/diag`). The rules are [`is_secret_name`], [`names_a_password`], [`looks_like_a_credential`] and [`is_service_key`], ported into `@wirecatch/protocol`; the words, header names and scheme words they and the redactions read are generated as constants. The cases both the rules and the two redactions are tested against live in one file both languages load, `crates/test-support/data/redaction.json` (D40.10).
 //!
 //! What both redactions apply besides those rules:
 //!

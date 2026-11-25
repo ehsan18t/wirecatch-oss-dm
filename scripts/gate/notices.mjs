@@ -24,7 +24,7 @@ export function extensionNoticesBuilt() {
   );
   if (missing.length > 0) {
     throw new GateError(
-      `The extension's ${missing.join(' and ')} build has no ${String(file)}: the build hook in apps/extension/wxt.config.ts did not write it.`,
+      `The extension's ${missing.join(' and ')} build has no ${String(file)}: the build hook in extension/wxt.config.ts did not write it.`,
     );
   }
 }

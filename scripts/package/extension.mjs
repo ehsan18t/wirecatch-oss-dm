@@ -3,7 +3,7 @@ import { copyFileSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { pnpm, ROOT } from '../gate/process.mjs';
 
-/** Where WXT writes the extension: `outDir` in apps/extension/wxt.config.ts. */
+/** Where WXT writes the extension: `outDir` in extension/wxt.config.ts. */
 export const EXTENSION_OUT = join(ROOT, 'target', 'extension');
 
 /** The unpacked builds a browser loads, by folder name. */

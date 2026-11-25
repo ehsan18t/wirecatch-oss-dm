@@ -1,5 +1,5 @@
 packages:
-  - "apps/*"
+  - "extension"
   - "packages/*"
 
 # One version of each shared tool for every package. Packages refer to these as `catalog:`.

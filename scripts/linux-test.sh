@@ -14,7 +14,7 @@ VOLUME="wirecatch-linux-target"
 docker volume create "$VOLUME" >/dev/null
 
 tar -C "$ROOT" \
-  --exclude=./.git --exclude=./target --exclude=./node_modules --exclude='./apps/*/node_modules' \
+  --exclude=./.git --exclude=./target --exclude=./node_modules --exclude=./extension/node_modules \
   --exclude='./packages/*/node_modules' --exclude=./.claude --exclude=./.cache \
   -cf - . |
 docker run --rm -i \

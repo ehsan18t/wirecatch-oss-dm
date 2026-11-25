@@ -136,15 +136,15 @@ test('the release check finds every placeholder until the values are decided', a
 });
 
 test('an empty folder among the packages is not taken for a package', async () => {
-  mkdirSync(join(root, 'apps/leftover'));
+  mkdirSync(join(root, 'packages/leftover'));
   assert.deepEqual(await staleOutputs(root), []);
-  rmSync(join(root, 'apps/leftover'), { recursive: true });
+  rmSync(join(root, 'packages/leftover'), { recursive: true });
 });
 
 test('a workspace package whose package.json was deleted is reported, not skipped', async () => {
-  writeFileSync(join(root, 'apps/extension/README.md'), 'A package keeps its other files.');
-  rmSync(join(root, 'apps/extension/package.json'));
-  await assert.rejects(staleOutputs(root), /apps\/extension\/package\.json is missing/);
+  writeFileSync(join(root, 'extension/README.md'), 'A package keeps its other files.');
+  rmSync(join(root, 'extension/package.json'));
+  await assert.rejects(staleOutputs(root), /extension\/package\.json is missing/);
 });
 
 test('the release report lists only the kinds of placeholder that were found', () => {
