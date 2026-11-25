@@ -734,7 +734,7 @@ pub(super) fn outside_schedule(queue: &Queue) -> Option<wirecatch_protocol::app:
         && !schedule::allows(
             schedule,
             queue.status.running_until_empty,
-            jiff::Zoned::now().datetime(),
+            jiff::ZonedDateTime::now().datetime(),
         ))
     .then_some(schedule.start)
 }

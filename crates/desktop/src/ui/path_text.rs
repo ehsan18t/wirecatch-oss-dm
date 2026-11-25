@@ -145,14 +145,6 @@ impl Measured {
     }
 }
 
-impl IntoElement for PathLine {
-    type Element = Self;
-
-    fn into_element(self) -> Self::Element {
-        self
-    }
-}
-
 impl Element for PathLine {
     type RequestLayoutState = Measured;
     type PrepaintState = ShapedLine;

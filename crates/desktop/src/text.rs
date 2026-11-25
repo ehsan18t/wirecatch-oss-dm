@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use gpui_kit::component::time_field::HourCycle;
 use jiff::civil::{Date, Time};
 use jiff::tz::TimeZone;
-use jiff::{Timestamp, Zoned};
+use jiff::{Timestamp, ZonedDateTime};
 use wirecatch_protocol::UnixMillis;
 use wirecatch_protocol::app::{
     Category, ClockFormat, DownloadStatus, DownloadSummary, FileExistsQuestion, FileTypeQuestion,
@@ -66,14 +66,14 @@ fn format_time(time: Time, seconds: bool, format: ClockFormat) -> String {
 }
 
 /// A moment on the local clock.
-fn local(at: UnixMillis) -> Option<Zoned> {
+fn local(at: UnixMillis) -> Option<ZonedDateTime> {
     Timestamp::from_millisecond(at.0)
         .ok()
-        .map(|at| at.to_zoned(TimeZone::system()))
+        .map(|at| at.to_zoned_datetime(TimeZone::system()))
 }
 
 fn today() -> Date {
-    Zoned::now().date()
+    ZonedDateTime::now().date()
 }
 
 /// Seconds left as a compact duration: `45 s`, `3 min`, `1 h 20 min`, `2 days`.
@@ -926,7 +926,9 @@ mod tests {
     /// A local clock time on a day of 2026 as a moment.
     fn local_at(month: i8, day: i8, hour: i8, minute: i8) -> UnixMillis {
         let at = date(2026, month, day).at(hour, minute, 0, 0);
-        let at = at.to_zoned(TimeZone::system()).expect("a local time");
+        let at = at
+            .to_zoned_datetime(TimeZone::system())
+            .expect("a local time");
         UnixMillis(at.timestamp().as_millisecond())
     }
 

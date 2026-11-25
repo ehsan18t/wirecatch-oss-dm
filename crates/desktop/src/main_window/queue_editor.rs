@@ -6,10 +6,10 @@
 mod icon_picker;
 mod tabs;
 
-use chrono::{NaiveTime, Timelike as _};
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::time_field::{TimeFieldEvent, TimeFieldState};
 use gpui_kit::{App, AppContext as _, Context, Entity, Subscription, WeakEntity, Window};
+use jiff::civil::Time;
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{
     MAX_CONCURRENT_DOWNLOADS, MAX_CONNECTIONS_PER_DOWNLOAD, PortablePath, Queue, QueueNotify,
@@ -650,8 +650,7 @@ fn limit_field(
 }
 
 fn time_field(at: TimeOfDay, window: &mut Window, cx: &mut App) -> Entity<TimeFieldState> {
-    let time =
-        NaiveTime::from_hms_opt(u32::from(at.hour), u32::from(at.minute), 0).unwrap_or_default();
+    let time = wirecatch_queues::schedule::to_time(at).unwrap_or_default();
     cx.new(|cx| {
         let mut state = TimeFieldState::new(window, cx).hour_cycle(text::hour_cycle());
         state.set_time(time, window, cx);
@@ -659,7 +658,7 @@ fn time_field(at: TimeOfDay, window: &mut Window, cx: &mut App) -> Entity<TimeFi
     })
 }
 
-fn time_of_day(time: NaiveTime) -> TimeOfDay {
+fn time_of_day(time: Time) -> TimeOfDay {
     TimeOfDay {
         hour: u8::try_from(time.hour()).unwrap_or_default(),
         minute: u8::try_from(time.minute()).unwrap_or_default(),

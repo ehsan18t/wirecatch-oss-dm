@@ -286,7 +286,7 @@ fn published(text: &str) -> Option<UnixMillis> {
         .take_while(|line| line.is_empty() || line.starts_with("//"))
         .find_map(|line| line.strip_prefix(VERSION_LINE))?;
     let at = jiff::civil::DateTime::strptime("%Y-%m-%d_%H-%M-%S_UTC", version.trim()).ok()?;
-    let at = at.to_zoned(jiff::tz::TimeZone::UTC).ok()?;
+    let at = at.to_zoned_datetime(jiff::tz::TimeZone::UTC).ok()?;
     Some(UnixMillis(at.timestamp().as_millisecond()))
 }
 

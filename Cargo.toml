@@ -4,7 +4,7 @@ resolver = "3"
 members = ["crates/*"]
 exclude = [
     ".cache/rust-backports/accesskit_windows-0.34.0-4655ca3d5e64bb26",
-    ".cache/rust-backports/gpui-pre-windows-0.3.12-98123b864cb8d1dd",
+    ".cache/rust-backports/gpui-pre-windows-0.3.14-020ecd753c6b6f88",
 ]
 
 [patch.crates-io]
@@ -12,7 +12,7 @@ exclude = [
 # Return a UI Automation error when a provider is queried after its HWND closes.
 accesskit_windows = { path = ".cache/rust-backports/accesskit_windows-0.34.0-4655ca3d5e64bb26" }
 # Backport the Windows activation callback fix to the snapshot gpui-kit pins.
-gpui-pre-windows = { path = ".cache/rust-backports/gpui-pre-windows-0.3.12-98123b864cb8d1dd" }
+gpui-pre-windows = { path = ".cache/rust-backports/gpui-pre-windows-0.3.14-020ecd753c6b6f88" }
 
 [workspace.package]
 version = "0.1.0"
@@ -67,9 +67,7 @@ tracing-subscriber = { version = "0.3.18", default-features = false }
 url = "2"
 regex = "1"
 # Civil dates and times only; crates that read the local clock add the system time zone.
-jiff = { version = "0.2.38", default-features = false, features = ["std"] }
-# Only for the desktop's time field, whose gpui-kit API takes `chrono::NaiveTime` (D279).
-chrono = { version = "0.4.45", default-features = false, features = ["std"] }
+jiff = { version = "1.0.3", default-features = false, features = ["std"] }
 tempfile = "3.27.0"
 trash = "5.3.0"
 rusqlite = { version = "0.41.1", features = ["bundled"] }

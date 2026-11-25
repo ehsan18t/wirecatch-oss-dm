@@ -372,7 +372,7 @@ mod tests {
             let dir = tempfile::tempdir().unwrap();
             let now = jiff::Timestamp::from_millisecond(testing::NEWER_AT.0)
                 .unwrap()
-                .to_zoned(jiff::tz::TimeZone::UTC)
+                .to_zoned_datetime(jiff::tz::TimeZone::UTC)
                 .datetime();
             let clock = Arc::new(ManualClock::new(now));
             let manager = Self::open(dir.path(), &server, &clock).await;

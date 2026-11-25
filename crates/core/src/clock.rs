@@ -8,7 +8,7 @@ use wirecatch_protocol::UnixMillis;
 
 use jiff::civil::DateTime;
 use jiff::tz::TimeZone;
-use jiff::{Span, Timestamp, Zoned};
+use jiff::{Span, Timestamp, ZonedDateTime};
 use tokio::sync::watch;
 
 /// A future returned by [`Clock::sleep_until`].
@@ -42,7 +42,7 @@ pub struct SystemClock;
 
 impl Clock for SystemClock {
     fn local_now(&self) -> DateTime {
-        Zoned::now().datetime()
+        ZonedDateTime::now().datetime()
     }
 
     fn unix_millis(&self) -> UnixMillis {
