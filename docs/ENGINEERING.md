@@ -156,7 +156,7 @@ The same holds for pull request titles and descriptions (a squashed pull request
 
 Once a branch's work is on main, the branch is deleted, locally and on the remote, and its worktree and build folder are removed; so are the backup branches made for a regroup. A branch that has served its purpose is not kept as history: main is the record.
 
-Enforced by: gate for the form, the length, lower case, the trailing period, em dashes and credit lines (`commits`, which CI runs over every pull request and push, and the commit-msg hook that `pnpm install` turns on); review for the imperative mood, a body that describes only the change and nothing personal, `BREAKING CHANGE:` footers, the merge form, since git writes merge messages itself, and the regrouping before a merge.
+Enforced by: gate for the form, the length (excluding the ` (#<number>)` suffix GitHub appends on squash merge), lower case, the trailing period, em dashes and credit lines (`commits`, which CI runs over every pull request's commits and title and every push, and the commit-msg hook that `pnpm install` turns on); review for the imperative mood, a body that describes only the change and nothing personal, `BREAKING CHANGE:` footers, the merge form, since git writes merge messages itself, and the regrouping before a merge.
 
 ## 10. Performance
 
