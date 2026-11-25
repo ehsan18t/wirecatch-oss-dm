@@ -35,7 +35,7 @@ const LINT_EXCEPTIONS = [
   { id: 'E12', file: 'crates/addons/src/manifest.rs', lints: ['clippy::expect_used'] },
   {
     id: 'E14',
-    file: 'apps/extension/src/lib/diag/secrets.ts',
+    file: 'extension/src/lib/diag/secrets.ts',
     lints: ['regexp/no-potentially-useless-backreference'],
   },
 ];

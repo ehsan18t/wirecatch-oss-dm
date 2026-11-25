@@ -14,7 +14,7 @@ import {
 } from './manifests.mjs';
 import { readProduct } from './read.mjs';
 import { rustInstallerNames, rustSource, typescriptSource } from './sources.mjs';
-import { workspaceParents } from '../workspace.mjs';
+import { candidateFolders, workspaceGlobs } from '../workspace.mjs';
 
 export const PRODUCT_FILE = 'config/product.toml';
 const TEMPLATES = 'config/templates';
@@ -50,14 +50,12 @@ function packageJson(json, product) {
   json.license = product.product.license;
 }
 
-/** The folders of the workspace's packages: every folder under them is a package, so one that has lost its package.json is reported missing rather than skipped. */
+/** The folders of the workspace's packages: every folder a glob names is a package, so one that has lost its package.json is reported missing rather than skipped. */
 function packageFolders(root) {
-  return workspaceParents(current(root, WORKSPACE_FILE), ManifestError).flatMap((parent) =>
-    // An empty folder is no package: git cannot hold one, so it is only left behind on a disk.
-    readdirSync(join(root, parent), { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => `${parent}/${entry.name}`)
-      .filter((folder) => readdirSync(join(root, folder)).length > 0),
+  const globs = workspaceGlobs(current(root, WORKSPACE_FILE), ManifestError);
+  // An empty folder is no package: git cannot hold one, so it is only left behind on a disk.
+  return candidateFolders(root, globs).filter(
+    (folder) => readdirSync(join(root, folder)).length > 0,
   );
 }
 

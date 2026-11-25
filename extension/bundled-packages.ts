@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import type { Plugin } from 'vite';
 
 const EXTENSION = dirname(fileURLToPath(import.meta.url));
-const GENERATOR = join(EXTENSION, '..', '..', 'scripts', 'notices', 'npm.mjs');
+const GENERATOR = join(EXTENSION, '..', 'scripts', 'notices', 'npm.mjs');
 
 /** Code the bundler writes into the output with no module of the package's own to show for it. */
 const ALWAYS_BUNDLED = ['tailwindcss', 'vite'];

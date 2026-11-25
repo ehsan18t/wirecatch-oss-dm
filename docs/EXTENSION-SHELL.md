@@ -17,7 +17,7 @@ Differences from the plan:
 Still open:
 
 - Measuring the deadline with the app connected, closed and missing in real Chromium and Firefox builds.
-- The Firefox sources zip still holds only `apps/extension`, and there is no check that rebuilds the extension from it.
+- The Firefox sources zip still holds only `extension`, and there is no check that rebuilds the extension from it.
 - Listing the add-on on addons.mozilla.org, which only the maintainer can do.
 
 ## What we want
@@ -30,12 +30,12 @@ Still open:
 The app already keeps every setting (D61), but the extension still knows each one by name, so most app changes need a new extension build:
 
 - `ExtensionSettings` and `BrowserControls` in `crates/protocol/src/extension.rs` are typed structs the popup reads field by field. Unknown fields are passed over (`isExtensionSettings`), but a new enum value fails the whole message (D32.6), and every new field needs new popup code.
-- `apps/extension/src/ui/settings.ts` lists every row the popup shows, with its label and help text.
+- `extension/src/ui/settings.ts` lists every row the popup shows, with its label and help text.
 - `packages/protocol/src/media-choices.ts` lists the choices of each media setting.
-- `apps/extension/src/lib/capture/should-capture.ts` holds every rule about which downloads the app takes.
-- `apps/extension/src/lib/media/detect.ts` holds the media tables: video and audio extensions, media types, and the 100 KB minimum.
+- `extension/src/lib/capture/should-capture.ts` holds every rule about which downloads the app takes.
+- `extension/src/lib/media/detect.ts` holds the media tables: video and audio extensions, media types, and the 100 KB minimum.
 - The extension bundles the Public Suffix List (`tldts`), and its freshness is checked before every release (D35), a recurring reason to publish. It decides three things: the `Cookie` header kept for apps on protocol version 1 (D112.3), whether media is cross-site (`isCrossSite`, `hub/media-sender.ts`), and which site to read partitioned cookies for and Firefox's `firstPartyDomain` (`cookieReads`, `lib/cookies.ts`).
-- The Firefox build is signed on the unlisted channel and has no `update_url` (`apps/extension/PUBLISHING.md`), so every new version has to be installed by hand.
+- The Firefox build is signed on the unlisted channel and has no `update_url` (`extension/PUBLISHING.md`), so every new version has to be installed by hand.
 
 ## The line between the two
 
@@ -179,12 +179,12 @@ With version 1 gone, the cross-site choice made by the app, and the cookie sites
 
 - The app sends values, words, lists and ids, never logic: no expressions, conditions, templates, scripts, regular expressions or HTML. The cookie sites in the `check_download` answer are values too.
 - Control kinds, browser rows, action context and media tables are closed sets the extension's own code handles. Anything unknown is shown as "Open in Wirecatch" or passed over, never interpreted.
-- `no-eval`, `no-new-func` and Svelte's `no-at-html-tags` are already on. A rule refusing `innerHTML` and `outerHTML` in `apps/extension` is added.
+- `no-eval`, `no-new-func` and Svelte's `no-at-html-tags` are already on. A rule refusing `innerHTML` and `outerHTML` in `extension` is added.
 - Private windows follow the section above.
-- The Firefox manifest declares under `required`, instead of `none`, the data the extension sends to the app, so Firefox's own consent shows it at install: addresses of downloads, pages and media as `browsingActivity`, cookies and request headers as `websiteContent`, and the act of downloading as `websiteActivity`. `PRIVACY.md` and the Chrome listing answers in `apps/extension/PUBLISHING.md` say the same.
+- The Firefox manifest declares under `required`, instead of `none`, the data the extension sends to the app, so Firefox's own consent shows it at install: addresses of downloads, pages and media as `browsingActivity`, cookies and request headers as `websiteContent`, and the act of downloading as `websiteActivity`. `PRIVACY.md` and the Chrome listing answers in `extension/PUBLISHING.md` say the same.
 - The Firefox add-on is listed on addons.mozilla.org, which reviews it and updates every copy by itself, so a new extension release reaches people without a reinstall. Unlisted signing stays only for test builds. Listed add-ons must not have "the sole purpose of" launching an outside application (policy 2.5), and a thin extension looks closer to that, so the listing and the reviewer notes lead with what runs in the browser: capturing downloads, finding the video and audio a page plays, and the privacy gates.
 - The current manifest declares `required: ['none']` (`wxt.config.ts`) while the extension already sends addresses and cookies, so the declaration is fixed before the next `sign:firefox`, not with the rest of the store work.
-- The Firefox source zip holds everything the build needs: `apps/extension`, the workspace packages it uses, and the lockfile. A release check rebuilds the extension from that zip alone and compares the result.
+- The Firefox source zip holds everything the build needs: `extension`, the workspace packages it uses, and the lockfile. A release check rebuilds the extension from that zip alone and compares the result.
 - Each submission comes with reviewer notes: what the companion app is, how to install it, an example option list, and steps that show a capture, a video and the popup.
 
 ### What still slows a review
@@ -227,7 +227,7 @@ Access to every site stays, because media detection and signed-in downloads must
 4. `crates/protocol`: the option list, `set_option`, `invoke_action`, `page_options`, `ShellConfig`, `check_download` with its cookie sites, the private session id in `hello` and `private_session_ended`, version 2 as the minimum, no `BrowserInfo` in `hello`, `kind` as an open string with each option as raw JSON, and the version tests checking only versions from the minimum, with the version 1 error-code mapping removed. Regenerate TypeScript.
 5. `crates/core`, `crates/shell`, `crates/engine`, `crates/files`, `crates/streams`, `crates/logging` and `crates/media`: build the option list from the settings, apply changes and actions through the existing checks, answer `check_download` with the cookie sites, keep private downloads in memory with no resume file (an in-memory mode in `crates/engine`), write only `ZoneId` for them, log them by id only, keep their notifications transient, forget private sessions by every route, remove their stream and video work folders, and at start empty the cookies folder and remove partial files a crash left.
 6. `crates/desktop`: the private mark in the download list.
-7. `apps/extension`: draw the option list, the unknown-kind fallback, the per-tab rows, the private session id, the capture steps with the pause before any wait, `ShellConfig` fetched on an action and kept for the session, passive paths (`media/watch.ts`, `media/center.ts`, `notices/focus.ts`) reading only the held copy with unknown as off for private tabs, the private gate on `page_options` and page actions, the hand-written option parser, the media watcher checking the tab before reading a `Cookie` header, cookie reads from the answer's sites. Remove `ui/settings.ts`, the per-setting validators and the version 1 paths.
+7. `extension`: draw the option list, the unknown-kind fallback, the per-tab rows, the private session id, the capture steps with the pause before any wait, `ShellConfig` fetched on an action and kept for the session, passive paths (`media/watch.ts`, `media/center.ts`, `notices/focus.ts`) reading only the held copy with unknown as off for private tabs, the private gate on `page_options` and page actions, the hand-written option parser, the media watcher checking the tab before reading a `Cookie` header, cookie reads from the answer's sites. Remove `ui/settings.ts`, the per-setting validators and the version 1 paths.
 8. Remove `tldts` and its release check, once step 7's cookie reads pass the tests from step 2.
 9. Store: the listing on addons.mozilla.org, written around what runs in the browser, `PRIVACY.md`, `PUBLISHING.md`, the full source zip and its rebuild check, the `innerHTML` rule, the reviewer notes.
 10. Tests: an older extension against an app with new kinds, fields and broken rows, and an older app against a newer extension. Every setting changed from the popup and from the app. Late replies against a newer revision, an app restart, and one unknown or malformed option among valid ones. Captures declined by the gates, by the app, and lost after the app took them. A private download leaving nothing behind and forgotten by every route.

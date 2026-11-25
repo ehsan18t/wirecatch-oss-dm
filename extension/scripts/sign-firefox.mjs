@@ -51,7 +51,7 @@ function main() {
     process.exit(1);
   }
   const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-  const output = join(root, '..', '..', 'target', 'extension');
+  const output = join(root, '..', 'target', 'extension');
   /** Runs a package's command line tool with this Node, without a shell. */
   const run = (bin, args) =>
     execFileSync(process.execPath, [join(root, 'node_modules', ...bin), ...args], {

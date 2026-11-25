@@ -26,7 +26,7 @@ export default defineConfig({
   modules: ['@wxt-dev/module-svelte'],
   srcDir: 'src',
   // Every build output of the repository is under target/ (scripts/build.mjs).
-  outDir: '../../target/extension',
+  outDir: '../target/extension',
   manifestVersion: 3,
   // Everything is imported explicitly, so the code reads the same in tests and in editors.
   imports: false,

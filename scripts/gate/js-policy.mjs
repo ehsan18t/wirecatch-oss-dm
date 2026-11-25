@@ -1,7 +1,7 @@
 // `js-policy`: every workspace package, and the repository's own scripts, are linted with the shared configuration at its full strength, with no warnings allowed, and format-checked, all by the one root `lint` script.
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { workspaceParents as parentsIn } from '../workspace.mjs';
+import { candidateFolders, workspaceGlobs as globsIn } from '../workspace.mjs';
 import { capture, GateError, ROOT } from './process.mjs';
 
 /** Sources that make a package subject to the shared ESLint configuration. */
@@ -27,18 +27,16 @@ const MAY_BE_IGNORED = [
 /** JavaScript every package may lint without type information (`untyped` in wirecatch()), so the baseline for a JavaScript file is the untyped one. */
 const UNTYPED_JAVASCRIPT = ['**/*.js', '**/*.cjs'];
 
-const workspaceParents = () =>
-  parentsIn(readFileSync(join(ROOT, 'pnpm-workspace.yaml'), 'utf8'), GateError);
+const workspaceGlobs = () =>
+  globsIn(readFileSync(join(ROOT, 'pnpm-workspace.yaml'), 'utf8'), GateError);
+
+/** The top folders the workspace globs name. */
+const workspaceFolders = () => workspaceGlobs().map(({ folder }) => folder);
 
 /** The workspace package folders. */
 function workspacePackages() {
-  return workspaceParents().flatMap((parent) =>
-    readdirSync(join(ROOT, parent), { withFileTypes: true })
-      .filter(
-        (entry) =>
-          entry.isDirectory() && existsSync(join(ROOT, parent, entry.name, 'package.json')),
-      )
-      .map((entry) => `${parent}/${entry.name}`),
+  return candidateFolders(ROOT, workspaceGlobs()).filter((folder) =>
+    existsSync(join(ROOT, folder, 'package.json')),
   );
 }
 
@@ -48,7 +46,7 @@ function workspacePackages() {
  * ESLint runs once per package, in that package's folder, never once over the whole repository: in one process, linting a file of one package first takes the type information of `.svelte` files in another (D42).
  */
 export function lintTargets() {
-  return { root: ROOT_LINTED, formatted: [...workspaceParents(), ...ROOT_LINTED] };
+  return { root: ROOT_LINTED, formatted: [...workspaceFolders(), ...ROOT_LINTED] };
 }
 
 /**
@@ -121,7 +119,7 @@ function setupProblems(folder, manifest) {
 
 /** Ignore files inside the folders the root `lint` script format-checks, which Prettier run from the root never reads. */
 function strayIgnoreFiles() {
-  return gitFiles(...workspaceParents(), ...ROOT_FOLDERS)
+  return gitFiles(...workspaceFolders(), ...ROOT_FOLDERS)
     .filter((file) => IGNORE_FILE.test(file))
     .map(
       (file) =>

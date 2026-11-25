@@ -61,7 +61,7 @@ Release and Beta Firefox only install add-ons signed by Mozilla. Signing on the 
 
 The first signing creates the add-on on addons.mozilla.org under `extension@wirecatch.app`, which reserves that id for our account so nobody else can claim it. D21 lists this as an action only the maintainer can take; do it soon, even before the first release.
 
-addons.mozilla.org asks for the source code of bundled add-ons, which is why the sources zip is uploaded. That zip holds only `apps/extension`; the build also needs `packages/product` (generated from `config/product.toml`), `packages/protocol` and the workspace lockfile, so if a reviewer asks how to rebuild, point them to the tagged release in the GitHub repository and the build steps in `CONTRIBUTING.md`.
+addons.mozilla.org asks for the source code of bundled add-ons, which is why the sources zip is uploaded. That zip holds only `extension`; the build also needs `packages/product` (generated from `config/product.toml`), `packages/protocol` and the workspace lockfile, so if a reviewer asks how to rebuild, point them to the tagged release in the GitHub repository and the build steps in `CONTRIBUTING.md`.
 
 Self-distributed copies do not update by themselves unless the manifest gets an `update_url`; until then people install each new `.xpi` from our download page.
 
@@ -73,7 +73,7 @@ Wirecatch is to be listed on addons.mozilla.org, so every copy updates by itself
 
 **What the listing leads with.** Listed add-ons may not have the sole purpose of launching an outside application (policy 2.5). The summary and the reviewer notes lead with what runs in the browser: taking over downloads, finding the video and audio a page plays and the button over them, and the privacy gates that keep ignored sites, file types and private windows in the browser.
 
-**Reviewer notes.** Say what the companion app is and where to get it, that the popup's options come from the app as data (an option list with a closed set of control kinds, `apps/extension/src/lib/options.ts`, never markup or code), and give steps that show a capture, a video on a page and the popup with the app running and closed.
+**Reviewer notes.** Say what the companion app is and where to get it, that the popup's options come from the app as data (an option list with a closed set of control kinds, `extension/src/lib/options.ts`, never markup or code), and give steps that show a capture, a video on a page and the popup with the app running and closed.
 
 ### Testing unsigned builds
 

@@ -1930,3 +1930,10 @@ Decided with the maintainer on 2026-11-25. It amends D106.3.
 1. `pnpm build`, the same as `node scripts/build.mjs` from the repository root, builds what ships: the browser extension for Chromium and Firefox, and the desktop app's installers for this machine. `pnpm build app` and `pnpm build extension` build one of them. It checks the product identity once, before either (D29, D49). The installers are made by `scripts/package/app.mjs`, as D106.3 gives for `scripts/package.mjs`.
 2. Every build output of the repository is under `target/`: Cargo's own, the extension unpacked in `target/extension` (WXT's `outDir`), and the installers with the extension's zips in `target/packages`, so one folder holds what a release attaches.
 3. The gate's `js-build` check keeps building every workspace package that has a `build` script; it is no longer the root `build` script.
+
+### D292. The extension sits at the top of the repository
+
+Decided with the maintainer on 2026-11-25.
+
+1. The browser extension is the only JavaScript app, so it lives in `extension/` next to `crates/` and `packages/`, and `apps/` is gone. Decisions before this one name its old folder, `apps/extension`.
+2. `pnpm-workspace.yaml` lists it as one package (`extension`) beside the folder of shared packages (`packages/*`); the gate and the product generator read both forms (`scripts/workspace.mjs`).

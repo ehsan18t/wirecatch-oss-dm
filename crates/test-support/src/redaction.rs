@@ -1,4 +1,4 @@
-//! The samples the redaction tests read, from `data/redaction.json`: the one file the log's tests (`wirecatch-logging`) and the extension's (`apps/extension`, through `@wirecatch/protocol/testing/redaction`) both load, so the two redactions are held to the same cases (D40.10).
+//! The samples the redaction tests read, from `data/redaction.json`: the one file the log's tests (`wirecatch-logging`) and the extension's (`extension`, through `@wirecatch/protocol/testing/redaction`) both load, so the two redactions are held to the same cases (D40.10).
 //!
 //! A text, secret or rule input in the file may be a list of pieces, joined here, so no file in the repository holds a string a secret scanner takes for a real credential.
 

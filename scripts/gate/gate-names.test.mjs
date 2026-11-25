@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { candidateFolders, workspaceGlobs } from '../workspace.mjs';
 import { ROOT } from './process.mjs';
 
 /** The checks and groups `--list` names. */
@@ -44,9 +45,10 @@ test('every check or group a workflow or package script asks for exists', () => 
   const files = [
     ...readdirSync(join(ROOT, '.github/workflows')).map((file) => `.github/workflows/${file}`),
     'package.json',
-    ...['apps', 'packages'].flatMap((folder) =>
-      readdirSync(join(ROOT, folder)).map((name) => `${folder}/${name}/package.json`),
-    ),
+    ...candidateFolders(
+      ROOT,
+      workspaceGlobs(readFileSync(join(ROOT, 'pnpm-workspace.yaml'), 'utf8'), Error),
+    ).map((folder) => `${folder}/package.json`),
   ];
   const unknown = files.flatMap((file) => {
     let text;

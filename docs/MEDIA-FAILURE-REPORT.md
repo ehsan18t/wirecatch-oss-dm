@@ -79,7 +79,7 @@ So the gate is fatal by construction: the page cannot be read without JS, and Wi
 
 ## 4. Why the person hits the gate and the browser does not
 
-A browser on the same machine passes the gate because it runs the script and keeps the cookie. Wirecatch tries to reuse the browser's cookies, and the plumbing is there: the extension reads the cookie store (`apps/extension/src/lib/cookies.ts`), the context menu and media button attach the resulting `Cookie` header (`apps/extension/src/lib/hub/hub.ts:232`, `apps/extension/src/lib/hub/media-sender.ts`), and the app writes it into a Netscape cookie file for yt-dlp (`crates/media/src/ytdlp/cookies.rs:94`). For PornHub the cookies are sent from the first try (`cookies_first` is false only for YouTube).
+A browser on the same machine passes the gate because it runs the script and keeps the cookie. Wirecatch tries to reuse the browser's cookies, and the plumbing is there: the extension reads the cookie store (`extension/src/lib/cookies.ts`), the context menu and media button attach the resulting `Cookie` header (`extension/src/lib/hub/hub.ts:232`, `extension/src/lib/hub/media-sender.ts`), and the app writes it into a Netscape cookie file for yt-dlp (`crates/media/src/ytdlp/cookies.rs:94`). For PornHub the cookies are sent from the first try (`cookies_first` is false only for YouTube).
 
 For completeness, yt-dlp's own `--cookies-from-browser chrome` fails on this machine with `Failed to decrypt with DPAPI`, the Chrome app-bound encryption problem tracked as yt-dlp issue #10927. The extension's capture is therefore the only working way to give yt-dlp Chrome's cookies here, which makes the capture path in section 4 worth keeping healthy.
 
@@ -373,7 +373,7 @@ The cookies file is a Netscape file bound to the page's host, written with a 24-
 | App User-Agent override | `crates/media/src/ytdlp/mod.rs:363` |
 | App guard proxy | `crates/media/src/ytdlp/guard.rs`, D136 |
 | Reading cache | `crates/core/src/manager/page_readings.rs`, D223 |
-| Browser cookie capture | `apps/extension/src/lib/cookies.ts`, D44.6 |
+| Browser cookie capture | `extension/src/lib/cookies.ts`, D44.6 |
 | Add-on parts | `crates/addons`, D20 |
 | yt-dlp PornHub 410 history | yt-dlp issue #16729, fixed by PR #16794 (2026-06-09) |
 | yt-dlp PhantomJS replacement | yt-dlp issue #1354 (open since 2021) |

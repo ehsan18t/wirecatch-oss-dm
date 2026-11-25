@@ -4,5 +4,5 @@ import { globals, wirecatch } from '@wirecatch/eslint-config';
 export default wirecatch({
   tsconfigRootDir: import.meta.dirname,
   globals: globals.node,
-  ignores: ['apps/', 'packages/', 'crates/', 'target/', 'config/', 'docs/'],
+  ignores: ['extension/', 'packages/', 'crates/', 'target/', 'config/', 'docs/'],
 });

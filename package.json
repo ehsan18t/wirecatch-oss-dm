@@ -14,7 +14,7 @@
     "product:generate": "node scripts/product/generate.mjs",
     "check": "node scripts/gate.mjs js-check",
     "lint": "node scripts/gate.mjs js-lint",
-    "format": "prettier --write apps packages scripts eslint.config.js",
+    "format": "prettier --write extension packages scripts eslint.config.js",
     "test": "node scripts/gate.mjs js-test",
     "build": "node scripts/build.mjs"
   },
