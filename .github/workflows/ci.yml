@@ -294,6 +294,8 @@ jobs:
       # The repository rules read files, manifests and commits, and answer the same on every system, so they run once.
       - name: Gate (repository rules)
         if: runner.os == 'Linux' && matrix.node == 'oldest'
+        env:
+          GATE_PR_TITLE: ${{ github.event.pull_request.title }}
         run: node scripts/gate.mjs repo
 
   # The checks in a real browser, alongside the JavaScript job: they need no Rust. Windows only: there the system font is the one the design asks for, and every check also runs in the DejaVu Sans the page brings, which is what Linux would lay text out in.

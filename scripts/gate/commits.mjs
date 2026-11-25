@@ -59,6 +59,8 @@ const SCISSORS = /^# -+ >8 -+$/m;
 const BOT_AUTHORS = /\[bot\]@users\.noreply\.github\.com$/;
 /** The character the rules ban, written by its code so this file does not contain it. */
 const EM_DASH = String.fromCharCode(0x2014);
+/** GitHub appends ` (#123)` when squashing a pull request; that suffix is outside the author's 72-character subject limit. */
+const PR_SUFFIX = / \(#\d+\)$/;
 const SUBJECT = new RegExp(
   String.raw`^(?:${COMMIT_TYPES.join('|')})(?:\((?:${COMMIT_SCOPES.join('|')})\))?!?: (?<words>.+)$`,
 );
@@ -76,40 +78,49 @@ function messageText(raw) {
 }
 
 /** What is wrong with a subject line, or an empty list. */
-function subjectProblems(subject) {
+function subjectProblems(subject, { stripPrSuffix = false } = {}) {
+  const checked = stripPrSuffix ? subject.replace(PR_SUFFIX, '') : subject;
   const problems = [];
-  const match = SUBJECT.exec(subject);
+  const match = SUBJECT.exec(checked);
   if (match) {
     const words = match.groups.words;
     if (/^[A-Z]/.test(words)) problems.push('the subject must start in lower case');
     if (words.endsWith('.')) problems.push('the subject must not end with a period');
   } else {
-    const revert = subject.startsWith('Revert "')
+    const revert = checked.startsWith('Revert "')
       ? ' For a revert, write `revert: <the original subject>`.'
       : '';
     problems.push(
       `the subject must look like \`type(scope): subject\`, with a type from ${COMMIT_TYPES.join(', ')} and a scope from ${COMMIT_SCOPES.join(', ')} (or no scope for a repository-wide change).${revert}`,
     );
   }
-  if (subject.length > MAX_SUBJECT_LENGTH) {
+  if (checked.length > MAX_SUBJECT_LENGTH) {
     problems.push(
-      `the subject is ${String(subject.length)} characters; the limit is ${String(MAX_SUBJECT_LENGTH)}`,
+      `the subject is ${String(checked.length)} characters; the limit is ${String(MAX_SUBJECT_LENGTH)}`,
     );
   }
   return problems;
 }
 
 /** Returns what is wrong with one commit message, or an empty list. With `subjectOnly`, the body is not checked. */
-function commitProblems(raw, { subjectOnly = false } = {}) {
+export function commitProblems(raw, { subjectOnly = false, stripPrSuffix = false } = {}) {
   const text = messageText(raw);
   const [subject = '', ...rest] = text.split('\n');
   if (AUTOSQUASH.test(subject)) return [];
-  const problems = subjectProblems(subject);
+  const problems = subjectProblems(subject, { stripPrSuffix });
   const checked = subjectOnly ? subject : text;
   if (checked.includes(EM_DASH)) problems.push('the message contains an em dash');
   if (!subjectOnly && AUTHOR_CREDITS.some((credit) => credit.test(rest.join('\n')))) {
     problems.push('the message credits a tool or AI as an author; remove that line');
   }
+  return problems;
+}
+
+/** Returns what is wrong with a pull request title, or an empty list. */
+export function prTitleProblems(title) {
+  const subject = title.trim();
+  const problems = subjectProblems(subject);
+  if (subject.includes(EM_DASH)) problems.push('the message contains an em dash');
   return problems;
 }
 
@@ -126,9 +137,17 @@ function commitRange() {
     const [author, ...message] = capture('git', ['log', '-1', '--format=%ae%n%B', sha]).out.split(
       '\n',
     );
-    const problems = commitProblems(message.join('\n'), { subjectOnly: BOT_AUTHORS.test(author) });
+    const problems = commitProblems(message.join('\n'), {
+      subjectOnly: BOT_AUTHORS.test(author),
+      stripPrSuffix: true,
+    });
     if (problems.length > 0)
       failures.push(`${sha.slice(0, 9)} ${message[0]}\n  - ${problems.join('\n  - ')}`);
+  }
+  const prTitle = process.env.GATE_PR_TITLE;
+  if (prTitle) {
+    const problems = prTitleProblems(prTitle);
+    if (problems.length > 0) failures.push(`PR title: ${prTitle}\n  - ${problems.join('\n  - ')}`);
   }
   if (failures.length > 0)
     throw new GateError(

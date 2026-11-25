@@ -15,7 +15,7 @@
 //   --no-fail-fast  run every Rust test binary even after one fails
 //   --skip=CHECK    leave out one check the named groups hold (repeatable), as CI's Windows Rust lint leaves out `clippy-linux`, which the Ubuntu job covers in full
 //
-// The commit range for `commits` is GATE_COMMIT_RANGE when set, otherwise `origin/main..HEAD`. Written for Node 18 and later, so it also runs where only an older Node is installed (scripts/linux-test.sh).
+// The commit range for `commits` is GATE_COMMIT_RANGE when set, otherwise `origin/main..HEAD`, and when GATE_PR_TITLE is set, the pull request title is checked by the same subject rules. Written for Node 18 and later, so it also runs where only an older Node is installed (scripts/linux-test.sh).
 
 import { COMMIT_CHECKS, commitMessageFile } from './gate/commits.mjs';
 import { DIALOG_HEADER_CHECKS } from './gate/dialog-header.mjs';
