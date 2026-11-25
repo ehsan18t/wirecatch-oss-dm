@@ -1,9 +1,6 @@
-#!/usr/bin/env node
-// Builds the GPUI desktop app's installers (D106): on Windows the Inno Setup installer, on Linux the .deb, the .rpm and the AppImage. They land in target/packages, named <product>-<version>-<system>-<architecture>.
+// The GPUI desktop app's installers (D106): on Windows the Inno Setup installer, on Linux the .deb, the .rpm and the AppImage, named <product>-<version>-<system>-<architecture>. `scripts/build.mjs` checks the product identity first (D29, D49).
 //
-// Usage: node scripts/package.mjs [--target <rust target triple>]. The default target is this machine's; Linux packages can only be made for it.
-//
-// The app and the bridge are built in release with the product identity checked first (D29, D49). The Linux tools (nfpm, appimagetool and the AppImage runtime) are downloaded at pinned versions and checked against their SHA-256 before use. Inno Setup is installed beforehand (CI installs the pinned version; locally, Inno Setup 6.7 or later).
+// The app and the bridge are built in release. The Linux tools (nfpm, appimagetool and the AppImage runtime) are downloaded at pinned versions and checked against their SHA-256 before use. Inno Setup is installed beforehand (CI installs the pinned version; locally, Inno Setup 6.7 or later).
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -21,9 +18,9 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { cargoMetadata, GateError, ROOT } from './gate/process.mjs';
-import { INSTALLER_CRATES, installerPackages } from './notices/cargo.mjs';
-import { noticeSection, renderNotices } from './notices/render.mjs';
+import { cargoMetadata, GateError, ROOT } from '../gate/process.mjs';
+import { INSTALLER_CRATES, installerPackages } from '../notices/cargo.mjs';
+import { noticeSection, renderNotices } from '../notices/render.mjs';
 import {
   appRun,
   BUNDLED_LIBRARY_SEARCH,
@@ -31,14 +28,15 @@ import {
   libraryLicence,
   linuxDepends,
   newestGlibc,
-} from './package/linux.mjs';
-import { fillTemplate } from './product/manifests.mjs';
-import { readProduct } from './product/read.mjs';
-import { installerName } from './release/installers.mjs';
+} from './linux.mjs';
+import { fillTemplate } from '../product/manifests.mjs';
+import { readProduct } from '../product/read.mjs';
+import { installerName } from '../release/installers.mjs';
 
 const PACKAGING = join(ROOT, 'crates', 'desktop', 'packaging');
 const ICONS = join(ROOT, 'crates', 'desktop', 'assets', 'icons');
-const OUT = join(ROOT, 'target', 'packages');
+/** Where every installer and package lands. */
+export const OUT = join(ROOT, 'target', 'packages');
 const TOOLS = join(ROOT, 'target', 'tools');
 
 /** Downloads by architecture, with the SHA-256 each must have. */
@@ -118,9 +116,8 @@ function run(command, args, options = {}) {
   execFileSync(command, args, { cwd: ROOT, stdio: 'inherit', ...options });
 }
 
-function targetTriple() {
-  const at = process.argv.indexOf('--target');
-  if (at !== -1) return process.argv[at + 1] ?? fail('--target needs a target triple.');
+/** This machine's target triple. */
+export function hostTriple() {
   const host = /^host: (.+)$/m.exec(execFileSync('rustc', ['-vV'], { encoding: 'utf8' }))?.[1];
   return host ?? fail('Could not read the target triple from `rustc -vV`. Is Rust installed?');
 }
@@ -133,11 +130,6 @@ function architecture(triple) {
 }
 
 function build(triple) {
-  try {
-    run(process.execPath, [join(ROOT, 'scripts', 'gate.mjs'), 'release-build']);
-  } catch {
-    fail('The product identity is out of date; see the message above.');
-  }
   run(process.execPath, [join(ROOT, 'scripts', 'prepare-rust-backports.mjs')]);
   const env = { ...process.env };
   // The Visual C++ runtime is linked in, so the app runs on a Windows without it installed (D33).
@@ -423,16 +415,17 @@ async function appImage(product, root, arch) {
   );
 }
 
-const product = readProduct(readFileSync(join(ROOT, 'config', 'product.toml'), 'utf8'));
-const triple = targetTriple();
-const arch = architecture(triple);
-if (triple.includes('-linux-') && !canPackageLinux(arch))
-  fail(
-    `Linux packages are made on a Linux machine of their own architecture, so ${triple} cannot be made here.`,
-  );
-const built = build(triple);
-mkdirSync(OUT, { recursive: true });
-if (triple.includes('-windows-')) windows(product, built, arch, triple);
-else if (triple.includes('-linux-')) await linux(product, built, arch, triple);
-else fail(`No installer is made for ${triple}.`);
-console.log(`Installers are in ${OUT}.`);
+/** Builds the installers for `triple` into `OUT`. Linux packages are made only for this machine. */
+export async function buildApp(triple) {
+  const product = readProduct(readFileSync(join(ROOT, 'config', 'product.toml'), 'utf8'));
+  const arch = architecture(triple);
+  if (triple.includes('-linux-') && !canPackageLinux(arch))
+    fail(
+      `Linux packages are made on a Linux machine of their own architecture, so ${triple} cannot be made here.`,
+    );
+  const built = build(triple);
+  mkdirSync(OUT, { recursive: true });
+  if (triple.includes('-windows-')) windows(product, built, arch, triple);
+  else if (triple.includes('-linux-')) await linux(product, built, arch, triple);
+  else fail(`No installer is made for ${triple}.`);
+}

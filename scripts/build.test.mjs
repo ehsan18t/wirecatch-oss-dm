@@ -4,8 +4,8 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { ROOT } from './gate/process.mjs';
 
-test('packaging prepares Rust backports before building with Cargo', () => {
-  // Exercise the real packaging entry point with a cold setup and stop at the build.
+test('building the app prepares Rust backports before building with Cargo', () => {
+  // Exercise the real build entry point with a cold setup and stop at the build.
   const preload = `
 import assert from 'node:assert/strict';
 import childProcess from 'node:child_process';
@@ -34,7 +34,8 @@ syncBuiltinESMExports();
     [
       '--import',
       `data:text/javascript,${encodeURIComponent(preload)}`,
-      join(ROOT, 'scripts', 'package.mjs'),
+      join(ROOT, 'scripts', 'build.mjs'),
+      'app',
       '--target',
       'x86_64-pc-windows-msvc',
     ],

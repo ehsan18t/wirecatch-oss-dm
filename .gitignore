@@ -3,7 +3,6 @@
 *.wcstate
 *.wcstate.tmp
 node_modules/
-.output/
 .wxt/
 build/
 dist/

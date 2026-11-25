@@ -5,17 +5,17 @@ How the desktop app becomes installers (D106). What the installers do is D19 and
 ## Building installers
 
 ```bash
-node scripts/package.mjs
+pnpm build app
 ```
 
-It builds for this machine; on Windows `--target <triple>` picks another, such as `aarch64-pc-windows-msvc`. Linux packages are made only on a Linux machine of their own architecture, because the AppImage carries that machine's libraries, and any other Linux target is refused. It first runs `node scripts/gate.mjs release-build`, which fails when a file generated from `config/product.toml` is out of date and warns while the file still holds a placeholder: such an installer is for testing only, and publishing it is refused (D29, D49). It then prepares the pinned Rust dependency backports and builds the app and the bridge in release, with no cargo feature on the bridge (D22), and writes the installers to `target/packages`:
+`pnpm build` (`node scripts/build.mjs`) builds the browser extension too and puts its zips next to the installers. The app is built for this machine; on Windows `pnpm build app --target <triple>` picks another, such as `aarch64-pc-windows-msvc`. Linux packages are made only on a Linux machine of their own architecture, because the AppImage carries that machine's libraries, and any other Linux target is refused. It first runs `node scripts/gate.mjs release-build`, which fails when a file generated from `config/product.toml` is out of date and warns while the file still holds a placeholder: such an installer is for testing only, and publishing it is refused (D29, D49). It then prepares the pinned Rust dependency backports and builds the app and the bridge in release, with no cargo feature on the bridge (D22), and writes the installers to `target/packages`:
 
 | System  | Files                                                          | Made by                                   |
 | ------- | -------------------------------------------------------------- | ----------------------------------------- |
 | Windows | `Wirecatch-<version>-windows-<arch>-setup.exe`                 | Inno Setup 6.7 or later, installed first  |
 | Linux   | `Wirecatch-<version>-linux-<arch>.deb`, `.rpm` and `.AppImage` | nfpm and appimagetool, downloaded, pinned |
 
-On Windows the build links the Visual C++ runtime statically (D33), and the compiler is looked for in `Program Files (x86)\Inno Setup 6` unless `ISCC` names it. The Linux tools are downloaded to `target/tools` at the versions `scripts/package.mjs` pins and checked against their SHA-256; appimagetool unpacks itself instead of mounting, so no FUSE is needed. On Linux the build needs the system packages CI installs (`scripts/ci/linux-packages.txt`).
+On Windows the build links the Visual C++ runtime statically (D33), and the compiler is looked for in `Program Files (x86)\Inno Setup 6` unless `ISCC` names it. The Linux tools are downloaded to `target/tools` at the versions `scripts/package/app.mjs` pins and checked against their SHA-256; appimagetool unpacks itself instead of mounting, so no FUSE is needed. On Linux the build needs the system packages CI installs (`scripts/ci/linux-packages.txt`).
 
 Each installer carries `THIRD-PARTY-NOTICES.txt`, generated for that build from `Cargo.lock` by `scripts/notices/` and never committed (D117). It lists the crates built in, with the licence texts they require. `node scripts/gate.mjs notices` checks it can be generated for every target. When it stops on a licence, it says what to do: add the text to `config/licenses`, or replace the package or allow its licence in `deny.toml`.
 
