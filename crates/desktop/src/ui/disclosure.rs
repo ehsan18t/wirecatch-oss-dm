@@ -63,7 +63,7 @@ impl RenderOnce for Disclosure {
             .h_auto()
             .px(px(HOVER_REACH))
             .py(px(HOVER_REACH))
-            .toggled(self.open)
+            .aria_expanded(self.open)
             .accessibility_label(self.title.clone())
             // The button centres what it holds; one row that fills it puts the chevron at the end.
             .child(

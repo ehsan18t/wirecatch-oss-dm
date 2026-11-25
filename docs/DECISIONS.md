@@ -1818,7 +1818,7 @@ Recorded on 2026-11-19. chrono is unmaintained (RUSTSEC-2026-0543), which fails 
 
 1. Wirecatch's own dates and times use jiff: schedules and the clock in `crates/queues` and `crates/core` work in civil date and time (`jiff::civil`), the Public Suffix List's date is read with it in `crates/sites`, and the desktop app shows dates and times with it. `time` was the other choice the advisory names; jiff was taken because it reads the system time zone on Windows and Linux alike, which `time` refuses on Linux once a process runs more than one thread.
 2. The workspace dependency turns on only `std`. The crates that read the local clock (`crates/core`, `crates/desktop`) add the system time zone and its data.
-3. The desktop app still names `chrono::NaiveTime`, only where it fills and reads gpui-kit's time field, whose API takes and returns that type. `deny.toml` ignores the advisory for that reason and bans chrono from every other crate of the workspace, so a new use fails the check. Revisit when gpui-kit moves off chrono.
+3. The desktop app still names `chrono::NaiveTime`, only where it fills and reads gpui-kit's time field, whose API takes and returns that type. `deny.toml` ignores the advisory for that reason and bans chrono from every other crate of the workspace, so a new use fails the check. Amended by D290: gpui-kit's time field takes jiff, and no Wirecatch crate names chrono.
 
 ### D280. The app describes the extension; the extension draws it and keeps the browser's part
 
@@ -1922,6 +1922,14 @@ Decided with the maintainer on 2026-11-24. It amends D255.1, D255.2 and D267.2.
 1. Creating a queue from the sidebar's `+` button or the command palette opens the full queue page directly (`Opening::New`), with focus in the name field and no existing queue marked as active in the navigation, instead of an intermediate New queue dialog.
 2. Each queue carries an optional `icon` slug (`QueueSettings::icon`, defaulting to `None`, validated as lowercase ASCII kebab-case within `MAX_QUEUE_ICON_CHARS`). The desktop app embeds gpui-kit's complete Lucide catalog (`AllAssets`), offers a searchable icon picker button beside the queue name in the queue page header, and falls back to `ListOrdered` when unset or unrecognized.
 3. A queue's tile in the sidebar and rail always shows the queue's own icon. Running and outside-schedule states tint the tile (`primary` and `warning`), and paused, running (in the sidebar) and outside-schedule states show a top-right status badge alongside the bottom-right rules badge; in the rail, a running queue's progress ring carries the running state without a redundant Play badge over the ring. The queue header and download window queue chips (progress badge and picked queue in the queue picker, keeping the bolt for Automatic) show the queue's icon beside its name.
+
+### D290. gpui-kit 0.11 and jiff 1.0
+
+Recorded on 2026-11-25. It amends D279.3.
+
+1. The desktop app uses gpui-kit 0.11 and gpui-pre 0.3.14, both still pinned exactly. The Windows teardown backport moves to gpui-pre-windows 0.3.14 unchanged (`patches/README.md`), since upstream has not fixed it.
+2. gpui-kit's time field takes and returns `jiff::civil::Time`, so no Wirecatch crate names chrono. The workspace takes jiff 1.0, the version gpui-kit depends on, so the build has one jiff.
+3. `deny.toml` no longer ignores RUSTSEC-2026-0543: chrono now comes only through gpui-pre, its scheduler and trash, which an advisory for unmaintained crates does not fail, and `[bans]` keeps it to those three.
 
 ### D291. One build command, and every build output under target/
 

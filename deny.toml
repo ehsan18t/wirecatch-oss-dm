@@ -20,8 +20,6 @@ ignore = [
   { id = "RUSTSEC-2023-0071", reason = "Wirecatch never holds an RSA private key; only signature verification is used" },
   # crypto-bigint 0.5 timing side channels in operations meant to be constant-time on secret integers. pgp 0.21, the newest release, reaches it through elliptic-curve 0.13 for its ECDSA and X448 keys, and the fix is only in crypto-bigint 0.7. Verifying yt-dlp's release signature computes on the public key, the signature and the file's hash, none of them secret; only the signature tests make throwaway private keys. Revisit when pgp moves to the fixed line or if Wirecatch ever handles private keys.
   { id = "RUSTSEC-2026-0387", reason = "Only signature verification is used, which computes on public values" },
-  # chrono is unmaintained. Wirecatch's own dates and times use jiff (D279); the desktop app names chrono only because gpui-kit's time field takes and returns `chrono::NaiveTime`, and [bans] keeps it out of every other crate. Revisit when gpui-kit moves off chrono.
-  { id = "RUSTSEC-2026-0543", reason = "Only the desktop's gpui-kit time field uses chrono; [bans] keeps it out of every other crate" },
 ]
 
 [licenses]
@@ -53,8 +51,8 @@ wildcards = "deny"
 # Path dependencies inside this workspace are fine without a version.
 allow-wildcard-paths = true
 deny = [
-  # Unmaintained (RUSTSEC-2026-0543): only the dependencies that bring it and the desktop's gpui-kit time field may use it (D279).
-  { crate = "chrono", wrappers = ["gpui-base", "gpui-component", "gpui-pre", "gpui-pre-scheduler", "trash", "wirecatch-desktop"], reason = "unmaintained; dates and times use jiff" },
+  # Unmaintained (RUSTSEC-2026-0543): only the dependencies that bring it may use it (D279, D290).
+  { crate = "chrono", wrappers = ["gpui-pre", "gpui-pre-scheduler", "trash"], reason = "unmaintained; dates and times use jiff" },
 ]
 
 [sources]

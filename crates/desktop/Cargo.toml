@@ -14,7 +14,7 @@ name = "wirecatch-app"
 path = "src/main.rs"
 
 [dependencies]
-gpui-kit = "=0.10.0"
+gpui-kit = "=0.11.0"
 wirecatch-core.workspace = true
 wirecatch-engine.workspace = true
 wirecatch-media.workspace = true
@@ -26,7 +26,6 @@ wirecatch-logging = { workspace = true, features = ["setup"] }
 wirecatch-product.workspace = true
 wirecatch-protocol.workspace = true
 dirs.workspace = true
-chrono.workspace = true
 jiff = { workspace = true, features = ["tz-system", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "sync", "time", "macros"] }
 tracing = { workspace = true }
@@ -45,7 +44,7 @@ wirecatch-product.workspace = true
 
 [dev-dependencies]
 # The same gpui-pre snapshot as gpui-kit, kept as a dev-dependency so test support stays out of release builds.
-gpui-pre = { version = "=0.3.12", features = ["test-support"] }
+gpui-pre = { version = "=0.3.14", features = ["test-support"] }
 serde_json.workspace = true
 wirecatch-test-support = { path = "../test-support", features = ["downloads"] }
 

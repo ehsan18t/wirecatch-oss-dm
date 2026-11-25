@@ -17,8 +17,8 @@ const CACHE = join(ROOT, '.cache', 'rust-backports');
 const BACKPORTS = [
   {
     name: 'gpui-pre-windows',
-    version: '0.3.12',
-    sha256: '7201762420222d5b5ce5bdf0056996199212a3349bfb2457a3a0238c688681f3',
+    version: '0.3.14',
+    sha256: '8badbaa4129a88e4d2fdaa1615fc61b2a59d4ebb2ac36e5de51f75598f0dd992',
     licences: [],
   },
   {
