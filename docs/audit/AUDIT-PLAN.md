@@ -12,6 +12,8 @@ How to run a code audit of this repository. An audit is done in small sessions a
 
 > Follow `docs/audit/AUDIT-PLAN.md`. Scope: desktop. Run stage 3.
 
+> Follow `docs/audit/AUDIT-PLAN.md`. Scope: rust. Run the next step of `docs/audit/rust-audit-order.md`.
+
 ## Goal
 
 Wirecatch should be the most stable and correct download manager it can be. Nothing it has should be broken: whatever exists must work properly. An audit finds bugs, broken features, wrong implementations, inefficient code, duplicate and dead code, and fake tests, then puts them in the best order to fix. Review the way a senior developer would.
@@ -30,6 +32,16 @@ A better way of doing something that already works is not an issue. It is a sugg
 | 3. Organize | Put the valid findings in the exact order to fix them.                                                  | `AUDIT-LOG.md`                                               |
 
 After stage 3 the audit is finished. Fixing works down the list, one item at a time, whenever there is time.
+
+## Chunk by chunk
+
+An audit can instead finish each chunk before the next starts: review it, validate its findings, fix them and merge, then move on. The `rust` scope runs this way, following `docs/audit/rust-audit-order.md`. In this mode:
+
+- **The order file replaces stage 0.** It holds the graph, the chunks, their order and the progress. Recount a chunk's files when it starts, since the code moves.
+- **Stages 1 to 3 run inside each chunk,** following the loop in the order file. Cross-module flows and the second review of resume and disk writes happen in its close-out step.
+- **Fixes are part of the audit.** The rule that an audit changes no product code does not apply. Each fix is its own pull request from main, with a failing test first for a bug.
+- **Results** go in `docs/audit/runs/<YYYY-MM>-rust/`: `chunks/NN.md` and `contracts/NN.md` as above, and `QUEUE.md` for findings whose fix belongs to a crate the audit has not reached yet. No `CHUNK-PLAN.md`, `GROUPS.md`, `AUDIT-LOG.md` or `WORK-LIST.md`.
+- **Find the run** by the order file's progress diagram: the step marked `now` is the one to work on. Mark it `done` and the next one `now` in the pull request that finishes it.
 
 ## Before acting
 
@@ -61,7 +73,8 @@ Name the scope in the request. Without one, ask.
 | Scope       | Covers                                                                                                                                                                                                                  |
 | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `desktop`   | `crates/`, `scripts/`, `.github/`, `config/`, `.githooks/`, `.cargo/config.toml`, and the root `Cargo.toml`, `clippy.toml`, `deny.toml` and `rust-toolchain.toml`. Input arriving through `crates/bridge` is untrusted. |
-| `extension` | `apps/extension` and `packages/`.                                                                                                                                                                                       |
+| `rust`      | `crates/`, chunk by chunk (see above).                                                                                                                                                                                  |
+| `extension` | `extension` and `packages/`.                                                                                                                                                                                            |
 
 Left out everywhere: generated code, data snapshots, binary files and standard licence texts.
 
