@@ -15,12 +15,12 @@ use gpui_kit::{
     App, AppContext as _, Context, Div, Entity, IntoElement, ParentElement as _, Render,
     SharedString, Styled as _, Subscription, Window, div, px,
 };
-use wirecatch_core::same_proxy;
 use wirecatch_protocol::app::{Setting, Update};
 use wirecatch_protocol::proxy::{
     ProxyKind, ProxyServer, ProxyServerDraft, ProxyServerSettings, ProxyTestResult, ProxyUse,
 };
 use wirecatch_protocol::{ProxyServerId, Secret};
+use wirecatch_settings::proxy::same_proxy;
 use wirecatch_shell::api;
 
 use crate::backend::{Backend, act, said};

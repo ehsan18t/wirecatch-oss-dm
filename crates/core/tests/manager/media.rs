@@ -6,7 +6,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use jiff::ToSpan as _;
-use wirecatch_core::{CoreError, DEFAULT_QUEUE_ID, LinkFrom};
+use wirecatch_core::{CoreError, LinkFrom};
 use wirecatch_protocol::app::{
     AddRequest, AddonId, AddonState, CaptureConfirmation, Category, DownloadStatus,
     DownloadSummary, FileExistsAnswer, FileExistsChoice, FixAction, MediaChoice, MediaSelection,
@@ -14,6 +14,7 @@ use wirecatch_protocol::app::{
     WhenFileExists,
 };
 use wirecatch_protocol::extension::{AddAction, BrowserRoute, MediaKind, NewDownload};
+use wirecatch_settings::DEFAULT_QUEUE_ID;
 
 use crate::common::{
     Config, Harness, PATIENCE, QUIET, TestResult, TestServer, extension, monday, test_data, tune,
@@ -316,7 +317,7 @@ async fn a_choice_whose_queue_is_deleted_goes_to_the_default_queue() -> TestResu
         .await
         .unwrap();
     let row = h.manager.list_downloads().remove(0);
-    assert_eq!(row.queue, wirecatch_core::DEFAULT_QUEUE_ID);
+    assert_eq!(row.queue, DEFAULT_QUEUE_ID);
     h.wait_status(row.id, DownloadStatus::Completed).await;
     Ok(())
 }
@@ -2674,7 +2675,7 @@ async fn a_failed_install_turns_waiting_pages_into_failed_downloads() -> TestRes
     let mut sources = publish(&server, &Releases::fake()?, "bad")?;
     sources.deno = sources.deno.for_release(
         sources.deno.version(),
-        wirecatch_core::ReleaseFile::new(
+        wirecatch_addons::manifest::ReleaseFile::new(
             sources.deno.release().url().clone(),
             crate::media_support::digest(b"not it"),
             sources.deno.release().size(),

@@ -114,7 +114,7 @@ async fn opening_keeps_settings_another_build_saved() -> TestResult {
         .root
         .path()
         .join("data")
-        .join(wirecatch_core::DATABASE_FILE);
+        .join(wirecatch_store::DATABASE_FILE);
     let stored = |db: &std::path::Path| -> TestResult<serde_json::Value> {
         let conn = rusqlite::Connection::open(db)?;
         let json: String =

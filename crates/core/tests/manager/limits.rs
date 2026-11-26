@@ -6,8 +6,9 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use tokio::sync::broadcast::error::RecvError;
-use wirecatch_core::{DEFAULT_QUEUE_ID, PROGRESS_TICK};
+use wirecatch_core::PROGRESS_TICK;
 use wirecatch_protocol::app::{DownloadStatus, QueueSettings, Setting, UiEvent};
+use wirecatch_settings::DEFAULT_QUEUE_ID;
 
 use crate::common::{
     Harness, PATIENCE, TestResult, fast_server, held_server, is_running, throttled_server, tune,

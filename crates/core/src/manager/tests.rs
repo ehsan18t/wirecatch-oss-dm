@@ -8,10 +8,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use tokio::sync::Notify;
-use wirecatch_engine::{CancellationToken, Error as EngineError, PathRejected, Url};
+use wirecatch_engine::{
+    CancellationToken, Error as EngineError, PathRejected, PrivateNetwork, ProxyChoice, Url,
+};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{AddRequest, CaptureConfirmation, DownloadStatus};
 use wirecatch_protocol::extension::{MediaHint, MediaKind, NewDownload};
+use wirecatch_settings::DEFAULT_QUEUE_ID;
 use wirecatch_test_support::{PATIENCE, QUIET};
 
 use super::fake::{EngineFuture, FakeEngine, FakeRun};
@@ -19,8 +22,7 @@ use super::settle::ServerAnswer;
 use super::{LinkFrom, Manager, RemoveFiles};
 use crate::error::CoreError;
 use crate::naming;
-use crate::{DEFAULT_CAPTURE_TIMEOUT, DEFAULT_QUEUE_ID, KnownFolders, ManagerConfig};
-use wirecatch_engine::{PrivateNetwork, ProxyChoice};
+use crate::{DEFAULT_CAPTURE_TIMEOUT, KnownFolders, ManagerConfig};
 
 /// A media download without a browser's agent names the app, never the engine
 /// library's default; with one, it is the browser's.
@@ -1160,7 +1162,7 @@ async fn a_cancels_delete_is_on_record_until_its_files_are_gone() {
         })
         .await
         .unwrap();
-    let database = dir.path().join("data").join(crate::DATABASE_FILE);
+    let database = dir.path().join("data").join(wirecatch_store::DATABASE_FILE);
     let on_record = move || -> String {
         rusqlite::Connection::open(&database)
             .unwrap()
@@ -1304,7 +1306,7 @@ async fn a_move_waits_for_the_mark_its_run_began() {
 /// The deletions on record in the database under `dir`, once what is queued is written.
 fn deletions_on_disk(manager: &Manager, dir: &Path) -> String {
     assert!(manager.inner.store.wait_for_writes(PATIENCE));
-    rusqlite::Connection::open(dir.join("data").join(crate::DATABASE_FILE))
+    rusqlite::Connection::open(dir.join("data").join(wirecatch_store::DATABASE_FILE))
         .unwrap()
         .query_row(
             "SELECT value FROM settings WHERE key = 'pending_deletions'",
@@ -1423,7 +1425,7 @@ async fn a_removal_is_on_record_until_its_files_are_gone() {
         .await
         .unwrap();
     let path = manager.lock().downloads[&id].path().to_path_buf();
-    let database = dir.path().join("data").join(crate::DATABASE_FILE);
+    let database = dir.path().join("data").join(wirecatch_store::DATABASE_FILE);
     let on_record = move || -> String {
         let other = rusqlite::Connection::open(&database).unwrap();
         other
@@ -1612,7 +1614,7 @@ async fn record_is_on_disk_first(
     about_to_write: impl FnOnce() + Send + 'static,
 ) {
     let mut other =
-        rusqlite::Connection::open(dir.join("data").join(crate::DATABASE_FILE)).unwrap();
+        rusqlite::Connection::open(dir.join("data").join(wirecatch_store::DATABASE_FILE)).unwrap();
     other.busy_timeout(PATIENCE).unwrap();
     let held = other
         .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
@@ -1647,7 +1649,7 @@ async fn a_move_is_on_disk_before_its_first_file_moves() {
     let [part, _] = naming::partial_files(manager.lock().downloads[&id].path());
     std::fs::create_dir_all(part.parent().unwrap()).unwrap();
     std::fs::write(&part, b"kept").unwrap();
-    let database = dir.path().join("data").join(crate::DATABASE_FILE);
+    let database = dir.path().join("data").join(wirecatch_store::DATABASE_FILE);
     let saw = Arc::new(std::sync::Mutex::new(Vec::new()));
     let seen = saw.clone();
     manager.use_fake_mover(Arc::new(move |from, to| {
@@ -1859,7 +1861,7 @@ fn stalls(_run: FakeRun) -> EngineFuture {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn failures_retries_and_new_links_are_in_the_activity() {
-    use crate::ActivityEvent::{Failed, LinkChanged, Retried};
+    use wirecatch_records::activity::Event::{Failed, LinkChanged, Retried};
     let (manager, _dir) = manager_with(stalls, PATIENCE, DEFAULT_CAPTURE_TIMEOUT).await;
     let id = manager
         .add_download(add_request("https://example.com/a.bin"))
@@ -1907,7 +1909,7 @@ async fn failures_retries_and_new_links_are_in_the_activity() {
 
 #[test]
 fn a_pause_resume_and_cancel_are_in_the_activity() {
-    use crate::ActivityEvent::{Cancelled, Paused, Resumed};
+    use wirecatch_records::activity::Event::{Cancelled, Paused, Resumed};
     let mut entry = super::state::idle_entry(
         "https://example.com/a.bin",
         wirecatch_sites::local_network::ChosenBy::Person,
@@ -1932,7 +1934,7 @@ fn a_pause_resume_and_cancel_are_in_the_activity() {
 
 #[test]
 fn a_download_added_paused_starts_rather_than_resumes() {
-    use crate::ActivityEvent::Started;
+    use wirecatch_records::activity::Event::Started;
     let mut entry = super::state::idle_entry(
         "https://example.com/a.bin",
         wirecatch_sites::local_network::ChosenBy::Person,

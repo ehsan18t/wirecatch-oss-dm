@@ -26,14 +26,9 @@ pub use manager::{
     PUBLIC_SUFFIX_LIST_URL, RemoveFiles, can_move_to_queue,
 };
 pub use proxy::PROXY_TEST_URL;
-pub use wirecatch_addons::manifest::{
-    AddonComponent, AddonFile, ArchiveKind, ComponentId, Fingerprint, MEDIA_ADDON_FOLDER,
-    ManifestError, MediaAddonSources, PinnedKey, ReleaseFile, Sha256Digest,
-};
-pub use wirecatch_records::activity::{Event as ActivityEvent, Happened};
+pub use wirecatch_addons::manifest::MediaAddonSources;
+pub use wirecatch_records::activity::Happened;
+pub use wirecatch_settings::SettingsFileError;
 pub use wirecatch_settings::folders::{KnownFolders, PathError};
-pub use wirecatch_settings::proxy::{ComputerProxy, same_proxy};
-pub use wirecatch_settings::{
-    DEFAULT_QUEUE_ID, SettingsError, SettingsFileError, default_settings,
-};
-pub use wirecatch_store::{DATABASE_FILE, DATABASE_SIDE_FILES, StoreError};
+pub use wirecatch_settings::proxy::ComputerProxy;
+pub use wirecatch_store::StoreError;

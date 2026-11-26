@@ -167,7 +167,7 @@ async fn the_data_folder_can_be_deleted_right_after_shutdown() -> TestResult {
     h.wait_status(row.id, DownloadStatus::Completed).await;
     h.manager.shutdown().await;
     let data = h.root.path().join("data");
-    assert!(data.join(wirecatch_core::DATABASE_FILE).is_file());
+    assert!(data.join(wirecatch_store::DATABASE_FILE).is_file());
     wirecatch_test_support::remove_test_folder(&data)
         .expect("the data folder is still in use after shutdown");
     Ok(())
@@ -190,7 +190,7 @@ async fn a_damaged_download_list_is_set_aside_and_the_person_is_told() -> TestRe
         .root
         .path()
         .join("data")
-        .join(wirecatch_core::DATABASE_FILE);
+        .join(wirecatch_store::DATABASE_FILE);
     std::fs::write(&database, b"not a database".repeat(400)).unwrap();
 
     h.restart().await?;

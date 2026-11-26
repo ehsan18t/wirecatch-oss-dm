@@ -1,10 +1,11 @@
 //! Acceptance 5: settings exported on one machine and imported on another (with a
 //! different home folder) come back with folders resolved for the new machine.
 
-use wirecatch_core::{CoreError, DEFAULT_QUEUE_ID, SettingsFileError};
+use wirecatch_core::{CoreError, SettingsFileError};
 use wirecatch_protocol::app::{
     AddonId, Category, PortablePath, Queue, QueueSettings, Schedule, Setting, TimeOfDay, UiEvent,
 };
+use wirecatch_settings::DEFAULT_QUEUE_ID;
 
 use crate::common::{Harness, TestResult, tune};
 
