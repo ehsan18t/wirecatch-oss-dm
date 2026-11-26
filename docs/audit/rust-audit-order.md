@@ -264,7 +264,7 @@ Two rules from `docs/DECISIONS.md` limit what a fix may do:
 
 ## Size
 
-About 150,000 lines in total, before Part 0. Code and tests are counted separately. Inline tests are everything after the first `#[cfg(test)]` in a file, so the split is approximate; a chunk always takes a file whole.
+About 177,500 lines of Rust in 437 reviewable files, before Part 0, counting examples and build scripts; the two generated files (`product/src/lib.rs`, `updates/src/installer_name.rs`) are not reviewed. The table counts code and tests separately. Inline tests are everything after the first `#[cfg(test)]` in a file, so the split is approximate; a chunk always takes a file whole.
 
 | Crate          | Code   | Inline tests | `tests/` files |
 | -------------- | ------ | ------------ | -------------- |
@@ -296,7 +296,7 @@ A chunk holds at most about 8,000 lines, code and tests together (`docs/audit/AU
 
 ## The order
 
-Sizes are code plus tests, rounded, after Part 0. "Waits for" names the steps that must be finished first. Ties between steps that wait for the same thing are broken by risk: the step where a defect hurts most goes first.
+Sizes are whole files, code plus tests, measured at `1cdd683` and rounded. "Waits for" names the steps that must be finished first. Ties between steps that wait for the same thing are broken by risk: the step where a defect hurts most goes first.
 
 ### Part 1: the base everything builds on
 
@@ -304,8 +304,8 @@ Sizes are code plus tests, rounded, after Part 0. "Waits for" names the steps th
 `storage`, `state`, `checkpoint`, `segment`, `writer`, `target`, `progress`, `segment/proptests.rs`, with `tests/expired_target.rs`.
 Waits for Part 0. The highest-risk code in the product: corruption, lost progress and resume all live here. Before reading the files in full, write down the expected behaviour: claimed against written offsets, the order of a data write and its checkpoint, restart with matching, stale or invalid state, the final rename, and an occupied target. Read the engine's download entry and the worker's handoff to the writer only for orientation; they are reviewed in steps 5 and 8. At the end, check the pilot: did the chunk fit one session, which outside files were needed, where a claim stalled. Resize the later chunks if it did not fit.
 
-**2. `protocol` A: the app's messages** (about 4,300 lines)
-`app`, `desktop`, `rules`, `proxy`, `languages`, `media_start`.
+**2. `protocol` A: the app's messages** (about 4,600 lines)
+`lib.rs`, `app`, `desktop`, `rules`, `proxy`, `languages`, `media_start`.
 Waits for Part 0. 16 crates and the extension use it: any change here spreads the furthest. A change means `pnpm protocol:generate` and checking the extension. `languages` is a data table and needs little review.
 
 **3. `protocol` B: framing and the extension's messages** (about 4,900 lines)
@@ -315,20 +315,20 @@ Waits for 2, because `wire` and `exported` build on the `app` types.
 **4. `test-support`** (about 4,900 lines)
 Waits for 3. The tests of 16 crates and `e2e` use its servers. If it changed after those crates were done, their tests would have to be reopened. Only step 1 runs before it.
 
-**5. `engine` E1: public API and shared helpers** (about 2,400 lines)
-`lib.rs`, `error`, `units`, `numeric`, `url`, `naming`, `task`, `file_work`, `abandon`, `options`, with `tests/options.rs`.
+**5. `engine` E1: public API and shared helpers** (about 3,100 lines)
+`lib.rs`, `error`, `units`, `numeric`, `url`, `naming`, `task`, `file_work`, `abandon`, `options`, with `tests/options.rs` and the shared `tests/common/`.
 Waits for 4. Every other engine module uses these, and most crates use `units`, `numeric` and `url` (D26). This chunk holds the crates.io API, where removing a public item is a breaking release.
 
-**6. `engine` E3: HTTP** (about 5,100 lines)
-`http`, `http3`, `request`, `receive`, `host_pace`, `retry`, `transport`, with `tests/request_limit.rs`, `short_retry.rs`, `server_names.rs`, `network_failures.rs`.
+**6. `engine` E3: HTTP** (about 5,300 lines)
+`http`, `http3`, `request`, `receive`, `host_pace`, `retry`, `transport`, with `tests/request_limit.rs`, `short_retry.rs`, `server_names.rs`, `network_failures.rs`, and `examples/bench_http3.rs`.
 Waits for 1 and 5, because `http` writes through `segment` and `naming`.
 
-**7. `engine` E4: FTP, proxies and network guards** (about 5,900 lines)
+**7. `engine` E4: FTP, proxies and network guards** (about 6,600 lines)
 `ftp`, `proxy`, `socks`, `net_guard`, with `tests/ftp*.rs`, `proxy.rs`, `http_proxy_guard.rs`, `hardening.rs`.
 Waits for 6, because `ftp` and `net_guard` reuse `http`'s request and error types. `sites` and `settings` use the guard and proxy types from here.
 
-**8. `engine` E5: running a download** (about 4,800 lines)
-`download`, `worker`, `fetch`, `limiter`, with `tests/download.rs`, `fetch.rs`.
+**8. `engine` E5: running a download** (about 5,000 lines)
+`download`, `worker`, `fetch`, `limiter`, with `tests/download.rs`, `fetch.rs`, and `examples/bench_local.rs`.
 Waits for 7. These modules call every other engine module, so they are judged last, against cleaned parts.
 
 ### Part 2: small crates and saved data
@@ -350,28 +350,28 @@ Waits for 7. These modules call every other engine module, so they are judged la
 
 ### Part 3: streams and media
 
-**23. `streams` S1: reading manifests and choosing tracks** (about 6,800)
-`hls`, `dash`, `model`, `plan`, `select`, `source`, `track_id`, with `tests/hls.rs`, `dash.rs`, `manifest_memory.rs`, `master_playlist_work.rs`.
+**23. `streams` S1: reading manifests and choosing tracks** (about 7,000)
+`lib.rs`, `hls`, `dash`, `model`, `plan`, `select`, `source`, `track_id`, with `tests/hls.rs`, `dash.rs`, `manifest_memory.rs`, `master_playlist_work.rs` and the shared `tests/common/`.
 Waits for 9, 11 and 15. Parses outside input, so panics and unbounded memory matter here.
 
-**24. `streams` S2: running a stream download** (about 5,300)
-`download`, `process`, `ffmpeg`, `workdir`, `crypto`, `extension`, `error`, with `tests/process.rs`, `ffmpeg.rs`.
+**24. `streams` S2: running a stream download** (about 6,100)
+`download`, `process`, `ffmpeg`, `workdir`, `crypto`, `extension`, `error`, with `tests/process.rs`, `ffmpeg.rs`, and the fake programs in `examples/` those tests run.
 Waits for 23.
 
-**25. `media` M1: yt-dlp and page reading** (about 4,300)
+**25. `media` M1: yt-dlp and page reading** (about 4,400)
 `ytdlp`, `phantomjs`, `tools`, the `phantomjs` binary, with `tests/phantomjs.rs`.
 Waits for 16, 21, 22 and 24. Runs outside programs on outside input.
 
-**26. `media` M2: output, quality choice and ffmpeg** (about 5,700)
-`output`, `choice`, `describe`, `convert`, `ffmpeg`, `merge`.
+**26. `media` M2: output, quality choice and ffmpeg** (about 6,300)
+`lib.rs`, `output`, `choice`, `describe`, `convert`, `ffmpeg`, `merge`.
 Waits for 25.
 
 ### Part 4: `core`, the download manager
 
 `core` comes after all 15 crates it depends on, so its review can see what it repeats from them. Tests in `core/tests/manager/` go with the code they test. The order follows which manager modules the others call.
 
-**27. C1: manager state and shared types** (about 7,000)
-`lib.rs`, `manager/mod.rs`, `state`, `options`, `policy`, `questions`, `handovers`, `private_sessions`, and the crate's top-level `error`, `naming`, `batches`, `headers`, `clock`, `speed`, `proxy`, with `tests/manager/lifecycle.rs`, `common.rs`, `main.rs`.
+**27. C1: manager state and shared types** (about 7,100)
+`lib.rs`, `manager/mod.rs`, `state`, `options`, `policy`, `questions`, `handovers`, `private_sessions`, and the crate's top-level `error`, `naming`, `batches`, `headers`, `clock`, `speed`, `proxy`, with `tests/manager/lifecycle.rs`, `common.rs`, `main.rs`, and `examples/headless.rs`.
 Waits for 26, and with it every crate `core` depends on. Every other manager module reads `state`. Checks that A2 left only the re-exports `core`'s own types need.
 
 **28. C2: running and restoring downloads** (about 5,500)
@@ -386,16 +386,16 @@ Waits for 28.
 `queues`, `scheduling`, `preferences`, `manager/proxy`, `suffix_list`, with `tests/manager/queues.rs`, `schedule.rs`, `rules.rs`, `limits.rs`, `proxy.rs`, `settings.rs`, `settings_file.rs`.
 Waits for 29. `queues` calls `downloads`.
 
-**31. C5: starting a media download** (about 4,600)
-`media.rs`, `media_run/` (`mod`, `page`, `network`, `extras`), `bin/fake_media_tool.rs`, with `tests/manager/media_support.rs` and the start tests of `tests/manager/media.rs`.
-Waits for 30. `media` calls `captures`, `downloads` and `refresh`.
+**31. C5: starting a media download** (about 6,800)
+`media.rs`, `media_run/` (`mod`, `page`, `network`, `extras`), `bin/fake_media_tool.rs`, with `tests/manager/media_support.rs` and all of `tests/manager/media.rs`.
+Waits for 30. `media` calls `captures`, `downloads` and `refresh`. `media.rs` (3,100 lines) also has tests that run through saving, restart and add-ons; it stays whole here, and each such test is checked against the contract of step 32, 28 or 33.
 
-**32. C6: saving a media download** (about 4,600)
-`media_run/` (`save`, `placement`, `workdir`, `tests.rs`), with `tests/manager/media_output.rs` and the rest of `tests/manager/media.rs`.
-Waits for 31. Where `tests/manager/media.rs` (3,100 lines) splits between 31 and 32 is decided when step 31 starts, from what each test drives.
+**32. C6: saving a media download** (about 2,600)
+`media_run/` (`save`, `placement`, `workdir`, `tests.rs`), with `tests/manager/media_output.rs`.
+Waits for 31.
 
-**33. C7: add-on installs and app updates** (about 4,100)
-`manager/addons/`, `app_update.rs`, `app_update/`, with `tests/manager/addons.rs`.
+**33. C7: add-on installs and app updates** (about 4,200)
+`manager/addons/`, `app_update.rs`, `app_update/`, with `tests/manager/addons.rs` and `examples/media_tool_release.rs`.
 Waits for 32. `addons` calls into `media` and `state`.
 
 **34. C8: the manager's inline tests** (about 2,000)
@@ -455,9 +455,12 @@ Waits for 40.
 ## Each chunk, step by step
 
 1. **Facts first.** Coverage, mutation testing on its risky files, and `jscpd` and unused-public-item hits for its files. These are leads, not findings.
+   - Unused public items: the `unreachable_pub` lint plus a search for callers. Neither proves an `engine` item has no callers outside the workspace (D26).
+   - A mutation that times out counts as caught only when a failing test confirms it.
+   - Coverage of `streams` needs its fake programs built first, or its process tests fail and the numbers are wrong.
 2. **Review** the whole chunk against `docs/ENGINEERING.md`, reading every file in full.
 3. **Check each finding** before fixing it: against the code, an existing test, or a new failing test. Drop what does not hold.
-4. **Fix** every confirmed finding in the chunk before moving on. A change to a public item updates every caller in the same PR, so `main` always builds. Check with `cargo check --workspace` and the tests of each crate the PR touches.
+4. **Fix** every confirmed finding in the chunk before moving on. A change to a public item updates every caller in the same PR, so `main` always builds. Check with `cargo check --workspace` and the tests of each crate the PR touches. A change to `engine`'s public API also runs the `engine-docs`, `engine-package` and `msrv` gate checks.
 5. **Write down its contract:** what other crates may rely on, in one page. Later chunks judge their callers against it.
 6. **Merge**, then start the next chunk.
 
@@ -467,6 +470,5 @@ A later chunk may change an earlier crate in two cases only: it moves duplicate 
 
 ## Assumptions
 
-- Chunk sizes come from line counts and module imports, not from reading the code. The split of `tests/manager/media.rs` between steps 31 and 32 needs a check when step 31 starts.
-- The C1 to C7 sizes may still count part of `manager/tests.rs`, which now has its own step. Recount when Part 4 starts.
+- Chunk sizes come from line counts and module imports, not from reading the code. Recount a chunk's files when it starts.
 - The A2 lists hold at `1cdd683`. Recheck them against `core/src/lib.rs` when A2 starts.
