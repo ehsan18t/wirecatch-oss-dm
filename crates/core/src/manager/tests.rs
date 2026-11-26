@@ -8,7 +8,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use tokio::sync::Notify;
-use wirecatch_engine::{CancellationToken, Error as EngineError, PathRejected, Url};
+use wirecatch_engine::{
+    CancellationToken, Error as EngineError, PathRejected, PrivateNetwork, ProxyChoice, Url,
+};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{AddRequest, CaptureConfirmation, DownloadStatus};
 use wirecatch_protocol::extension::{MediaHint, MediaKind, NewDownload};
@@ -21,7 +23,6 @@ use super::{LinkFrom, Manager, RemoveFiles};
 use crate::error::CoreError;
 use crate::naming;
 use crate::{DEFAULT_CAPTURE_TIMEOUT, KnownFolders, ManagerConfig};
-use wirecatch_engine::{PrivateNetwork, ProxyChoice};
 
 /// A media download without a browser's agent names the app, never the engine
 /// library's default; with one, it is the browser's.
