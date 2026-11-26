@@ -631,7 +631,7 @@ mod tests {
             "format_id": "1", "ext": "mp4", "vcodec": null, "acodec": "none", "height": 720, "url": "u"
         }));
         let policy = |video: &Format, audio: &Format| {
-            use wirecatch_streams::codec::Codec;
+            use wirecatch_media_formats::Codec;
             let codecs = [
                 video_codec(video).map(Codec::Video),
                 audio_codec(audio).map(Codec::Audio),

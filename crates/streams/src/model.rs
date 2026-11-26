@@ -8,8 +8,8 @@ use std::time::Duration;
 
 use url::Url;
 use wirecatch_engine::{DownloadOptions, FileWork, PrivateNetwork};
+use wirecatch_media_formats::{Codec, Container};
 
-use crate::codec::{Codec, Container};
 use crate::ffmpeg::InputFormat;
 
 /// The streaming format of a link.

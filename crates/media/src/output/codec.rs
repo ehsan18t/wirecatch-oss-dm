@@ -1,4 +1,4 @@
-//! The codecs of yt-dlp's formats, read into the shared codec policy ([`wirecatch_streams::codec`]), and the audio qualities each codec is encoded at.
+//! The codecs of yt-dlp's formats, read into the shared codec policy ([`wirecatch_media_formats`]), and the audio qualities each codec is encoded at.
 
 #![forbid(unsafe_code)]
 

@@ -33,6 +33,7 @@ const COMMIT_SCOPES = [
   'store',
   'messages',
   'media',
+  'media-formats',
   'settings',
   'shell',
   'cli',

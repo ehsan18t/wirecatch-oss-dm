@@ -13,6 +13,7 @@ publish = false
 wirecatch-addons.workspace = true
 wirecatch-engine.workspace = true
 wirecatch-files.workspace = true
+wirecatch-media-formats.workspace = true
 wirecatch-messages.workspace = true
 wirecatch-product.workspace = true
 wirecatch-protocol = { workspace = true, features = ["tokio"] }

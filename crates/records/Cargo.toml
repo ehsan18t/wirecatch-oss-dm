@@ -10,9 +10,9 @@ homepage.workspace = true
 publish = false
 
 [dependencies]
+wirecatch-media-formats.workspace = true
 wirecatch-product.workspace = true
 wirecatch-protocol.workspace = true
-wirecatch-streams.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 

@@ -1,0 +1,16 @@
+[package]
+name = "wirecatch-media-formats"
+description = "The codec and container rules Wirecatch uses for every video and audio it saves"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish = false
+
+[dependencies]
+serde.workspace = true
+
+[lints]
+workspace = true

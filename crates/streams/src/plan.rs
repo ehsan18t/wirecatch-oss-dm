@@ -6,8 +6,8 @@ use std::ops::Range;
 
 use url::Url;
 use wirecatch_engine::units::{KIB_USIZE, MIB};
+use wirecatch_media_formats::Codec;
 
-use crate::codec::Codec;
 use crate::error::{DrmSystem, Error, Feature, ManifestError, excerpt};
 use crate::model::Role;
 
