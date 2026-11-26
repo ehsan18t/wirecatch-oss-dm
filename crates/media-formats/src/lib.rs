@@ -1,6 +1,7 @@
-//! The one codec and container policy for every video and audio Wirecatch saves, whether it came from an HLS or DASH stream (this crate) or from a page read by yt-dlp (`wirecatch-core`), so the same video gets the same container whichever way it was found.
+//! The one codec and container policy for every video and audio Wirecatch saves, from an HLS or DASH stream (`wirecatch-streams`) or a page read by yt-dlp (`wirecatch-media`), so the same video gets the same container whichever way it was found.
+//! Saved with downloads (`wirecatch-records`, D81): a serialized name never changes.
 //!
-//! The enums are deliberately not `#[non_exhaustive]`: a new codec or container must make every `match` in the workspace decide what it means.
+//! The enums are not `#[non_exhaustive]`: a new codec or container must make every `match` in the workspace decide what it means.
 
 #![forbid(unsafe_code)]
 
@@ -230,7 +231,9 @@ impl Codec {
 /// The RFC 6381 names of subtitle and caption formats a codecs attribute can list beside the video and audio.
 const SUBTITLE_CODECS: [&str; 5] = ["wvtt", "stpp", "tx3g", "c608", "c708"];
 
-pub(crate) fn is_subtitle_codec(name: &str) -> bool {
+/// Whether an RFC 6381 codec name is a subtitle or caption format, which a DASH representation may list.
+#[must_use]
+pub fn is_subtitle_codec(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
     SUBTITLE_CODECS.iter().any(|s| name.starts_with(s))
 }

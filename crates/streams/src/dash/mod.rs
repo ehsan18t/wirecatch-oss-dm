@@ -17,8 +17,8 @@ use std::sync::Arc;
 
 use roxmltree::{Document, Node};
 use url::Url;
+use wirecatch_media_formats::{Codec, is_subtitle_codec};
 
-use crate::codec::{Codec, is_subtitle_codec};
 use crate::error::{DrmSystem, Located, ManifestError, excerpt};
 use crate::plan::{MAX_TRACKS, NameBudget};
 use template::Template;

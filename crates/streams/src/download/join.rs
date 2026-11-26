@@ -12,9 +12,9 @@ use tracing::{info, warn};
 use wirecatch_engine::units::MIB;
 use wirecatch_engine::{FileWork, naming};
 use wirecatch_files::whole_file;
+use wirecatch_media_formats::Container;
 
 use super::{blocking, discarded};
-use crate::codec::Container;
 use crate::error::{Error, Result};
 use crate::extension::with_extension;
 use crate::ffmpeg::{self, CopyInput, InputFormat};
@@ -272,8 +272,9 @@ fn concat(
 
 #[cfg(test)]
 mod tests {
+    use wirecatch_media_formats::Codec;
+
     use super::*;
-    use crate::codec::Codec;
     use crate::download::fetch::queue;
     use crate::plan::{Piece, Track};
 

@@ -10,8 +10,8 @@ use wirecatch_product::PRODUCT_NAME;
 
 use tracing::warn;
 use wirecatch_engine::CancellationToken;
+use wirecatch_media_formats::VideoCodec;
 use wirecatch_streams::Role;
-use wirecatch_streams::codec::VideoCodec;
 use wirecatch_streams::process::STALL_TIMEOUT;
 use wirecatch_streams::process::{self, Output, RunError, RunOptions};
 

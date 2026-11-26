@@ -6,7 +6,7 @@
 use std::path::{Path, PathBuf};
 
 use wirecatch_engine::CancellationToken;
-use wirecatch_streams::codec::Container;
+use wirecatch_media_formats::Container;
 use wirecatch_streams::ffmpeg::{CopyInput, copy_arguments};
 use wirecatch_streams::{InputFormat, Role};
 

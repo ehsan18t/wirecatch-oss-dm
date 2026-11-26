@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 use wirecatch_protocol::app::StreamAction;
 
-pub use wirecatch_streams::codec::{AudioCodec, Container, VideoCodec};
+pub use wirecatch_media_formats::{AudioCodec, Container, VideoCodec};
 
 /// What happens to the video of a download being saved.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

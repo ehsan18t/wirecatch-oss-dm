@@ -10,8 +10,8 @@ use std::time::Duration;
 use url::Url;
 use wirecatch_engine::Fetcher;
 use wirecatch_engine::units::{KIB_USIZE, MIB};
+use wirecatch_media_formats::Codec;
 
-use crate::codec::Codec;
 use crate::dash::{self, Kind, Mpd, Segments};
 use crate::error::{Error, Feature, ManifestError, Result};
 use crate::ffmpeg::InputFormat;

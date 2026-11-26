@@ -10718,6 +10718,7 @@ dependencies = [
  "wirecatch-addons",
  "wirecatch-engine",
  "wirecatch-files",
+ "wirecatch-media-formats",
  "wirecatch-messages",
  "wirecatch-product",
  "wirecatch-protocol",
@@ -10725,6 +10726,13 @@ dependencies = [
  "wirecatch-sites",
  "wirecatch-streams",
  "wirecatch-test-support",
+]
+
+[[package]]
+name = "wirecatch-media-formats"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -10773,9 +10781,9 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+ "wirecatch-media-formats",
  "wirecatch-product",
  "wirecatch-protocol",
- "wirecatch-streams",
 ]
 
 [[package]]
@@ -10888,7 +10896,6 @@ dependencies = [
  "cbc",
  "libc",
  "roxmltree 0.21.1",
- "serde",
  "signal-hook",
  "tempfile",
  "thiserror 2.0.21",
@@ -10900,6 +10907,7 @@ dependencies = [
  "wirecatch-engine",
  "wirecatch-files",
  "wirecatch-logging",
+ "wirecatch-media-formats",
  "wirecatch-product",
  "wirecatch-test-support",
 ]

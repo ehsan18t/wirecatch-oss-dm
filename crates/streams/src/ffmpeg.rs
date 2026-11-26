@@ -12,8 +12,8 @@ use std::io::{self, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
 use tokio_util::sync::CancellationToken;
+use wirecatch_media_formats::Container;
 
-use crate::codec::Container;
 use crate::crypto::fill;
 use crate::error::{Error, Result};
 use crate::model::Role;

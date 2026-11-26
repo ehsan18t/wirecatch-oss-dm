@@ -57,6 +57,7 @@ cargo run --release -p wirecatch-engine --example bench_local
 | `crates/store`           | `wirecatch-store`: the download list in SQLite, its migrations and repairs (D17).                                                                 |
 | `crates/messages`        | `wirecatch-messages`: the messages for a failed download and the fix each offers.                                                                 |
 | `crates/media`           | `wirecatch-media`: the quality choice, yt-dlp pages, ffmpeg conversions and joining.                                                              |
+| `crates/media-formats`   | `wirecatch-media-formats`: the codec and container rules for saved video and audio (D293).                                                        |
 | `crates/settings`        | `wirecatch-settings`: settings defaults and checks, category rules, the proxy setting and settings files.                                         |
 | `crates/files`           | `wirecatch-files`: writing a file whole, discarding, owner-only access and the Mark of the Web.                                                   |
 | `crates/sites`           | `wirecatch-sites`: the Public Suffix List and the local network rules (D39, D44).                                                                 |

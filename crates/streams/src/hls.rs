@@ -9,8 +9,8 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use url::Url;
+use wirecatch_media_formats::Codec;
 
-use crate::codec::Codec;
 use crate::error::{DrmSystem, Feature, Located, ManifestError, excerpt};
 use crate::plan::{
     AddressBudget, Encryption, MAX_TRACKS, Piece, Refusal, check_room_for, check_web_address,
