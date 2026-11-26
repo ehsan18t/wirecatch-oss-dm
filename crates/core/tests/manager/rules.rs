@@ -1,11 +1,11 @@
 //! Auto queues rule new downloads, and a download keeps why it is in its queue (D72.3, D72.8).
 
-use wirecatch_core::DEFAULT_QUEUE_ID;
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{AddRequest, QueueSettings};
 use wirecatch_protocol::rules::{
     AddDownloads, DraftRules, LinkTrial, NameSyntax, QueueReason, QueueRules, Rule,
 };
+use wirecatch_settings::DEFAULT_QUEUE_ID;
 
 use crate::common::{Harness, TestResult, fast_server};
 

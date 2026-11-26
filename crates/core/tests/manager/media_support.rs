@@ -18,10 +18,11 @@ use rand::SeedableRng;
 use rand::rngs::StdRng;
 use sha2::{Digest, Sha256};
 use tokio::sync::broadcast;
-use wirecatch_core::{
-    AddonComponent, AddonFile, ArchiveKind, ComponentId, Fingerprint, MediaAddonSources, PinnedKey,
-    ReleaseFile, Sha256Digest,
+use wirecatch_addons::manifest::{
+    AddonComponent, AddonFile, ArchiveKind, ComponentId, Fingerprint, PinnedKey, ReleaseFile,
+    Sha256Digest,
 };
+use wirecatch_core::MediaAddonSources;
 use wirecatch_protocol::app::{
     AddonId, AddonInfo, AddonState, LanguageSource, MediaChoice, MediaSelection, OutputFormat,
     UiEvent, UnembeddedSubtitles,

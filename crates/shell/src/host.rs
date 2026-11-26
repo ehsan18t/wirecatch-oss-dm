@@ -9,12 +9,11 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use tokio::sync::{Mutex, OnceCell, watch};
-use wirecatch_core::{
-    CoreError, DATABASE_FILE, DATABASE_SIDE_FILES, KnownFolders, Manager, ManagerConfig, StoreError,
-};
+use wirecatch_core::{CoreError, KnownFolders, Manager, ManagerConfig, StoreError};
 use wirecatch_ipc::{Endpoint, IpcError};
 use wirecatch_product::{Channel, NOTICES_FILE, PRODUCT_SLUG};
 use wirecatch_protocol::wire::ProtocolError;
+use wirecatch_store::{DATABASE_FILE, DATABASE_SIDE_FILES};
 
 /// Overrides the data folder, for tests and for trying things on a throwaway download list.
 /// Debug builds already keep their own folder, identity and endpoint (see [`DEV_BUILD`]).

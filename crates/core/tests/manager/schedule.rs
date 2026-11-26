@@ -2,8 +2,8 @@
 //! moved by hand, so a window of an hour is crossed in milliseconds.
 
 use jiff::ToSpan as _;
-use wirecatch_core::DEFAULT_QUEUE_ID;
 use wirecatch_protocol::app::{DownloadStatus, Schedule, TimeOfDay, Weekday};
+use wirecatch_settings::DEFAULT_QUEUE_ID;
 
 use crate::common::{
     Harness, QUIET, TestResult, fast_server, held_server, is_running, monday, wait_until,

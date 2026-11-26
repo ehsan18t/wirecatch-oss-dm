@@ -899,7 +899,7 @@ async fn a_capture_starts_at_once_and_shows_a_toast() -> TestResult {
         .root
         .path()
         .join("data")
-        .join(wirecatch_core::DATABASE_FILE);
+        .join(wirecatch_store::DATABASE_FILE);
     let db = rusqlite::Connection::open(db).unwrap();
     let origin: String = db
         .query_row("SELECT origin FROM downloads WHERE id = ?1", [id.0], |r| {
@@ -1632,7 +1632,7 @@ async fn a_link_refreshed_to_another_site_leaves_the_credentials_behind() -> Tes
     let h = Harness::new().await?;
     // Held in line, so nothing is requested before the links are refreshed.
     h.manager
-        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)
+        .set_queue_paused(wirecatch_settings::DEFAULT_QUEUE_ID, true)
         .unwrap();
     let with_credentials = |name: &str| {
         let mut capture = capture(first.url(name).to_string());
@@ -1662,7 +1662,7 @@ async fn a_link_refreshed_to_another_site_leaves_the_credentials_behind() -> Tes
         .refresh_link(moves, other.url("moves.pdf").as_str(), LinkFrom::Person)
         .unwrap();
     h.manager
-        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, false)
+        .set_queue_paused(wirecatch_settings::DEFAULT_QUEUE_ID, false)
         .unwrap();
     h.wait_status(stays, DownloadStatus::Completed).await;
     h.wait_status(moves, DownloadStatus::Completed).await;
@@ -1695,7 +1695,7 @@ async fn a_browser_capture_refreshes_the_watched_row_after_a_mirror_change() -> 
     let server = fast_server(1024).await?;
     let mut h = Harness::new().await?;
     h.manager
-        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)?;
+        .set_queue_paused(wirecatch_settings::DEFAULT_QUEUE_ID, true)?;
     let entry = "https://project.example/releases/v1";
     let page = "https://project.example/releases/v1/wait?session=old";
     let release = "https://project.example/releases/v1/report.pdf";
@@ -1749,7 +1749,7 @@ async fn a_browser_capture_refreshes_the_watched_row_after_a_mirror_change() -> 
     assert_eq!(h.manager.list_downloads().len(), 1);
     h.restart().await?;
     h.manager
-        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, false)?;
+        .set_queue_paused(wirecatch_settings::DEFAULT_QUEUE_ID, false)?;
     let completed = h.wait_status(id, DownloadStatus::Completed).await;
     assert_eq!(completed.added_at, added_at);
     assert_eq!(server.stats.header_values("cookie"), vec!["session=fresh"]);
@@ -1760,7 +1760,7 @@ async fn a_browser_capture_refreshes_the_watched_row_after_a_mirror_change() -> 
 async fn a_file_capture_refreshes_the_watched_row_whatever_its_site_or_size() -> TestResult {
     let h = Harness::new().await?;
     h.manager
-        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)?;
+        .set_queue_paused(wirecatch_settings::DEFAULT_QUEUE_ID, true)?;
     let page = "https://drive.example/folders/1";
     let mut old = capture_from(page, "https://files.example/download?id=1&token=old".into());
     old.suggested_name = Some("report.pdf".into());
@@ -1797,7 +1797,7 @@ async fn a_file_capture_refreshes_the_watched_row_whatever_its_site_or_size() ->
 async fn a_video_file_from_the_download_button_refreshes_a_watched_file() -> TestResult {
     let h = Harness::new().await?;
     h.manager
-        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)?;
+        .set_queue_paused(wirecatch_settings::DEFAULT_QUEUE_ID, true)?;
     let page = "https://videos.example/watch/1";
     let mut old = capture_from(page, "https://cdn.example/video.mp4?token=old".into());
     old.browser_route = Some(Box::new(BrowserRoute {
@@ -1832,7 +1832,7 @@ async fn a_video_file_from_the_download_button_refreshes_a_watched_file() -> Tes
 async fn a_dismissed_watch_leaves_a_later_capture_to_its_own_row() -> TestResult {
     let h = Harness::new().await?;
     h.manager
-        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)?;
+        .set_queue_paused(wirecatch_settings::DEFAULT_QUEUE_ID, true)?;
     let page = "https://project.example/releases/v1";
     let mut old = capture_from(page, "https://files.example/report.pdf?old".into());
     old.browser_route = Some(Box::new(BrowserRoute {
@@ -1865,7 +1865,7 @@ async fn a_dismissed_watch_leaves_a_later_capture_to_its_own_row() -> TestResult
 async fn unsafe_or_private_source_pages_do_not_open_a_watch() -> TestResult {
     let h = Harness::new().await?;
     h.manager
-        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)?;
+        .set_queue_paused(wirecatch_settings::DEFAULT_QUEUE_ID, true)?;
     for (page, private_window) in [
         ("file:///source.html", false),
         ("https://user:password@project.example/source", false),
@@ -1904,7 +1904,7 @@ async fn a_queued_capture_that_gets_another_file_offers_a_fresh_link() -> TestRe
     let right = fast_server(1024).await?;
     let h = Harness::new().await?;
     h.manager
-        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)
+        .set_queue_paused(wirecatch_settings::DEFAULT_QUEUE_ID, true)
         .unwrap();
     let added = h
         .manager
@@ -1914,7 +1914,7 @@ async fn a_queued_capture_that_gets_another_file_offers_a_fresh_link() -> TestRe
     assert_eq!(added.action, AddAction::Queued);
     let id = added.id.unwrap();
     h.manager
-        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, false)
+        .set_queue_paused(wirecatch_settings::DEFAULT_QUEUE_ID, false)
         .unwrap();
     let failed = h.wait_status(id, DownloadStatus::Failed).await;
     let error = failed.error.unwrap();
@@ -1993,7 +1993,7 @@ async fn a_closed_question_is_announced_so_the_dialog_closes() -> TestResult {
 async fn a_private_download_is_never_stored_and_ends_with_its_session() -> TestResult {
     let h = Harness::new().await?;
     h.manager
-        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)
+        .set_queue_paused(wirecatch_settings::DEFAULT_QUEUE_ID, true)
         .unwrap();
     let mut client = Client::connected(&h.manager).await?;
     let mut download = capture("https://example.com/private.zip".into());
@@ -2083,7 +2083,7 @@ async fn a_session_first_named_on_a_capture_ends_with_its_connection() -> TestRe
     }))
     .await?;
     h.manager
-        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)
+        .set_queue_paused(wirecatch_settings::DEFAULT_QUEUE_ID, true)
         .unwrap();
     let mut client = Client::connected(&h.manager).await?;
     let mut download = capture("https://example.com/private.zip".into());
@@ -2147,7 +2147,7 @@ async fn a_private_capture_waiting_to_be_confirmed_ends_with_its_session() -> Te
 async fn a_link_in_a_private_and_a_normal_window_stays_two_downloads() -> TestResult {
     let h = Harness::new().await?;
     h.manager
-        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)
+        .set_queue_paused(wirecatch_settings::DEFAULT_QUEUE_ID, true)
         .unwrap();
     let mut private = capture("https://example.com/same.zip".into());
     private.handover_id = "private".into();
@@ -2201,7 +2201,7 @@ fn stored_origin(h: &Harness, id: wirecatch_protocol::DownloadId) -> Option<Stri
         .root
         .path()
         .join("data")
-        .join(wirecatch_core::DATABASE_FILE);
+        .join(wirecatch_store::DATABASE_FILE);
     let db = rusqlite::Connection::open(db).ok()?;
     db.query_row("SELECT origin FROM downloads WHERE id = ?1", [id.0], |r| {
         r.get(0)
@@ -2230,7 +2230,7 @@ async fn a_download_unfinished_after_a_week_forgets_its_sign_in() -> TestResult 
     server.configure(|c| c.refuse_paths.push(("/old.pdf".into(), 403)));
     let h = Harness::new().await?;
     h.manager
-        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)
+        .set_queue_paused(wirecatch_settings::DEFAULT_QUEUE_ID, true)
         .unwrap();
     let mut old = capture(server.url("old.pdf").to_string());
     old.extra_headers = vec![
@@ -2277,7 +2277,7 @@ async fn a_download_unfinished_after_a_week_forgets_its_sign_in() -> TestResult 
         .id
         .unwrap();
     h.manager
-        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, false)
+        .set_queue_paused(wirecatch_settings::DEFAULT_QUEUE_ID, false)
         .unwrap();
     let failed = h.wait_status(old, DownloadStatus::Failed).await;
     let error = failed.error.unwrap();
@@ -2376,7 +2376,7 @@ async fn a_password_in_a_link_is_never_shown() -> TestResult {
         .root
         .path()
         .join("data")
-        .join(wirecatch_core::DATABASE_FILE);
+        .join(wirecatch_store::DATABASE_FILE);
     let db = rusqlite::Connection::open(db).unwrap();
     let stored: String = db
         .query_row("SELECT url FROM downloads WHERE id = ?1", [row.id.0], |r| {
@@ -2425,7 +2425,7 @@ async fn a_fresh_link_clears_the_size_the_browser_saw() -> TestResult {
     let fresh = fast_server(2048).await?;
     let h = Harness::new().await?;
     h.manager
-        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)
+        .set_queue_paused(wirecatch_settings::DEFAULT_QUEUE_ID, true)
         .unwrap();
     let added = h
         .manager
@@ -2434,7 +2434,7 @@ async fn a_fresh_link_clears_the_size_the_browser_saw() -> TestResult {
         .unwrap();
     let id = added.id.unwrap();
     h.manager
-        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, false)
+        .set_queue_paused(wirecatch_settings::DEFAULT_QUEUE_ID, false)
         .unwrap();
     h.wait_status(id, DownloadStatus::Failed).await;
 
@@ -2458,7 +2458,7 @@ async fn a_queued_capture_still_checks_the_file_after_a_restart() -> TestResult 
     let changed = fast_server(2048).await?;
     let mut h = Harness::new().await?;
     h.manager
-        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)
+        .set_queue_paused(wirecatch_settings::DEFAULT_QUEUE_ID, true)
         .unwrap();
     let added = h
         .manager
@@ -2470,7 +2470,7 @@ async fn a_queued_capture_still_checks_the_file_after_a_restart() -> TestResult 
 
     h.restart().await?;
     h.manager
-        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, false)
+        .set_queue_paused(wirecatch_settings::DEFAULT_QUEUE_ID, false)
         .unwrap();
 
     let ended = h

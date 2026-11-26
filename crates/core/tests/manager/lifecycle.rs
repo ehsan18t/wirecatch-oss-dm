@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use tokio::sync::oneshot;
-use wirecatch_core::{CoreError, DEFAULT_QUEUE_ID, LinkFrom, RemoveFiles};
+use wirecatch_core::{CoreError, LinkFrom, RemoveFiles};
 use wirecatch_files::discard::test_trash::took;
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{
@@ -12,6 +12,7 @@ use wirecatch_protocol::app::{
 };
 use wirecatch_protocol::extension::BrowserRoute;
 use wirecatch_protocol::wire::ErrorCode;
+use wirecatch_settings::DEFAULT_QUEUE_ID;
 
 use crate::common::{
     Config, Harness, PATIENCE, Seen, SilentServer, TestResult, TestServer, exists, fast_server,
@@ -251,7 +252,7 @@ async fn the_ui_hears_when_saving_keeps_failing() -> TestResult {
         .root
         .path()
         .join("data")
-        .join(wirecatch_core::DATABASE_FILE);
+        .join(wirecatch_store::DATABASE_FILE);
     let other = rusqlite::Connection::open(db).unwrap();
     other.execute("DROP TABLE downloads", []).unwrap();
 
@@ -283,7 +284,7 @@ async fn retrying_a_save_with_nothing_kept_says_saving_recovered() -> TestResult
         .root
         .path()
         .join("data")
-        .join(wirecatch_core::DATABASE_FILE);
+        .join(wirecatch_store::DATABASE_FILE);
     let other = rusqlite::Connection::open(db).unwrap();
     other.execute("DROP TABLE downloads", []).unwrap();
     h.add_with("https://example.com/a.bin", |r| r.start = false)

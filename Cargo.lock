@@ -10601,6 +10601,8 @@ dependencies = [
  "wirecatch-product",
  "wirecatch-protocol",
  "wirecatch-queues",
+ "wirecatch-records",
+ "wirecatch-settings",
  "wirecatch-shell",
  "wirecatch-sites",
  "wirecatch-test-support",
@@ -10845,6 +10847,7 @@ dependencies = [
  "wirecatch-protocol",
  "wirecatch-server",
  "wirecatch-settings",
+ "wirecatch-store",
  "wirecatch-test-support",
  "wirecatch-updates",
 ]

@@ -10,7 +10,7 @@ use crate::media_support::{
     FileServer, Releases, addon_dir, digest, exe, harness, install, next_event, path_exists,
     publish, release_file, sha256, sign, tar_xz, wait_addon, ytdlp_asset,
 };
-use wirecatch_core::ReleaseFile;
+use wirecatch_addons::manifest::ReleaseFile;
 use wirecatch_engine::units::{KIB, KIB_USIZE, MIB};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

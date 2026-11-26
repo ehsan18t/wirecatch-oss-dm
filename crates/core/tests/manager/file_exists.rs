@@ -8,7 +8,8 @@ use wirecatch_protocol::app::{
     FileExistsQuestion, Schedule, TimeOfDay, UiEvent, WhenFileExists,
 };
 
-use wirecatch_core::{DEFAULT_QUEUE_ID, LinkFrom, RemoveFiles};
+use wirecatch_core::{LinkFrom, RemoveFiles};
+use wirecatch_settings::DEFAULT_QUEUE_ID;
 
 use crate::common::{Config, Harness, PATIENCE, TestResult, TestServer, monday, test_data};
 
@@ -507,8 +508,7 @@ async fn a_replace_still_waiting_is_not_completed_by_a_restart() -> TestResult {
     let row = add_into(&h, server.url("report").as_str(), &dir).await?;
     let question = asked(&mut events).await?;
     h.wait_status(row.id, DownloadStatus::Paused).await;
-    h.manager
-        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)?;
+    h.manager.set_queue_paused(DEFAULT_QUEUE_ID, true)?;
     h.manager
         .answer_file_exists(question.id, answer(FileExistsChoice::Replace, false))?;
     h.wait_status(row.id, DownloadStatus::Queued).await;

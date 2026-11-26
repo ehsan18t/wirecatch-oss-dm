@@ -3,13 +3,14 @@
 use std::time::Duration;
 
 use jiff::ToSpan as _;
-use wirecatch_core::{CoreError, DEFAULT_QUEUE_ID, RemoveFiles};
+use wirecatch_core::{CoreError, RemoveFiles};
 use wirecatch_protocol::app::{
     AddRequest, CaptureConfirmation, DownloadStatus, PortablePath, Queue, QueueNotify, QueueReport,
     QueueSettings, Schedule, Setting, TimeOfDay, UiEvent, WaitReason,
 };
 use wirecatch_protocol::extension::NewDownload;
 use wirecatch_protocol::{DownloadId, QueueId};
+use wirecatch_settings::DEFAULT_QUEUE_ID;
 
 use crate::common::{Harness, SilentServer, TestResult, fast_server, is_running, monday, tune};
 use crate::media_support::next_event;

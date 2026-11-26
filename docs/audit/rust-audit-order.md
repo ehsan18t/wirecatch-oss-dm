@@ -27,10 +27,10 @@ These change the dependency graph, so they land before step 1. The order below i
 - Records a new decision amending D79 (a new crate) and D81.2 (where the codec types live). Adds a row to the layout table in `CLAUDE.md` and `AGENTS.md`.
 - The saved shape must not change: the serde attributes and spellings stay as they are, and `cargo test -p wirecatch-store --test samples` must pass unchanged.
 
-**A2. Trim `core`'s re-exports of lower crates.** `core/src/lib.rs` re-exports 24 items from `addons`, `records`, `settings` and `store`. `desktop`, `shell`, `e2e` and `core`'s own integration tests reach those crates through `core`, which hides their real dependencies and enlarges `core`'s API.
+**A2. Trim `core`'s re-exports of lower crates.** `core/src/lib.rs` re-exports 24 items from `addons`, `records`, `settings` and `store`. `desktop`, `shell` and `core`'s own integration tests reach those crates through `core`, which hides their real dependencies and enlarges `core`'s API.
 
 - Kept, because they appear in `core`'s own public types (manager config, results or `CoreError`): `KnownFolders`, `PathError`, `ComputerProxy`, `MediaAddonSources`, `Happened`, `SettingsFileError`, `StoreError`.
-- The other 17 go: the add-on manifest names (`AddonComponent`, `AddonFile`, `ArchiveKind`, `ComponentId`, `Fingerprint`, `MEDIA_ADDON_FOLDER`, `ManifestError`, `PinnedKey`, `ReleaseFile`, `Sha256Digest`), `ActivityEvent`, `same_proxy`, `DEFAULT_QUEUE_ID`, `SettingsError`, `default_settings`, `DATABASE_FILE`, `DATABASE_SIDE_FILES`. Each user imports from the owning crate; `core`'s integration tests take it as a dev-dependency.
+- The other 17 go: the add-on manifest names (`AddonComponent`, `AddonFile`, `ArchiveKind`, `ComponentId`, `Fingerprint`, `MEDIA_ADDON_FOLDER`, `ManifestError`, `PinnedKey`, `ReleaseFile`, `Sha256Digest`), `ActivityEvent`, `same_proxy`, `DEFAULT_QUEUE_ID`, `SettingsError`, `default_settings`, `DATABASE_FILE`, `DATABASE_SIDE_FILES`. Each user imports from the owning crate; `core`'s integration tests already reach it through `core`'s own dependencies.
 - `From<SettingsError> for CoreError` stays.
 - It does not change the order, because `desktop`, `shell` and `e2e` come last either way.
 
@@ -210,9 +210,9 @@ flowchart TB
     classDef done fill:#bbf7d0,stroke:#15803d,color:#111
     classDef now fill:#bfdbfe,stroke:#1d4ed8,stroke-width:3px,color:#111
     classDef todo fill:#f3f4f6,stroke:#9ca3af,color:#111
-    class a1 done
-    class a2 now
-    class c1,c2,c3,c4,c5,c6,c7,c8,c9,c10,c11,c12,c13,c14,c15,c16,c17,c18,c19,c20,c21,c22,c23,c24,c25,c26,c27,c28,c29,c30,c31,c32,c33,c34,c35,c36,c37,c38,c39,c40,c41,c42,c43,c44,c45 todo
+    class a1,a2 done
+    class c1 now
+    class c2,c3,c4,c5,c6,c7,c8,c9,c10,c11,c12,c13,c14,c15,c16,c17,c18,c19,c20,c21,c22,c23,c24,c25,c26,c27,c28,c29,c30,c31,c32,c33,c34,c35,c36,c37,c38,c39,c40,c41,c42,c43,c44,c45 todo
 ```
 
 ## The dependency graph today
@@ -254,9 +254,8 @@ What Part 0 changes:
 | `records`       | product, protocol, media-formats               | no `streams` (A1)                                          |
 | `streams`       | engine, files, logging, product, media-formats | takes the codec policy from the new crate (A1)             |
 | `media`         | adds media-formats                             | direct imports of the codec policy (A1)                    |
-| `desktop`       | adds the crates it used through `core`         | direct imports (A2)                                        |
-| `shell`         | adds the crates it used through `core`         | direct imports (A2)                                        |
-| `e2e`           | adds the crates it used through `core`         | direct imports (A2)                                        |
+| `desktop`       | adds records, settings                         | direct imports (A2)                                        |
+| `shell`         | adds store                                     | direct imports (A2)                                        |
 
 Two rules from `docs/DECISIONS.md` limit what a fix may do:
 

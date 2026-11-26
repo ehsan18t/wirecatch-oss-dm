@@ -18,9 +18,10 @@ use gpui_kit::{
     IntoElement, ParentElement as _, Render, StatefulInteractiveElement as _, Styled as _,
     Subscription, Window, div, px,
 };
-use wirecatch_core::{ActivityEvent, Happened, can_move_to_queue};
+use wirecatch_core::can_move_to_queue;
 use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, FixAction};
 use wirecatch_protocol::{DownloadId, QueueId, UnixMillis};
+use wirecatch_records::activity::{Event as ActivityEvent, Happened};
 use wirecatch_shell::api;
 
 use super::applies::RowAction;

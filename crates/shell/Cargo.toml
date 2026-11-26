@@ -12,6 +12,7 @@ publish = false
 [dependencies]
 wirecatch-core.workspace = true
 wirecatch-server.workspace = true
+wirecatch-store.workspace = true
 # Its checked conversions between whole numbers and floating point (`numeric`).
 wirecatch-engine.workspace = true
 wirecatch-files.workspace = true
